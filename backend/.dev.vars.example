@@ -1,0 +1,6 @@
+JWT_SECRET="change-me-32-bytes-min"
+REFRESH_PEPPER="change-me-32-bytes-min"
+RESEND_API_KEY=""
+DEEPL_API_KEY=""
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""

@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --n101-bg: #FBFAF7;
+  --n101-ink: #1A1817;
+  --n101-mute: #5C544C;
+  --n101-accent: #D63752;
+  --n101-line: #E8E2D8;
+}
+
+html, body { background: var(--n101-bg); color: var(--n101-ink); }
+body { font-family: Inter, system-ui, sans-serif; }

@@ -1,0 +1,21 @@
+name = "nihon101-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nihon101"
+database_id = "0e5896d7-4757-485c-bfea-7dfca1e11b67"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "nihon101-media"
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+FRONTEND_ORIGIN = "http://localhost:4321"
+RESEND_FROM = "Nihon101 <no-reply@nihon101.com>"
+GOOGLE_REDIRECT_URI = "http://localhost:8787/auth/google/callback"

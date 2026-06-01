@@ -1,0 +1,198 @@
+# Nihon101 — Stack Reference
+
+## Purpose
+Bilingual (JA + EN) blog about Japan — festivals, events, anime, culture.
+Wholesome, simple, ad-supported. Domain: nihon101.com.
+Single author (you); readers can register, comment, react, follow tags, get notifications.
+
+## Repo layout
+```
+nihon101/
+├─ backend/          Cloudflare Worker (Hono + Drizzle + D1 + R2)
+├─ frontend/         Cloudflare Pages (Astro SSR + React islands)
+├─ ui-mocks/         Prototype HTML
+├─ stack.txt         This file
+├─ development-plan.md
+└─ CLAUDE.md
+```
+Two independent deploys, two `wrangler.toml`s, two `package.json`s.
+
+## Hosting
+
+| Env | Frontend | Backend |
+|---|---|---|
+| Dev | `http://localhost:4321` | `http://localhost:8787` |
+| Prod | `https://nihon101.com` | `https://api.nihon101.com` |
+
+- Backend CORS: exact-origin allow + `Access-Control-Allow-Credentials: true`.
+- Refresh cookie `n101_rt`: HttpOnly + Secure + SameSite=Strict, path `/auth`, host-only on backend.
+- Access JWT: 15 min, in memory only on frontend.
+
+## Backend stack
+
+| Layer | Choice |
+|---|---|
+| Runtime | **Cloudflare Workers** (prod), **Bun** via `wrangler dev` (local, :8787) |
+| Framework | **Hono** — one app per route file under `src/routes/`, mounted in `src/index.ts` |
+| Language | TypeScript, strict |
+| DB | **Cloudflare D1** (SQLite) — binding `DB`, local name `nihon101` |
+| ORM | **Drizzle ORM** — schema `src/db/schema.ts`, queries `src/db/queries/<entity>.ts` |
+| Blob storage | **Cloudflare R2** — binding `MEDIA`, bucket `nihon101-media`, accessed only via `lib/media.ts` |
+| Translation | **DeepL API** (free 500k chars/mo), adapter in `lib/translate.ts` |
+| Crypto | Web Crypto (HS256 JWT in `lib/crypto.ts`), `bcryptjs` cost 10, nanoid IDs `<prefix>_<21>` |
+| Email | Resend (`RESEND_API_KEY`, `RESEND_FROM`) |
+| OAuth | Google (server-side flow) |
+| Cron | `wrangler.toml [triggers] crons = ["0 * * * *"]` — recompute trending. Mirrored by `POST /admin/cron/recompute-trending` for local trigger |
+| Config | `backend/wrangler.toml` — bindings + cron. Secrets: `.dev.vars` locally, `wrangler secret put` for prod |
+
+### Backend secrets / env
+`JWT_SECRET`, `REFRESH_PEPPER`, `FRONTEND_ORIGIN`,
+`RESEND_API_KEY`, `RESEND_FROM`,
+`DEEPL_API_KEY`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+
+### Backend conventions
+- **IDs**: `<prefix>_<nanoid21>` everywhere. Never integers.
+- **Timestamps**: `integer('created_at', { mode: 'timestamp_ms' })`.
+- **Booleans**: `integer('is_x', { mode: 'boolean' })`.
+- **Migrations**: hand-written ANSI SQL in `backend/migrations/NNNN_name.sql`. Apply with `wrangler d1 execute nihon101 --local --file=./migrations/NNNN.sql`.
+- **Middleware**: `requireAuth`, `attachUserIfAuthed`, `requireAdmin`. In `src/middleware/`.
+- **Route file pattern**: one file per resource in `src/routes/`. `const app = new Hono<AppEnv>()`, …, `export default app`. Wired in `src/index.ts` via `app.route('/posts', posts)`.
+- **AppEnv** (`src/types.ts`): bindings (`DB`, `MEDIA`), env, `Variables` (`user`).
+- **Query helpers**: never inline Drizzle in routes — always `db/queries/<entity>.ts`.
+- **Revisions**: `post_revisions` table kept for safety (no UI at launch).
+- **Atomic deletes**: cascade-heavy deletes use `runBatch(db, [statements])`.
+
+## Frontend stack
+
+| Layer | Choice |
+|---|---|
+| Framework | **Astro** + `@astrojs/cloudflare` (SSR) — :4321 dev |
+| UI islands | **React 19** + TypeScript |
+| Routing | Astro file routes under `src/pages/[locale]/...` |
+| i18n | Astro built-in i18n. Locales: `ja` (default), `en` |
+| State | **Zustand** — `src/stores/authStore.ts`, access token in memory only |
+| Styling | Tailwind + CSS vars (`--n101-*`) in `src/styles/global.css` |
+| Fonts | Inter (body) + Noto Serif JP (display, JP-capable) |
+| Package mgr | **bun** |
+| Toasts | Custom `emitToast` (`src/components/ui/Toast.tsx`) |
+| Confirm | Custom `ConfirmDialog` (portaled) |
+| Analytics | Cloudflare Web Analytics (cookieless) |
+| Ads | Google AdSense (after content + traffic threshold). No popup networks. |
+
+### Frontend env
+`PUBLIC_API_URL` (dev `http://localhost:8787`, prod `https://api.nihon101.com`),
+`PUBLIC_GOOGLE_CLIENT_ID` (if using client-initiated start).
+
+### Frontend conventions
+- **API client**: `src/lib/api.ts` exports `apiFetch<T>(path, opts)` and per-resource objects (`postApi`, `commentApi`, `authApi`, `adminApi`). Auto-attaches `Authorization: Bearer …` from `authStore`. Auto-retries once via `/auth/refresh` on 401. `credentials: 'include'` for auth calls.
+- **Bootstrap**: client island on mount calls `POST {API}/auth/refresh`, then `/auth/me`.
+- **Types**: server row shapes prefixed `Raw…`; display via `mapPost(raw)`.
+- **i18n**: `t(key, locale)` from `src/i18n/`. Astro pages SSR per locale.
+- **Language switcher**: resolves the counterpart slug from `post_translations` and links to it; falls back to home if missing.
+- **Image rendering**: `resolveMediaUrl(key)`. Always `<img onError>` over a gradient fallback.
+- **Islands only where needed**: comments, auth forms, admin editor, notifications bell, reactions, follow buttons. Everything else is pure SSR HTML.
+- **Modals**: `createPortal` to `document.body`. `ConfirmDialog` does this.
+
+## Launch features
+
+### IN
+- Bilingual posts (JA + EN), DeepL auto-translate + author review
+- Language switcher preserving slug
+- Home, tag index, single tag, single post, search (D1 `LIKE`)
+- Auth: register, login, forgot, reset, change password, delete account
+- **Google OAuth login**
+- Comments: create, edit own, delete own, like, report, **one-level replies**
+- **Reactions** (emoji bar) on posts and comments
+- **View counts** per post (debounced by IP+UA hash)
+- **Trending widget** (last 7 days, weighted views + reactions)
+- **Drafts** with 30s autosave (single-author long-form support)
+- **Follow users** (YouTube-style subscribe) + feed of posts from followed users
+- Tags on posts (labels for search/discovery only — not followable)
+- **In-app notification feed only** (bell + dropdown + page). No email, no Web Push.
+- Admin: post editor + DeepL panel + publish/unpublish/delete + moderation queue
+- SEO: OG + JSON-LD + hreflang
+- RSS per locale, sitemap per locale, robots.txt
+- AdSense slot placeholders
+- Legal: Privacy, Terms, Cookies
+- 404 + error page
+- Cookieless analytics
+
+### OUT (post-launch)
+- Newsletter / email broadcast
+- Multi-author + author profile pages + bylines
+- Multi-level comment threading
+- Post scheduling
+- Wiki-style revisions UI
+- FTS5 / advanced search
+- Megamenus, reading time, "trending" sprinkled everywhere
+
+## Auth (custom hybrid)
+- **Access token**: HS256 JWT, **15 min**, Zustand memory only, `Authorization: Bearer …`.
+- **Refresh token**: 32-byte opaque, HttpOnly + Secure + SameSite=Strict cookie `n101_rt`, path `/auth` on backend host.
+- Server stores `sha256(token + REFRESH_PEPPER)` only.
+- Rotation: every `/auth/refresh` issues a new refresh + marks old `replaced_by`. Reuse → revoke whole `family_id`.
+- Bootstrap: app mount silently calls `POST {API}/auth/refresh` (`credentials:'include'`), hydrates `/auth/me`.
+- Username: `^[a-z0-9]+(_[a-z0-9]+)*$`, 3–20 chars.
+- Password: min 8, bcryptjs cost 10.
+- Google OAuth: server-side flow, `google_links` table.
+
+## Moderation
+- Any authenticated user can comment, react, follow, report.
+- Author (you) + admin role can delete any comment, ban users, hide posts.
+- `reports`, `bans`, `warnings`, `admin_actions` tables.
+
+## Database tables (initial)
+`users`, `refresh_tokens`, `google_links`,
+`posts`, `post_translations`, `post_revisions`, `post_drafts`,
+`tags`, `post_tags`, `user_follows`,
+`media`,
+`comments`, `comment_likes`,
+`post_reactions`, `comment_reactions`,
+`post_views`,
+`notifications`, `notification_reads`,
+`reports`, `bans`, `warnings`, `admin_actions`.
+
+## Translation flow (DeepL)
+1. Author writes post in JA or EN in admin.
+2. On save-draft: backend may call DeepL to fill the other locale (manual button — avoids burning quota on every keystroke).
+3. Author reviews + edits the other locale in the same editor.
+4. Publish → both `/ja/<slug>` and `/en/<slug>` SSR with stored, reviewed text.
+
+`translated_by` enum: `human` | `deepl` | `mixed`. `reviewed: boolean`.
+Adapter at `backend/src/lib/translate.ts` — swappable to Workers AI / others.
+
+## Portability Law (D1 → Postgres later, no rewrite)
+- **IDs**: `text`, `<prefix>_<nanoid21>`. No `AUTOINCREMENT`. No integer PKs.
+- **Timestamps**: `bigint` ms (`integer` SQLite, `bigint` PG). Never `DATETIME`.
+- **Booleans**: stored `integer` 0/1, exposed via Drizzle `mode: 'boolean'`.
+- **No D1-only**: no FTS5, no `json_*()` SQL, no `WITHOUT ROWID`.
+- **JSON columns**: store as `text`, parse in app.
+- **Migrations**: hand-written ANSI SQL.
+- **R2 access**: only through `backend/src/lib/media.ts`.
+- **Cron**: business logic in plain function; cron trigger + `/admin/cron/<name>` both call it.
+- **Drizzle dialect**: start `drizzle-orm/d1`; schema uses portable column types only.
+
+## Hard rules
+- WSL/Bash for installs; PowerShell allowed for plain file ops.
+- Never store access tokens in localStorage / sessionStorage.
+- Never send refresh token in JSON.
+- Never weaken SameSite from Strict.
+- Never use SQLite-only types/functions.
+- Never use client-side translation widgets (GTranslate, Google widget). Translation is stored, not runtime.
+- Default response style: terse, no preamble.
+
+## Common commands
+```bash
+# Backend
+cd backend
+bun install
+bun run wrangler d1 execute nihon101 --local --file=./migrations/0001_init_auth.sql
+bun run dev                          # wrangler dev — :8787
+
+# Frontend
+cd frontend
+bun install
+bun run dev                          # astro dev — :4321
+bun run tsc --noEmit
+```
