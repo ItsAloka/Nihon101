@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, ne } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import type { AppEnv } from '../types';
-import { users, refreshTokens, passwordResets } from '../db/schema';
+import { users, refreshTokens, passwordResets, googleLinks } from '../db/schema';
 import { id } from '../lib/ids';
 import { randomToken, hashToken } from '../lib/crypto';
 import { signAccess } from '../lib/tokens';
@@ -134,7 +134,72 @@ auth.get('/me', requireAuth, async (c) => {
   const sess = c.get('user')!;
   const u = await db(c).select().from(users).where(eq(users.id, sess.id)).get();
   if (!u) return c.json({ error: 'unauthorized' }, 401);
+  const g = await db(c).select().from(googleLinks).where(eq(googleLinks.userId, u.id)).get();
+  return c.json({
+    user: publicUser(u),
+    hasPassword: !!u.passwordHash,
+    google: g ? { linked: true, email: g.email } : { linked: false, email: null },
+  });
+});
+
+// -------------------------------------------------------- update profile
+auth.patch('/me', requireAuth, async (c) => {
+  const sess = c.get('user')!;
+  const { displayName } = await c.req.json().catch(() => ({}));
+  const name = String(displayName ?? '').trim();
+  if (name.length < 1 || name.length > 50) return c.json({ error: 'invalid_name' }, 400);
+
+  await db(c).update(users).set({ displayName: name, updatedAt: now() }).where(eq(users.id, sess.id));
+  const u = await db(c).select().from(users).where(eq(users.id, sess.id)).get();
   return c.json({ user: publicUser(u) });
+});
+
+// ------------------------------------------------------- change password
+auth.post('/change-password', requireAuth, async (c) => {
+  const sess = c.get('user')!;
+  const { current, password } = await c.req.json().catch(() => ({}));
+  if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
+
+  const u = await db(c).select().from(users).where(eq(users.id, sess.id)).get();
+  if (!u) return c.json({ error: 'unauthorized' }, 401);
+  // Google-only accounts have no password to verify against.
+  if (!u.passwordHash) return c.json({ error: 'no_password' }, 400);
+  if (!(await bcrypt.compare(String(current ?? ''), u.passwordHash))) {
+    return c.json({ error: 'invalid_credentials' }, 401);
+  }
+
+  await db(c)
+    .update(users)
+    .set({ passwordHash: await bcrypt.hash(password, 10), updatedAt: now() })
+    .where(eq(users.id, u.id));
+
+  // Keep this session; log out every other one.
+  const raw = readRefreshCookie(c);
+  const currentFam = raw
+    ? (await db(c).select().from(refreshTokens)
+        .where(eq(refreshTokens.tokenHash, await hashToken(raw, c.env.REFRESH_PEPPER))).get())?.familyId
+    : undefined;
+  await db(c)
+    .update(refreshTokens)
+    .set({ revokedAt: now() })
+    .where(and(
+      eq(refreshTokens.userId, u.id),
+      isNull(refreshTokens.revokedAt),
+      currentFam ? ne(refreshTokens.familyId, currentFam) : undefined,
+    ));
+
+  return c.json({ ok: true });
+});
+
+// -------------------------------------------------------- delete account
+auth.delete('/me', requireAuth, async (c) => {
+  const sess = c.get('user')!;
+  await db(c).delete(refreshTokens).where(eq(refreshTokens.userId, sess.id));
+  await db(c).delete(passwordResets).where(eq(passwordResets.userId, sess.id));
+  await db(c).delete(googleLinks).where(eq(googleLinks.userId, sess.id));
+  await db(c).delete(users).where(eq(users.id, sess.id));
+  clearRefreshCookie(c);
+  return c.json({ ok: true });
 });
 
 // ------------------------------------------------------------------ forgot

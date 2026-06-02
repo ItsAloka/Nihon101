@@ -1,0 +1,45 @@
+---
+import '../styles/global.css';
+import type { Locale } from '../lib/i18n/auth';
+
+interface Props { locale: Locale; title?: string }
+const { locale, title = 'Settings' } = Astro.props;
+
+const other: Locale = locale === 'ja' ? 'en' : 'ja';
+const otherHref = Astro.url.pathname.replace(/^\/(ja|en)/, `/${other}`);
+---
+<!DOCTYPE html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} — Nihon101</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho+B1:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-paper text-ink">
+    <header class="flex items-center justify-between border-b border-line px-7 py-[18px]">
+      <a href={`/${locale}/`} class="font-serif text-2xl font-bold text-ink">
+        nihon<span class="text-hinomaru">101</span>
+      </a>
+      <div class="flex overflow-hidden rounded-full border border-line bg-white">
+        <a
+          href={locale === 'ja' ? Astro.url.pathname : otherHref}
+          class={`px-3.5 py-1.5 text-[13px] font-semibold ${locale === 'ja' ? 'bg-hinomaru text-white' : 'text-mute'}`}
+        >日本語</a>
+        <a
+          href={locale === 'en' ? Astro.url.pathname : otherHref}
+          class={`px-3.5 py-1.5 text-[13px] font-semibold ${locale === 'en' ? 'bg-hinomaru text-white' : 'text-mute'}`}
+        >EN</a>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-[680px] px-5 py-10 pb-20">
+      <slot />
+    </main>
+  </body>
+</html>

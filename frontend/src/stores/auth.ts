@@ -11,6 +11,10 @@ type AuthState = {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Merge fields into the cached user (e.g. after a profile save). */
+  patchUser: (partial: Partial<User>) => void;
+  /** Clear session locally after account deletion. */
+  clear: () => void;
 };
 
 let initStarted = false;
@@ -40,4 +44,9 @@ export const useAuth = create<AuthState>((set) => ({
     await authApi.logout();
     set({ user: null, status: 'guest' });
   },
+
+  patchUser: (partial) =>
+    set((s) => (s.user ? { user: { ...s.user, ...partial } } : s)),
+
+  clear: () => set({ user: null, status: 'guest' }),
 }));

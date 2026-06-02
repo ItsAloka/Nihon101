@@ -78,6 +78,28 @@ export const authApi = {
   reset(token: string, password: string) {
     return post('/auth/reset', { token, password });
   },
+  me(): Promise<MeDetails> {
+    return apiFetch<MeDetails>('/auth/me');
+  },
+  async updateProfile(displayName: string): Promise<User> {
+    const { user } = await apiFetch<{ user: User }>('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    });
+    return user;
+  },
+  changePassword(current: string, password: string) {
+    return post('/auth/change-password', { current, password });
+  },
+  deleteAccount() {
+    return apiFetch('/auth/me', { method: 'DELETE' });
+  },
+};
+
+export type MeDetails = {
+  user: User;
+  hasPassword: boolean;
+  google: { linked: boolean; email: string | null };
 };
 
 function post<T>(path: string, body: unknown): Promise<T> {

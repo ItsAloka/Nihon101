@@ -3,6 +3,7 @@
 import React from 'react';
 import { CATEGORIES, AUTHORS, POSTS } from './data';
 import { tintBg, tintGradient, subjectGlyph } from './theme';
+import { useAuth } from '../stores/auth';
 
 export function maxWrap() { return { maxWidth: 1320, margin: '0 auto', padding: '0 32px' } as const; }
 
@@ -52,7 +53,7 @@ export function Nav({ p, route, lang, onLang, onSearch, savedCount, dark, onTogg
         display:'flex', alignItems:'center', gap:24,
       }}>
         <Logo p={p} jp={lang==='jp'} />
-        <nav className="nihon-mainnav" style={{display:'flex', gap:4, marginLeft:16, flex:1}}>
+        <nav className="nihon-mainnav" style={{display:'flex', gap:4, marginLeft:16}}>
           {items.map((it, i) => {
             const active = (route.name === it.route.name);
             return (
@@ -75,7 +76,7 @@ export function Nav({ p, route, lang, onLang, onSearch, savedCount, dark, onTogg
         </nav>
         <SearchBar p={p} onSearch={onSearch} lang={lang} />
         <button onClick={()=>window.__nihon_go({name:'saved'})} title="Saved"
-          style={{...iconBtn(p), flexShrink:0}}>
+          style={{...iconBtn(p), flexShrink:0, marginLeft:'auto'}}>
           <BookmarkIcon filled={savedCount>0} color={p.ink}/>
           {savedCount>0 && <span style={{
             position:'absolute', top:-3, right:-3, minWidth:16, height:16, padding:'0 4px',
@@ -99,9 +100,70 @@ export function Nav({ p, route, lang, onLang, onSearch, savedCount, dark, onTogg
         }}>
           {lang==='jp' ? '書く' : 'Write'}
         </button>
+        <AuthControl p={p} lang={lang} />
       </div>
     </header>
   );
+}
+
+// ------- Auth control (real backend-wired) -------
+export function AuthControl({ p, lang }) {
+  const { user, status, init, logout } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+  const locale = lang === 'jp' ? 'ja' : 'en';
+
+  React.useEffect(() => { void init(); }, [init]);
+  React.useEffect(() => {
+    if (!open) return;
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  if (status === 'loading') {
+    return <div style={{...iconBtn(p), flexShrink:0, borderColor:p.line, opacity:0.5}} />;
+  }
+  if (status === 'authed' && user) {
+    return (
+      <div ref={ref} style={{position:'relative', flexShrink:0}}>
+        <button onClick={()=>setOpen(o=>!o)} title={user.displayName}
+          style={{...iconBtn(p), background:p.stamp, borderColor:p.stamp, color:'#fff', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:700}}>
+          {user.displayName.charAt(0).toUpperCase()}
+        </button>
+        {open && (
+          <div style={{
+            position:'absolute', right:0, top:46, width:200, zIndex:40,
+            background:p.surface, border:`1px solid ${p.line}`, borderRadius:14,
+            boxShadow:'0 8px 30px rgba(0,0,0,.10)', overflow:'hidden', padding:'4px 0',
+          }}>
+            <div style={{padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:12, color:p.inkFaint, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{user.email}</div>
+            <div style={{height:1, background:p.line, margin:'2px 0'}} />
+            <a href={`/${locale}/settings`}
+              style={{display:'block', textDecoration:'none', padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:14, color:p.ink}}>
+              {lang==='jp' ? '設定' : 'Settings'}
+            </a>
+            <button onClick={()=>{ void logout(); setOpen(false); }}
+              style={{display:'block', width:'100%', textAlign:'left', appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:14, color:p.ink}}>
+              {lang==='jp' ? 'ログアウト' : 'Log out'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <a href={`/${locale}/login`} title={lang==='jp' ? 'ログイン' : 'Log in'}
+      style={{...iconBtn(p), flexShrink:0, textDecoration:'none'}}>
+      <UserIcon color={p.ink} />
+    </a>
+  );
+}
+
+export function UserIcon({color='currentColor', size=18}) {
+  return (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>
+  </svg>);
 }
 
 export function iconBtn(p) {
