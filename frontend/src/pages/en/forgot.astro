@@ -1,0 +1,7 @@
+---
+import AuthLayout from '../../layouts/AuthLayout.astro';
+import AuthForm from '../../components/AuthForm.tsx';
+---
+<AuthLayout locale="en" title="Reset password">
+  <AuthForm mode="forgot" locale="en" client:load />
+</AuthLayout>

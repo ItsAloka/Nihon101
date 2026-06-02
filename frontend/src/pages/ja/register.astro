@@ -1,0 +1,7 @@
+---
+import AuthLayout from '../../layouts/AuthLayout.astro';
+import AuthForm from '../../components/AuthForm.tsx';
+---
+<AuthLayout locale="ja" title="新規登録">
+  <AuthForm mode="register" locale="ja" client:load />
+</AuthLayout>

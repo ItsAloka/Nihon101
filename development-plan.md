@@ -78,78 +78,82 @@ Detailed file tree: see `stack.txt` (kept as the architecture reference).
 
 ---
 
-## 4. Build order (small, reversible steps)
+## 4. Build order — vertical slices
 
-Each step ends with a working deploy on localhost. No step depends on a later step.
+**How we build (the rule):**
+- One **feature slice** at a time. A slice = its DB migration → its API routes → the UI page that calls them. Shipped working on localhost before the next slice starts.
+- **Not** all-backend-then-all-frontend. Backend and frontend move together, one feature deep.
+- Within a slice: **API first, then its page** (the page needs something to call).
+- **Stop after every slice. Test it in the browser. Then move on.**
+- Late slices (trending, comments, likes, tags) are deliberately isolated so their churn never touches login/posts.
 
-### Step 0 — Bootstrap
-- Init `backend/` (Bun + Hono + Wrangler + Drizzle).
-- Init `frontend/` (Bun + Astro + Tailwind + React + `@astrojs/cloudflare`).
-- `wrangler.toml` for backend: D1 binding `DB` (local name `nihon101`), R2 binding `MEDIA` (bucket `nihon101-media`), `[triggers] crons = ["0 * * * *"]`.
-- `.dev.vars` with `JWT_SECRET`, `REFRESH_PEPPER`, `FRONTEND_ORIGIN=http://localhost:4321`, `DEEPL_API_KEY`, `RESEND_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
-- Frontend `PUBLIC_API_URL=http://localhost:8787`.
+**UI source:** the prototype (`ui-mocks/prototype.html`) is a **design reference, not a code base** (it's CDN-React + in-browser Babel — do not port the runtime). Extract design **tokens once** (slice 1); extract each page's layout **lazily** when that page is built. Rebuild as Astro pages + React islands.
 
-### Step 1 — Auth core
+> Step 0 (bootstrap) is already done: backend + frontend scaffolded, D1 `nihon101` + R2 `nihon101-media` created, `.dev.vars` filled.
+
+### Slice 1 — Design tokens
+- Pull palette + font stack from `ui-mocks/prototype.html` into Tailwind theme.
+- Palette: paper `#FBFAF7`, ink `#1A1817`, hinomaru red `#D63752`, sakura `#E8A0AE`, tan `#d6c7b3`.
+- Fonts: `Inter` (Latin UI), `Noto Sans JP` (JA body), `Shippori Mincho B1` (JA serif headings).
+- Base layout shell + boot loader. No feature logic.
+
+### Slice 2 — Login / Auth
 - `migrations/0001_init_auth.sql`: `users`, `refresh_tokens`, `google_links`.
 - Backend: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/auth/forgot`, `/auth/reset`, `/auth/google/start`, `/auth/google/callback`.
 - Frontend: `login`, `register`, `forgot`, `reset` pages + Zustand `authStore` + silent refresh on mount.
 
-### Step 2 — Posts (single locale first)
+### Slice 3 — Write a post (single locale)
 - `migrations/0002_posts.sql`: `posts`, `post_translations`, `post_revisions`, `post_drafts`.
-- Backend: `/posts` (list, public), `/posts/:slug` (read, public), `/admin/posts` (create/update/publish/delete), `/admin/posts/:id/draft` (save autosave).
-- Frontend: admin `PostEditor.tsx` (markdown + cover upload + autosave every 30s), public `[locale]/p/[slug].astro`, `[locale]/index.astro` (latest).
+- Backend: `/admin/posts` (create/update/publish/delete), `/admin/posts/:id/draft` (autosave).
+- Frontend: admin `PostEditor.tsx` (markdown + autosave every 30s). One language only.
 
-### Step 3 — Bilingual + DeepL
-- `lib/translate.ts` adapter calling DeepL.
-- Admin `TranslationPanel.tsx`: button "Auto-translate to EN/JA" → populate other-locale fields → author reviews + edits → publish writes both.
-- Astro i18n config: `/ja` default, `/en` secondary, hreflang tags, language switcher swaps slug via `post_translations.slug`.
+### Slice 4 — Read a post (single locale)
+- Backend: `/posts` (list, public), `/posts/:slug` (read, public).
+- Frontend: public `[locale]/p/[slug].astro`, `[locale]/index.astro` (latest list).
 
-### Step 4 — Media
+### Slice 5 — Media
 - `migrations/0004_media.sql`: `media`.
-- Backend `/media/upload` (admin), `/media/:key` (signed-ish — public R2 with key obfuscation).
-- Frontend `MediaPicker.tsx` reused in editor.
+- Backend `/media/upload` (admin), `/media/:key` (public R2 with key obfuscation).
+- Frontend `MediaPicker.tsx` wired into the editor (cover + inline images).
 
-### Step 5 — Tags + user follows
+### Slice 6 — Bilingual + DeepL
+- `lib/translate.ts` adapter calling DeepL (host by `:fx` suffix).
+- Admin `TranslationPanel.tsx`: "Auto-translate to EN/JA" → fill other locale → author reviews → publish writes both.
+- Astro i18n: `/ja` default, `/en` secondary, hreflang, switcher swaps slug via `post_translations.slug`.
+
+### Slice 7 — Tags + search
 - `migrations/0003_tags.sql`: `tags`, `post_tags`.
-- `migrations/0003b_follows.sql`: `user_follows(follower_id, followee_id, created_at)`.
-- Backend `/tags`, `/tags/:slug`, `/users/:id/follow` (POST/DELETE), `/me/feed` (posts from followed users).
-- Frontend `[locale]/tag/[tag].astro` (tag search page), `[locale]/tags/index.astro` (tag cloud), follow button on author area, `[locale]/me/feed.astro`.
+- Backend `/tags`, `/tags/:slug`, search via D1 `LIKE` over `post_translations.title` + `body`.
+- Frontend `[locale]/tag/[tag].astro`, `[locale]/tags/index.astro`, search page.
 
-### Step 6 — Comments + reactions + likes
-- `migrations/0005_comments.sql`: `comments` (with `parent_id` for one-level reply), `comment_likes`, `comment_reports`, `post_reactions`, `comment_reactions`.
+### Slice 8 — Comments + reactions + likes
+- `migrations/0005_comments.sql`: `comments` (`parent_id` one-level reply), `comment_likes`, `comment_reports`, `post_reactions`, `comment_reactions`.
 - Backend `/comments/:postId` (list + create), `/comments/:id` (update/delete own), `/comments/:id/like`, `/comments/:id/report`, `/reactions/post/:id`, `/reactions/comment/:id`.
 - Frontend `CommentThread.tsx`, `CommentForm.tsx`, `CommentItem.tsx`, `ReactionBar.tsx`.
 
-### Step 7 — Views + trending
-- `migrations/0007_views.sql`: `post_views` (post_id, day_bucket, ip_ua_hash, count). Cron rolls up daily into `posts.view_count` + `posts.trending_score`.
-- Backend `/posts/:slug/view` (POST, debounced server-side by ip_ua_hash within window).
-- Backend `/admin/cron/recompute-trending` mirrors cron for local trigger.
+### Slice 9 — Views + trending
+- `migrations/0007_views.sql`: `post_views` (post_id, day_bucket, ip_ua_hash, count). Cron rolls up daily into `posts.view_count` + `posts.trending_score` (7-day weighted views + reactions).
+- Backend `/posts/:slug/view` (POST, server-debounced by ip_ua_hash), `/admin/cron/recompute-trending` (mirrors cron).
 - Frontend trending widget on home.
 
-### Step 8 — Notifications (in-app only)
+### Slice 10 — Notifications + follows
+- `migrations/0003b_follows.sql`: `user_follows(follower_id, followee_id, created_at)`.
 - `migrations/0008_notifications.sql`: `notifications`, `notification_reads`.
-- Triggers: new comment on your post, reply to your comment, new post by followed user, mention.
-- Backend `/me/notifications` (list, mark read), unread count endpoint.
-- Frontend bell icon + dropdown + `/me/notifications` page.
-- No email, no Web Push.
+- Backend `/users/:id/follow` (POST/DELETE), `/me/feed`, `/me/notifications` (list, mark read), unread count.
+- Frontend follow button, `[locale]/me/feed.astro`, bell icon + dropdown + `/me/notifications`. In-app only.
 
-### Step 9 — Moderation
+### Slice 11 — Moderation
 - `migrations/0010_moderation.sql`: `reports` (generic), `bans`, `warnings`, `admin_actions`.
 - Backend admin endpoints + middleware blocks banned users.
 - Frontend admin moderation queue.
 
-### Step 10 — SEO + feeds + legal
+### Slice 12 — SEO + feeds + legal + polish
 - Per-locale OG + JSON-LD Article + hreflang in `PostLayout.astro`.
 - `pages/rss-[locale].xml.ts`, `pages/sitemap-[locale].xml.ts`, `public/robots.txt`.
-- Legal pages: Privacy, Terms, Cookies.
+- Legal: Privacy, Terms, Cookies. 404 + error page. Profile (change password, delete account).
+- AdSense `<AdSlot>` placeholders (height reserved → no CLS). Cloudflare Web Analytics.
 
-### Step 11 — Ads + analytics + polish
-- AdSense `<AdSlot>` placeholders in layout (height reserved → no CLS).
-- Cloudflare Web Analytics snippet.
-- 404, error page, profile page (change password, delete account).
-- Search page (D1 `LIKE` across `post_translations.title` + `body`).
-
-### Step 12 — Pre-launch
+### Slice 13 — Pre-launch
 - Lighthouse pass per locale.
 - AdSense application after ≥20 posts + Privacy/Terms/Cookies live.
 - Swap `wrangler.toml` to prod bindings, `wrangler secret put` for all secrets.

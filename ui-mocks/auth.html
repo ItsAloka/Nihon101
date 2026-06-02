@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nihon101 — Auth mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Shippori+Mincho+B1:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFAF7; --ink:#1A1817; --mute:#5C544C; --hinomaru:#D63752;
+    --sakura:#E8A0AE; --tan:#D6C7B3; --line:#E8E2D8; --card:#FFFFFF;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:'Inter','Noto Sans JP',system-ui,sans-serif;
+    background:var(--paper); color:var(--ink);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+    display:flex; flex-direction:column;
+  }
+  ::selection{background:var(--sakura); color:#1E1813}
+  .serif{font-family:'Shippori Mincho B1','Noto Serif JP',serif}
+
+  /* top bar */
+  .top{display:flex; align-items:center; justify-content:space-between;
+    padding:18px 28px; border-bottom:1px solid var(--line)}
+  .brand{font-family:'Shippori Mincho B1',serif; font-size:24px; font-weight:700; text-decoration:none; color:var(--ink)}
+  .brand b{color:var(--hinomaru); font-weight:700}
+  .langtoggle{display:flex; border:1px solid var(--line); border-radius:999px; overflow:hidden; background:#fff}
+  .langtoggle button{font:inherit; font-size:13px; font-weight:600; padding:6px 14px; border:0; background:transparent; color:var(--mute); cursor:pointer}
+  .langtoggle button.on{background:var(--hinomaru); color:#fff}
+
+  /* center card */
+  .wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px}
+  .card{width:100%; max-width:400px; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; padding:34px 30px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 30px rgba(0,0,0,.05)}
+  .crest{width:40px;height:40px;border-radius:50%;margin:0 auto 14px;
+    background:radial-gradient(circle at 35% 30%,#fff,var(--hinomaru) 70%)}
+  .card h1{font-family:'Shippori Mincho B1',serif; font-size:25px; text-align:center; margin:0 0 4px}
+  .sub{text-align:center; color:var(--mute); font-size:13.5px; margin:0 0 24px}
+
+  label{display:block; font-size:13px; font-weight:600; margin:0 0 6px; color:var(--ink)}
+  .field{margin-bottom:16px}
+  .inputwrap{position:relative}
+  input[type=email],input[type=password],input[type=text]{
+    width:100%; font:inherit; font-size:15px; padding:11px 13px; color:var(--ink);
+    background:#fff; border:1px solid var(--tan); border-radius:10px; outline:none; transition:border-color .15s, box-shadow .15s}
+  input:focus{border-color:var(--hinomaru); box-shadow:0 0 0 3px rgba(214,55,82,.12)}
+  .eye{position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:0; cursor:pointer;
+    color:var(--mute); padding:4px; line-height:0}
+  .hint{font-size:11.5px; color:var(--mute); margin-top:5px}
+  .caps{font-size:11.5px; color:var(--hinomaru); margin-top:5px; display:none}
+
+  .row{display:flex; align-items:center; justify-content:space-between; margin:-2px 0 18px}
+  .check{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--mute); cursor:pointer}
+  .check input{accent-color:var(--hinomaru); width:15px; height:15px}
+  .link{color:var(--hinomaru); font-size:13px; text-decoration:none; font-weight:500; cursor:pointer}
+  .link:hover{text-decoration:underline}
+
+  .btn{width:100%; font:inherit; font-weight:600; font-size:15px; padding:12px; border:0; border-radius:10px; cursor:pointer; transition:filter .15s}
+  .btn-primary{background:var(--hinomaru); color:#fff}
+  .btn-primary:hover{filter:brightness(.94)}
+  .btn-google{background:#fff; color:var(--ink); border:1px solid var(--tan); display:flex; align-items:center; justify-content:center; gap:9px; margin-top:12px}
+  .btn-google:hover{background:#FAF8F4}
+  .btn-google svg{width:18px;height:18px}
+
+  .divider{display:flex; align-items:center; gap:12px; color:var(--mute); font-size:12px; margin:18px 0}
+  .divider::before,.divider::after{content:''; flex:1; height:1px; background:var(--line)}
+
+  .foot{text-align:center; font-size:13.5px; color:var(--mute); margin-top:22px}
+  .err{background:#FCE9EC; border:1px solid #F4C4CD; color:#A21E36; font-size:13px; padding:9px 12px; border-radius:9px; margin-bottom:18px; display:none}
+  .ok{text-align:center; padding:6px 0 2px}
+  .ok .big{font-size:40px; margin-bottom:8px}
+
+  .strength{height:5px; border-radius:999px; background:var(--line); margin-top:8px; overflow:hidden}
+  .strength i{display:block; height:100%; width:35%; background:var(--sakura); transition:width .2s,background .2s}
+
+  .backhome{text-align:center; padding:20px; font-size:13px}
+  .backhome a{color:var(--mute); text-decoration:none}
+  .backhome a:hover{color:var(--hinomaru)}
+
+  /* view switching */
+  .view{display:none}
+  .view.active{display:block}
+  /* mock-only: switcher to preview each state */
+  .mockbar{position:fixed; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:6px;
+    background:#1A1817; padding:7px 9px; border-radius:999px; box-shadow:0 6px 24px rgba(0,0,0,.25); z-index:50}
+  .mockbar button{font:inherit; font-size:12px; font-weight:600; color:#ddd; background:transparent; border:0; padding:5px 12px; border-radius:999px; cursor:pointer}
+  .mockbar button.on{background:var(--hinomaru); color:#fff}
+  .mockbar span{color:#777; font-size:11px; align-self:center; padding:0 6px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <a class="brand" href="#">nihon<b>101</b></a>
+  <div class="langtoggle" id="langtoggle">
+    <button data-lang="ja" class="on">日本語</button>
+    <button data-lang="en">EN</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="card">
+
+    <!-- ============ LOGIN ============ -->
+    <div class="view active" data-view="login">
+      <div class="crest"></div>
+      <h1 class="serif" data-t="login.title">ログイン</h1>
+      <p class="sub" data-t="login.sub">おかえりなさい。続きを読みましょう。</p>
+      <div class="err" data-t="login.err">メールアドレスまたはパスワードが正しくありません。</div>
+
+      <div class="field">
+        <label data-t="f.email">メールアドレス</label>
+        <input type="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label data-t="f.password">パスワード</label>
+        <div class="inputwrap">
+          <input type="password" class="pw" placeholder="••••••••">
+          <button class="eye" type="button" aria-label="show/hide"></button>
+        </div>
+        <div class="caps" data-t="f.caps">⚠ Caps Lock がオンになっています</div>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox"><span data-t="login.remember">ログイン状態を保持</span></label>
+        <a class="link" onclick="show('forgot')" data-t="login.forgot">パスワードをお忘れですか？</a>
+      </div>
+      <button class="btn btn-primary" data-t="login.submit">ログイン</button>
+      <div class="divider" data-t="or">または</div>
+      <button class="btn btn-google"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-2.8-.4-4.1H24v7.7h12.4c-.3 2-1.6 5-4.6 7l7.1 5.5c4.2-3.9 6.6-9.6 6.6-16.1z"/><path fill="#FBBC05" d="M10.3 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.3-4.6 2.3-8.8 2.3-6.4 0-11.8-3.7-13.7-9.9l-7.8 6.1C6.4 42.6 14.6 48 24 48z"/></svg><span data-t="login.google">Googleでログイン</span></button>
+
+      <div class="foot"><span data-t="login.noacct">アカウントをお持ちでない方は</span> <a class="link" onclick="show('register')" data-t="login.register">新規登録</a></div>
+    </div>
+
+    <!-- ============ REGISTER ============ -->
+    <div class="view" data-view="register">
+      <div class="crest"></div>
+      <h1 class="serif" data-t="reg.title">新規登録</h1>
+      <p class="sub" data-t="reg.sub">Nihon101 へようこそ。</p>
+
+      <div class="field">
+        <label data-t="f.email">メールアドレス</label>
+        <input type="email" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label data-t="f.password">パスワード</label>
+        <div class="inputwrap">
+          <input type="password" class="pw" placeholder="8文字以上">
+          <button class="eye" type="button" aria-label="show/hide"></button>
+        </div>
+        <div class="strength"><i></i></div>
+        <div class="hint" data-t="reg.pwhint">8文字以上、英字と数字を含めてください。</div>
+      </div>
+      <div class="field">
+        <label data-t="f.confirm">パスワード（確認）</label>
+        <div class="inputwrap">
+          <input type="password" class="pw" placeholder="••••••••">
+          <button class="eye" type="button" aria-label="show/hide"></button>
+        </div>
+      </div>
+      <label class="check" style="margin-bottom:18px"><input type="checkbox"><span data-t="reg.terms">利用規約とプライバシーポリシーに同意します</span></label>
+      <button class="btn btn-primary" data-t="reg.submit">登録する</button>
+      <div class="divider" data-t="or">または</div>
+      <button class="btn btn-google"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.4 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-2.8-.4-4.1H24v7.7h12.4c-.3 2-1.6 5-4.6 7l7.1 5.5c4.2-3.9 6.6-9.6 6.6-16.1z"/><path fill="#FBBC05" d="M10.3 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.1-5.5c-2 1.3-4.6 2.3-8.8 2.3-6.4 0-11.8-3.7-13.7-9.9l-7.8 6.1C6.4 42.6 14.6 48 24 48z"/></svg><span data-t="reg.google">Googleで登録</span></button>
+
+      <div class="foot"><span data-t="reg.haveacct">すでにアカウントをお持ちですか？</span> <a class="link" onclick="show('login')" data-t="reg.login">ログイン</a></div>
+    </div>
+
+    <!-- ============ FORGOT ============ -->
+    <div class="view" data-view="forgot">
+      <div class="crest"></div>
+      <h1 class="serif" data-t="forgot.title">パスワードの再設定</h1>
+      <p class="sub" data-t="forgot.sub">登録メールアドレスに再設定リンクを送ります。</p>
+
+      <div class="field">
+        <label data-t="f.email">メールアドレス</label>
+        <input type="email" placeholder="you@example.com">
+      </div>
+      <button class="btn btn-primary" data-t="forgot.submit">再設定リンクを送信</button>
+      <div class="hint" style="text-align:center;margin-top:10px" data-t="forgot.cooldown">再送信は30秒後に可能です。</div>
+
+      <div class="foot"><a class="link" onclick="show('login')" data-t="forgot.back">← ログインに戻る</a></div>
+    </div>
+
+    <!-- ============ FORGOT SENT ============ -->
+    <div class="view" data-view="sent">
+      <div class="ok">
+        <div class="big">📬</div>
+        <h1 class="serif" data-t="sent.title">メールを送信しました</h1>
+        <p class="sub" data-t="sent.sub">受信トレイをご確認ください。リンクは1時間有効です。</p>
+      </div>
+      <div class="foot"><a class="link" onclick="show('login')" data-t="forgot.back">← ログインに戻る</a></div>
+    </div>
+
+    <!-- ============ RESET ============ -->
+    <div class="view" data-view="reset">
+      <div class="crest"></div>
+      <h1 class="serif" data-t="reset.title">新しいパスワード</h1>
+      <p class="sub" data-t="reset.sub">新しいパスワードを入力してください。</p>
+
+      <div class="field">
+        <label data-t="reset.new">新しいパスワード</label>
+        <div class="inputwrap">
+          <input type="password" class="pw" placeholder="8文字以上">
+          <button class="eye" type="button" aria-label="show/hide"></button>
+        </div>
+        <div class="strength"><i></i></div>
+      </div>
+      <div class="field">
+        <label data-t="f.confirm">パスワード（確認）</label>
+        <div class="inputwrap">
+          <input type="password" class="pw" placeholder="••••••••">
+          <button class="eye" type="button" aria-label="show/hide"></button>
+        </div>
+      </div>
+      <button class="btn btn-primary" data-t="reset.submit">パスワードを変更</button>
+      <div class="foot"><a class="link" onclick="show('login')" data-t="forgot.back">← ログインに戻る</a></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="backhome"><a href="#" data-t="backhome">← nihon101 ホームへ</a></div>
+
+<!-- mock-only state switcher -->
+<div class="mockbar">
+  <span>MOCK</span>
+  <button onclick="show('login',this)" class="on">login</button>
+  <button onclick="show('register',this)">register</button>
+  <button onclick="show('forgot',this)">forgot</button>
+  <button onclick="show('sent',this)">sent</button>
+  <button onclick="show('reset',this)">reset</button>
+</div>
+
+<script>
+const T = {
+  ja:{
+    'login.title':'ログイン','login.sub':'おかえりなさい。続きを読みましょう。',
+    'login.err':'メールアドレスまたはパスワードが正しくありません。',
+    'login.remember':'ログイン状態を保持','login.forgot':'パスワードをお忘れですか？',
+    'login.submit':'ログイン','login.google':'Googleでログイン',
+    'login.noacct':'アカウントをお持ちでない方は','login.register':'新規登録',
+    'reg.title':'新規登録','reg.sub':'Nihon101 へようこそ。',
+    'reg.pwhint':'8文字以上、英字と数字を含めてください。',
+    'reg.terms':'利用規約とプライバシーポリシーに同意します',
+    'reg.submit':'登録する','reg.google':'Googleで登録',
+    'reg.haveacct':'すでにアカウントをお持ちですか？','reg.login':'ログイン',
+    'forgot.title':'パスワードの再設定','forgot.sub':'登録メールアドレスに再設定リンクを送ります。',
+    'forgot.submit':'再設定リンクを送信','forgot.cooldown':'再送信は30秒後に可能です。','forgot.back':'← ログインに戻る',
+    'sent.title':'メールを送信しました','sent.sub':'受信トレイをご確認ください。リンクは1時間有効です。',
+    'reset.title':'新しいパスワード','reset.sub':'新しいパスワードを入力してください。',
+    'reset.new':'新しいパスワード','reset.submit':'パスワードを変更',
+    'f.email':'メールアドレス','f.password':'パスワード','f.confirm':'パスワード（確認）',
+    'f.caps':'⚠ Caps Lock がオンになっています','or':'または','backhome':'← nihon101 ホームへ',
+  },
+  en:{
+    'login.title':'Log in','login.sub':'Welcome back. Pick up where you left off.',
+    'login.err':'Wrong email or password.',
+    'login.remember':'Remember me','login.forgot':'Forgot password?',
+    'login.submit':'Log in','login.google':'Continue with Google',
+    'login.noacct':"Don't have an account?",'login.register':'Sign up',
+    'reg.title':'Create account','reg.sub':'Welcome to Nihon101.',
+    'reg.pwhint':'At least 8 characters, with letters and numbers.',
+    'reg.terms':'I agree to the Terms and Privacy Policy',
+    'reg.submit':'Sign up','reg.google':'Sign up with Google',
+    'reg.haveacct':'Already have an account?','reg.login':'Log in',
+    'forgot.title':'Reset password','forgot.sub':"We'll email a reset link to your address.",
+    'forgot.submit':'Send reset link','forgot.cooldown':'You can resend in 30 seconds.','forgot.back':'← Back to log in',
+    'sent.title':'Check your email','sent.sub':'We sent you a reset link. It expires in 1 hour.',
+    'reset.title':'New password','reset.sub':'Enter your new password below.',
+    'reset.new':'New password','reset.submit':'Change password',
+    'f.email':'Email','f.password':'Password','f.confirm':'Confirm password',
+    'f.caps':'⚠ Caps Lock is on','or':'or','backhome':'← Back to nihon101 home',
+  }
+};
+
+let lang='ja';
+function applyLang(){
+  document.documentElement.lang=lang;
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const k=el.getAttribute('data-t'); if(T[lang][k]!==undefined) el.textContent=T[lang][k];
+  });
+}
+document.getElementById('langtoggle').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  lang=b.dataset.lang;
+  document.querySelectorAll('#langtoggle button').forEach(x=>x.classList.toggle('on',x===b));
+  applyLang();
+});
+
+function show(view,btn){
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===view));
+  if(btn) document.querySelectorAll('.mockbar button').forEach(b=>b.classList.toggle('on',b===btn));
+  else document.querySelectorAll('.mockbar button').forEach(b=>b.classList.toggle('on',b.textContent===view));
+}
+
+// eye toggle
+document.addEventListener('click',e=>{
+  const eye=e.target.closest('.eye'); if(!eye)return;
+  const input=eye.parentElement.querySelector('input');
+  const shown=input.type==='text';
+  input.type=shown?'password':'text';
+  eye.innerHTML=shown?EYE:EYEOFF;
+});
+const EYE='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYEOFF='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10 10 0 0 1 12 19c-6.5 0-10-7-10-7a18 18 0 0 1 5.06-5.94M9.9 4.24A9 9 0 0 1 12 4c6.5 0 10 7 10 7a18 18 0 0 1-2.16 3.19"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
+document.querySelectorAll('.eye').forEach(e=>e.innerHTML=EYE);
+
+// caps lock warn
+document.querySelectorAll('.pw').forEach(inp=>{
+  inp.addEventListener('keyup',ev=>{
+    const caps=inp.closest('.field')?.querySelector('.caps');
+    if(caps) caps.style.display=ev.getModifierState&&ev.getModifierState('CapsLock')?'block':'none';
+  });
+});
+
+// fake strength meter
+document.querySelectorAll('.strength').forEach(s=>{
+  const inp=s.closest('.field').querySelector('input');
+  inp.addEventListener('input',()=>{
+    const n=inp.value.length, bar=s.querySelector('i');
+    const pct=Math.min(100,n*12);
+    bar.style.width=pct+'%';
+    bar.style.background= pct>70?'#3FA66A':pct>40?'#E0A93B':'var(--sakura)';
+  });
+});
+
+applyLang();
+</script>
+</body>
+</html>

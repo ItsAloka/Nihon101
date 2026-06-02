@@ -8,14 +8,13 @@
     "db:apply": "wrangler d1 execute nihon101 --local --file"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
     "nanoid": "^5.0.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
-    "@types/bcryptjs": "^2.4.6",
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.0",
     "wrangler": "4"

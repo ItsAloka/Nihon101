@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './types';
+import auth from './routes/auth';
+import google from './routes/google';
 
 const app = new Hono<AppEnv>();
 
@@ -15,6 +17,9 @@ app.use('*', async (c, next) => {
 });
 
 app.get('/', (c) => c.json({ ok: true, service: 'nihon101-api' }));
+
+app.route('/auth', auth);
+app.route('/auth/google', google);
 
 export default {
   fetch: app.fetch,
