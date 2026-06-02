@@ -1,10 +1,7 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
+import NihonLayout from '../../layouts/NihonLayout.astro';
+import App from '../../nihon/App';
 ---
-<BaseLayout title="Nihon101 — Stories from Japan" locale="en">
-  <main class="max-w-3xl mx-auto p-8">
-    <h1 class="font-serif text-4xl">nihon<span class="text-hinomaru">101</span></h1>
-    <p class="mt-2 text-sm text-mute">STORIES FROM JAPAN</p>
-    <p class="mt-8 font-body">Hello. Under construction.</p>
-  </main>
-</BaseLayout>
+<NihonLayout title="nihon101 — Stories from Japan" locale="en">
+  <App client:only="react" />
+</NihonLayout>
