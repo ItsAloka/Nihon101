@@ -2,8 +2,12 @@
 
 Bilingual (JA + EN) blog/magazine about Japan — culture, food, travel, language,
 anime, history. Wholesome, slow-reading, ad-supported. Domain: **nihon101.com**.
-Single author (the owner) writes; readers register, comment, react, follow, get
-in-app notifications.
+**Multi-author platform:** any registered user writes blog posts and publishes them
+to the public; readers register, comment, react, follow, report, and get in-app
+notifications. Admins moderate (ban/hide/remove). Posts can trend.
+
+> **This website is the pinnacle of website that I can build.** It is the mission —
+> the owner's masterpiece. Build to that bar: nothing sloppy, nothing throwaway.
 
 > Full technical reference lives in **`stack.txt`**. The ordered build roadmap lives
 > in **`development-plan.md`**. Read both before large changes. This file is the

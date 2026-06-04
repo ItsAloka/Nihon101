@@ -3,7 +3,12 @@
 ## Purpose
 Bilingual (JA + EN) blog about Japan — festivals, events, anime, culture.
 Wholesome, simple, ad-supported. Domain: nihon101.com.
-Single author (you); readers can register, comment, react, follow tags, get notifications.
+**Multi-author platform:** any registered user writes and publishes posts to the
+public; readers register, comment, react, follow, report, get notifications; admins
+moderate (ban/hide/remove); posts can trend.
+
+> **The mission.** This site is the pinnacle of what the owner can build — the
+> masterpiece. Built for **≥50,000 users** on Cloudflare. Hold every decision to that bar.
 
 ## Repo layout
 ```
@@ -27,6 +32,35 @@ Two independent deploys, two `wrangler.toml`s, two `package.json`s.
 - Backend CORS: exact-origin allow + `Access-Control-Allow-Credentials: true`.
 - Refresh cookie `n101_rt`: HttpOnly + Secure + SameSite=Strict, path `/auth`, host-only on backend.
 - Access JWT: 15 min, in memory only on frontend.
+
+### Hosting decision — all-Cloudflare (NOT Vercel/Netlify)
+Decided: everything on Cloudflare. Do not split the stack onto Vercel or Netlify.
+- **Cost at 50K, ad-supported.** No egress fees; Workers/Pages/D1/R2/KV are cheap and
+  generous. Vercel/Netlify bill hard on bandwidth + function invocations + build
+  minutes — they outrun thin ad revenue at this traffic.
+- **One integrated network.** Worker ↔ D1 ↔ R2 ↔ KV with zero cross-egress and low
+  latency. Moving the frontend off-Cloudflare splits the stack → egress + latency +
+  more vendors.
+- **No real DX loss.** Astro SSR is first-class on CF Pages; Vercel/Netlify's edge
+  mainly shines for Next.js.
+- **Postgres-later still fits.** Supabase/Neon work from Workers over HTTP; Hyperdrive
+  pools connections. The DB swap (see Portability Law) does not require leaving Cloudflare.
+- **Caveat:** D1 has size/throughput ceilings — fine for launch; the Postgres
+  migration is the real 50K path. Keep the schema portable so the switch is painless.
+
+Service map: FE = CF Pages · BE = CF Workers · DB = D1→Postgres · blobs = R2 ·
+cache/sessions/rate-limit = KV (Durable Objects where needed) · email = Resend ·
+trending/cron = Cron Triggers · analytics = CF Web Analytics.
+
+### Package versions — newest STABLE only
+- Use the **latest stable (GA) release** of every dependency. **Never** alpha/beta/RC/
+  nightly/canary. Verify "latest stable" at install time, don't assume.
+- Pin to caret-within-major in `package.json` (`^x.y.z`); commit the `bun.lock`.
+- Package manager: **bun**. Upgrade deliberately (review changelogs/breaking changes),
+  not blindly — stability over bleeding edge.
+- Current majors (confirm latest stable when installing): Astro 5.x · React 19.x ·
+  Hono 4.x · Drizzle ORM (latest stable) · `@astrojs/cloudflare` (latest) · Tailwind
+  (latest stable major) · Zustand (latest) · wrangler (latest).
 
 ## Backend stack
 
@@ -120,7 +154,6 @@ Two independent deploys, two `wrangler.toml`s, two `package.json`s.
 
 ### OUT (post-launch)
 - Newsletter / email broadcast
-- Multi-author + author profile pages + bylines
 - Multi-level comment threading
 - Post scheduling
 - Wiki-style revisions UI
