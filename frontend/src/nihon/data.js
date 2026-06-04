@@ -1,9 +1,7 @@
-// seed.ts — mock content for nihon101 (frontend seed; single source of truth for placeholders).
-// Ported from the design-tool bundle (ui-mocks/decoded-v2/data.jsx). Posts have EN + JP
-// titles, real-ish bodies, author refs, category, and an image placeholder hue/label.
-// When the backend lands, this shape mirrors the DB rows so the two can be wired up.
+// data.jsx — mock content for nihon101
+// Posts have EN + JP titles, real-ish bodies, author refs, category, image placeholder color/label.
 
-export const CATEGORIES = [
+const CATEGORIES = [
   { slug: 'culture',     en: 'Culture',     jp: '文化',   kanji: '文', tint: 'rose' },
   { slug: 'food',        en: 'Food',        jp: '食',     kanji: '食', tint: 'amber' },
   { slug: 'travel',      en: 'Travel',      jp: '旅',     kanji: '旅', tint: 'blue' },
@@ -15,7 +13,7 @@ export const CATEGORIES = [
   { slug: 'news',        en: 'News',        jp: '今日のこと', kanji: '新', tint: 'sky' },
 ];
 
-export const AUTHORS = [
+const AUTHORS = [
   { slug: 'mio-tanaka',     en: 'Mio Tanaka',     jp: '田中 美緒', city: 'Tokyo',    role: 'Editor-in-chief',
     bio_en: 'Editor of nihon101. Writes about everyday objects, cafés, and the geometry of small rooms.',
     bio_jp: '東京在住。喫茶店と日常の幾何学について書く。', initials: 'MT', tint: 'rose', posts: 14 },
@@ -31,30 +29,30 @@ export const AUTHORS = [
   { slug: 'sora-nakamura',  en: 'Sora Nakamura',  jp: '中村 空',   city: 'Kanazawa', role: 'Essayist',
     bio_en: 'Essayist in Kanazawa. Onsen towns, mottainai, and the long winter.',
     bio_jp: '金沢在住。温泉町、もったいない、そして長い冬。', initials: 'SN', tint: 'sage', posts: 11 },
-  { slug: 'yuki-mori',      en: 'Yuki Mori',      jp: '森 由紀',   city: 'Sendai',   role: 'Culture writer',
+  { slug: 'yuki-mori',       en: 'Yuki Mori',       jp: '森 由紀',   city: 'Sendai',   role: 'Culture writer',
     bio_en: 'Writes about festivals, shrines, and the strange calm of a Tuesday in Tohoku.',
     bio_jp: '仙台在住。祭り、神社、東北の火曜日の静けさについて。', initials: 'YM', tint: 'mauve', posts: 16 },
-  { slug: 'ren-takahashi',  en: 'Ren Takahashi',  jp: '高橋 蓮',   city: 'Yokohama', role: 'Music writer',
+  { slug: 'ren-takahashi',   en: 'Ren Takahashi',   jp: '高橋 蓮',   city: 'Yokohama', role: 'Music writer',
     bio_en: 'City pop, jazz kissa, and the records my father wouldn’t throw away.',
     bio_jp: '横浜在住。シティポップ、ジャズ喫茶、父が捨てなかったレコード。', initials: 'RT', tint: 'sky', posts: 8 },
-  { slug: 'hana-kobayashi', en: 'Hana Kobayashi', jp: '小林 花',   city: 'Kyoto',    role: 'Fashion writer',
+  { slug: 'hana-kobayashi',  en: 'Hana Kobayashi',  jp: '小林 花',   city: 'Kyoto',    role: 'Fashion writer',
     bio_en: 'Kimono, vintage, and what people in Kyoto actually wear on a cold morning.',
     bio_jp: '京都在住。着物、古着、寒い朝に京都の人が本当に着るもの。', initials: 'HK', tint: 'rose', posts: 19 },
-  { slug: 'taro-ishida',    en: 'Taro Ishida',    jp: '石田 太郎', city: 'Hiroshima', role: 'History writer',
+  { slug: 'taro-ishida',     en: 'Taro Ishida',     jp: '石田 太郎', city: 'Hiroshima',role: 'History writer',
     bio_en: 'Local historian. The past, but only the parts you can still walk to.',
     bio_jp: '広島在住。郷土史家。今も歩いて行ける過去だけを書く。', initials: 'TI', tint: 'clay', posts: 24 },
-  { slug: 'mei-fujimoto',   en: 'Mei Fujimoto',   jp: '藤本 芽衣', city: 'Nagoya',   role: 'Food writer',
+  { slug: 'mei-fujimoto',    en: 'Mei Fujimoto',    jp: '藤本 芽衣', city: 'Nagoya',   role: 'Food writer',
     bio_en: 'Diners, depachika, and the architecture of a perfect convenience-store lunch.',
     bio_jp: '名古屋在住。食堂、デパ地下、完璧なコンビニ昼食の建築。', initials: 'MF', tint: 'amber', posts: 13 },
-  { slug: 'jun-okada',      en: 'Jun Okada',      jp: '岡田 純',   city: 'Sapporo',  role: 'Animation writer',
+  { slug: 'jun-okada',       en: 'Jun Okada',       jp: '岡田 純',   city: 'Sapporo',  role: 'Animation writer',
     bio_en: 'Frames, in-betweens, and why a single cut can hold a whole season.',
     bio_jp: '札幌在住。原画、中割り、一カットが一季節を抱える理由。', initials: 'JO', tint: 'lilac', posts: 7 },
-  { slug: 'nao-shimizu',    en: 'Nao Shimizu',    jp: '清水 奈緒', city: 'Okinawa',  role: 'Travel writer',
+  { slug: 'nao-shimizu',     en: 'Nao Shimizu',     jp: '清水 奈緒', city: 'Okinawa',  role: 'Travel writer',
     bio_en: 'Islands, ferries, and the long way around. Usually the long way around.',
     bio_jp: '沖縄在住。島、フェリー、そして遠回り。たいてい遠回り。', initials: 'NS', tint: 'blue', posts: 15 },
 ];
 
-export const POSTS = [
+const POSTS = [
   {
     slug: 'quiet-geometry-of-a-kissaten',
     title_en: 'The quiet geometry of a kissaten',
@@ -260,5 +258,4 @@ export const POSTS = [
   },
 ];
 
-export const NIHON_DATA = { CATEGORIES, AUTHORS, POSTS };
-export default NIHON_DATA;
+window.NIHON_DATA = { CATEGORIES, AUTHORS, POSTS };

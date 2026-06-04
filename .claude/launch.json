@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": [
+        "bash",
+        "-lc",
+        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev"
+      ],
+      "port": 4321
+    }
+  ]
+}

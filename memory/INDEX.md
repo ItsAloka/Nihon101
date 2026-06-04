@@ -1,5 +1,5 @@
 # Next Session Handoff
-> **Next session:** read `memory/memory_2026-06-04.md` first. Big reset — the owner rebuilt the whole UI in a design tool (new 30 MB standalone HTML in Downloads). We **wiped** the old backend `src/` + all of `frontend/src` (kept `.dev.vars` + scaffolding; recoverable from the `login redone` commit). Model is now **multi-author** (any user writes; author = user). Stack locked: **all-Cloudflare**, not Vercel/Netlify; newest **stable** package versions; D1 now → Postgres later. Only `frontend/src/nihon/seed.ts` is rebuilt so far. **Next task: build the frontend** — re-decode the Downloads bundle and separate that one big UI into proper files (port order: ui → home → screens → social → App → mount in Astro → build). Keep responses short.
+> **Next session:** read `memory/memory_2026-06-04.md` first. The **frontend is now built** — the design-tool bundle was decoded and ported into `frontend/src/nihon/` (`data.js`, `ui.jsx`, `home.jsx`, `screens.jsx`, `social.jsx`, `app.jsx`) as a client-only React island mounted at `/`, `/ja`, `/en`; build passes and it renders. New logo shipped: **nihon1●1** (the 0 is a red hinomaru disc; shows **日本1●1** in JP) + `favicon.svg`. **Next big task: the backend** — `backend/src` is still empty, so rebuild it, then `d1 create` a fresh DB and fix the dead `database_id` in `backend/wrangler.toml`. After that, convert the client-only island to real Astro SSR (SEO + proper /ja /en split). Stack stays all-Cloudflare, newest stable versions, multi-author. Keep responses short.
 
 ---
 # Session Index
@@ -7,7 +7,7 @@ Most recent first.
 
 | Date | File | Summary |
 |------|------|---------|
-| 2026-06-04 | [memory_2026-06-04.md](./memory_2026-06-04.md) | Wiped old app, decoded new UI bundle, ported seed.ts; locked all-Cloudflare stack + stable-versions rule; multi-author + mission in CLAUDE.md. |
+| 2026-06-04 | [memory_2026-06-04.md](./memory_2026-06-04.md) | Wiped old app + deleted old D1/R2; decoded the UI bundle and **built the frontend** (client-only island, /ja /en); shipped the new **nihon1●1 / 日本1●1** logo + favicon; locked all-Cloudflare + stable-versions; multi-author + mission in CLAUDE.md. |
 | 2026-06-02 | [memory_2026-06-02.md](./memory_2026-06-02.md) | Reset + rebuilt prototype UI; then DB recreated, login icon wired, Settings built, full plan written. |
 
 ---
