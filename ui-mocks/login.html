@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nihon1●1 — login mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Shippori+Mincho+B1:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FBFAF7; --surface:#FFFFFF; --ink:#1A1817; --inkSoft:#5C544C; --inkFaint:#A39F98;
+  --line:#ECE8E0; --accent:#F58FA3; --accentDeep:#E54E70; --stamp:#D63752;
+  --display:"Shippori Mincho B1",serif; --body:"Inter","Noto Sans JP",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--body);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+
+/* switcher */
+.switch{position:sticky;top:0;z-index:50;display:flex;gap:8px;align-items:center;
+  padding:14px 22px;background:color-mix(in oklab,var(--bg) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.switch .brand{font-family:var(--display);font-weight:700;font-size:20px;margin-right:18px;letter-spacing:-.01em}
+.switch .brand b{font-weight:700}
+.disc{display:inline-block;width:.62em;height:.62em;border-radius:50%;background:var(--stamp);
+  vertical-align:.02em;margin:0 .02em}
+.switch button{font-family:var(--body);font-size:13px;font-weight:600;color:var(--inkSoft);
+  border:1px solid var(--line);background:var(--surface);padding:8px 16px;border-radius:999px;cursor:pointer;transition:.15s}
+.switch button:hover{border-color:var(--accent)}
+.switch button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+.stage{display:none;min-height:calc(100vh - 57px)}
+.stage.on{display:block}
+
+/* shared form bits */
+.field{margin-bottom:14px}
+.label{font-size:12px;font-weight:600;color:var(--inkSoft);letter-spacing:.02em;display:block;margin-bottom:6px}
+.inwrap{position:relative;display:flex;align-items:center}
+.in{width:100%;font-family:var(--body);font-size:14px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px;outline:none;transition:.15s}
+.in:focus{border-color:var(--accentDeep);box-shadow:0 0 0 3px color-mix(in oklab,var(--accent) 30%,transparent)}
+.in.haspad{padding-right:44px}
+.eye{position:absolute;right:6px;width:34px;height:34px;display:grid;place-items:center;
+  background:none;border:none;cursor:pointer;color:var(--inkFaint);border-radius:9px}
+.eye:hover{color:var(--inkSoft);background:var(--bg)}
+.eye svg{width:19px;height:19px}
+.btn{width:100%;font-family:var(--body);font-size:14px;font-weight:600;color:#fff;cursor:pointer;
+  border:none;border-radius:12px;padding:13px;background:linear-gradient(135deg,var(--accent),var(--accentDeep));transition:.15s}
+.btn:hover{filter:brightness(1.04)}
+.gbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;font-family:var(--body);
+  font-size:14px;font-weight:600;color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:12px;padding:12px;cursor:pointer;transition:.15s}
+.gbtn:hover{border-color:var(--inkFaint);background:var(--bg)}
+.gbtn svg{width:18px;height:18px}
+.divider{display:flex;align-items:center;gap:12px;color:var(--inkFaint);font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;margin:16px 0}
+.divider::before,.divider::after{content:"";height:1px;flex:1;background:var(--line)}
+.tabs{display:flex;gap:24px;margin-bottom:22px}
+.tab{font-family:var(--body);font-size:14px;font-weight:600;color:var(--inkFaint);background:none;
+  border:none;cursor:pointer;padding:0 0 8px;position:relative}
+.tab.on{color:var(--ink)}
+.tab.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:3px;background:var(--accentDeep)}
+.foot{font-size:12px;color:var(--inkFaint);margin-top:18px;text-align:center}
+.foot a{color:var(--accentDeep);text-decoration:none;font-weight:600}
+.forgot{font-size:12px;color:var(--accentDeep);text-decoration:none;font-weight:600}
+.kicker{font-family:"ui-monospace",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--inkFaint)}
+.hide{display:none}
+
+/* ===== A: split-screen (like reference) ===== */
+.A{display:grid;grid-template-columns:1fr 1fr;height:100%}
+.A .formside{display:flex;align-items:center;justify-content:center;padding:40px}
+.A .card{width:100%;max-width:380px}
+.A h1{font-family:var(--display);font-weight:700;font-size:34px;letter-spacing:-.01em;margin:6px 0 6px}
+.A .sub{font-size:14px;color:var(--inkSoft);margin-bottom:26px;line-height:1.5}
+.A .art{position:relative;overflow:hidden;background:linear-gradient(150deg,#FCE7C9,#F7C5B0 55%,#F58FA3)}
+.A .art .glyph{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);
+  font-weight:700;font-size:34vh;color:rgba(255,255,255,.34);line-height:1}
+.A .art .vert{position:absolute;top:34px;left:34px;writing-mode:vertical-rl;font-family:var(--display);
+  font-size:17px;letter-spacing:.34em;color:rgba(110,60,40,.55)}
+.A .art .stamp{position:absolute;top:30px;right:30px;width:54px;height:54px;border:2px solid var(--stamp);
+  color:var(--stamp);border-radius:10px;display:grid;place-items:center;font-family:var(--display);
+  font-weight:700;font-size:24px;background:rgba(255,255,255,.12)}
+.A .art .cap{position:absolute;left:30px;bottom:30px;background:rgba(255,255,255,.78);backdrop-filter:blur(4px);
+  font-family:"ui-monospace",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--inkSoft);padding:6px 12px;border-radius:999px}
+@media(max-width:820px){.A{grid-template-columns:1fr}.A .art{display:none}}
+
+/* ===== B: centered card ===== */
+.B{display:grid;place-items:center;padding:48px 20px;
+  background:radial-gradient(120% 80% at 50% -10%,#FDEAEF 0%,var(--bg) 55%)}
+.B .card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);
+  border-radius:22px;padding:38px 34px;box-shadow:0 24px 60px -30px rgba(26,24,23,.28)}
+.B .top{text-align:center;margin-bottom:24px}
+.B .brand{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:-.01em}
+.B h1{font-family:var(--display);font-weight:600;font-size:22px;margin-top:14px}
+.B .sub{font-size:13px;color:var(--inkSoft);margin-top:4px}
+
+/* ===== C: minimal magazine ===== */
+.C{display:grid;place-items:center;padding:60px 20px}
+.C .card{width:100%;max-width:360px}
+.C .masthead{border-top:2px solid var(--ink);border-bottom:1px solid var(--line);
+  padding:10px 0;margin-bottom:30px;display:flex;justify-content:space-between;align-items:baseline}
+.C .masthead .brand{font-family:var(--display);font-weight:700;font-size:20px}
+.C h1{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.1;margin-bottom:8px}
+.C .mark{background:linear-gradient(transparent 60%,var(--accent) 60%);padding:0 2px}
+.C .sub{font-size:13px;color:var(--inkSoft);margin-bottom:26px}
+.C .in{border-radius:0;border-width:0 0 1px;background:transparent;padding-left:0;padding-right:0}
+.C .in.haspad{padding-right:44px}
+.C .in:focus{box-shadow:none;border-color:var(--accentDeep)}
+.C .eye{right:0}
+.C .btn{border-radius:0}
+.C .gbtn{border-radius:0}
+</style>
+</head>
+<body>
+
+<div class="switch">
+  <span class="brand">nihon1<span class="disc"></span>1</span>
+  <button class="on" data-t="A">A · Split screen</button>
+  <button data-t="B">B · Centered card</button>
+  <button data-t="C">C · Magazine</button>
+</div>
+
+<!-- ===================== A ===================== -->
+<section class="stage on" id="A">
+ <div class="A">
+  <div class="formside">
+   <div class="card">
+     <span class="kicker">文 · stories from japan</span>
+     <h1 data-title>Welcome back</h1>
+     <p class="sub" data-sub>Sign in to keep reading, writing, and following the writers you love.</p>
+
+     <div class="tabs">
+       <button class="tab on" data-mode="login">Sign in</button>
+       <button class="tab" data-mode="register">Create account</button>
+     </div>
+
+     <button class="gbtn"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.2 13.5 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.6z"/><path fill="#FBBC05" d="M10.4 28.3c-.5-1.4-.8-2.9-.8-4.3s.3-3 .8-4.3l-7.8-6.1C.9 16.7 0 20.2 0 24s.9 7.3 2.6 10.4l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.8 2.3-8.3 2.3-6.4 0-11.8-4-13.6-9.7l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Continue with Google</button>
+
+     <div class="divider">or</div>
+
+     <form onsubmit="return false">
+       <div class="field"><label class="label">Email</label>
+         <div class="inwrap"><input class="in" type="email" placeholder="you@example.com"></div></div>
+       <div class="field reg hide"><label class="label">Display name</label>
+         <div class="inwrap"><input class="in" type="text" placeholder="Mio Tanaka"></div></div>
+       <div class="field"><label class="label">Password</label>
+         <div class="inwrap"><input class="in haspad pw" type="password" placeholder="••••••••"><button type="button" class="eye" aria-label="Show password"></button></div></div>
+       <div class="login" style="text-align:right;margin:-4px 0 16px"><a class="forgot" href="#">Forgot password?</a></div>
+       <button class="btn" data-btn>Sign in</button>
+     </form>
+     <p class="foot"><span data-foot>New to nihon1●1? <a href="#" data-swap="register">Create an account</a></span></p>
+   </div>
+  </div>
+  <div class="art">
+    <div class="vert">日本の物語</div>
+    <div class="stamp">茶</div>
+    <div class="glyph">和</div>
+    <div class="cap">● photo · kissaten interior</div>
+  </div>
+ </div>
+</section>
+
+<!-- ===================== B ===================== -->
+<section class="stage" id="B">
+ <div class="B">
+  <div class="card">
+    <div class="top">
+      <div class="brand">nihon1<span class="disc"></span>1</div>
+      <h1 data-title>Welcome back</h1>
+      <p class="sub" data-sub>Sign in to continue.</p>
+    </div>
+    <div class="tabs" style="justify-content:center">
+      <button class="tab on" data-mode="login">Sign in</button>
+      <button class="tab" data-mode="register">Create account</button>
+    </div>
+    <button class="gbtn"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.2 13.5 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.6z"/><path fill="#FBBC05" d="M10.4 28.3c-.5-1.4-.8-2.9-.8-4.3s.3-3 .8-4.3l-7.8-6.1C.9 16.7 0 20.2 0 24s.9 7.3 2.6 10.4l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.8 2.3-8.3 2.3-6.4 0-11.8-4-13.6-9.7l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Continue with Google</button>
+    <div class="divider">or</div>
+    <form onsubmit="return false">
+      <div class="field"><label class="label">Email</label>
+        <div class="inwrap"><input class="in" type="email" placeholder="you@example.com"></div></div>
+      <div class="field reg hide"><label class="label">Display name</label>
+        <div class="inwrap"><input class="in" type="text" placeholder="Mio Tanaka"></div></div>
+      <div class="field"><label class="label">Password</label>
+        <div class="inwrap"><input class="in haspad pw" type="password" placeholder="••••••••"><button type="button" class="eye" aria-label="Show password"></button></div></div>
+      <div class="login" style="text-align:right;margin:-4px 0 16px"><a class="forgot" href="#">Forgot password?</a></div>
+      <button class="btn" data-btn>Sign in</button>
+    </form>
+    <p class="foot"><span data-foot>New to nihon1●1? <a href="#" data-swap="register">Create an account</a></span></p>
+  </div>
+ </div>
+</section>
+
+<!-- ===================== C ===================== -->
+<section class="stage" id="C">
+ <div class="C">
+  <div class="card">
+    <div class="masthead">
+      <span class="brand">nihon1<span class="disc"></span>1</span>
+      <span class="kicker">vol. 02 · issue 14</span>
+    </div>
+    <h1><span class="mark" data-title>Welcome back</span></h1>
+    <p class="sub" data-sub>Stories from Japan, kept for you.</p>
+    <div class="tabs">
+      <button class="tab on" data-mode="login">Sign in</button>
+      <button class="tab" data-mode="register">Create account</button>
+    </div>
+    <form onsubmit="return false">
+      <div class="field"><label class="label">Email</label>
+        <div class="inwrap"><input class="in" type="email" placeholder="you@example.com"></div></div>
+      <div class="field reg hide"><label class="label">Display name</label>
+        <div class="inwrap"><input class="in" type="text" placeholder="Mio Tanaka"></div></div>
+      <div class="field"><label class="label">Password</label>
+        <div class="inwrap"><input class="in haspad pw" type="password" placeholder="••••••••"><button type="button" class="eye" aria-label="Show password"></button></div></div>
+      <div class="login" style="text-align:right;margin:-4px 0 16px"><a class="forgot" href="#">Forgot password?</a></div>
+      <button class="btn" data-btn>Sign in</button>
+    </form>
+    <div class="divider">or</div>
+    <button class="gbtn"><svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.2 13.5 17.6 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.6z"/><path fill="#FBBC05" d="M10.4 28.3c-.5-1.4-.8-2.9-.8-4.3s.3-3 .8-4.3l-7.8-6.1C.9 16.7 0 20.2 0 24s.9 7.3 2.6 10.4l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.8 2.3-8.3 2.3-6.4 0-11.8-4-13.6-9.7l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>Continue with Google</button>
+    <p class="foot"><span data-foot>New to nihon1●1? <a href="#" data-swap="register">Create an account</a></span></p>
+  </div>
+ </div>
+</section>
+
+<script>
+const EYE_OPEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+// init all eyes
+document.querySelectorAll('.eye').forEach(e=>{
+  e.innerHTML=EYE_OPEN;
+  e.onclick=()=>{const i=e.previousElementSibling;const show=i.type==='password';
+    i.type=show?'text':'password';e.innerHTML=show?EYE_OFF:EYE_OPEN;};
+});
+
+// variant switcher
+document.querySelectorAll('.switch button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.switch button').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.stage').forEach(s=>s.classList.remove('on'));
+  b.classList.add('on');document.getElementById(b.dataset.t).classList.add('on');
+});
+
+// login/register toggle per stage
+function setMode(stage,mode){
+  stage.querySelectorAll('[data-mode]').forEach(t=>t.classList.toggle('on',t.dataset.mode===mode));
+  const reg=mode==='register';
+  stage.querySelectorAll('.reg').forEach(el=>el.classList.toggle('hide',!reg));
+  stage.querySelectorAll('.login').forEach(el=>el.classList.toggle('hide',reg));
+  stage.querySelector('[data-title]').textContent=reg?'Create your account':'Welcome back';
+  stage.querySelector('[data-sub]').textContent=reg
+    ?'Join nihon1●1 to write, follow, and save stories.':'Sign in to keep reading the writers you love.';
+  stage.querySelector('[data-btn]').textContent=reg?'Create account':'Sign in';
+  stage.querySelector('[data-foot]').innerHTML=reg
+    ?'Already have an account? <a href="#" data-swap="login">Sign in</a>'
+    :'New to nihon1●1? <a href="#" data-swap="register">Create an account</a>';
+  bindSwap(stage);
+}
+function bindSwap(stage){stage.querySelectorAll('[data-swap]').forEach(a=>a.onclick=e=>{e.preventDefault();setMode(stage,a.dataset.swap);});}
+document.querySelectorAll('.stage').forEach(stage=>{
+  stage.querySelectorAll('[data-mode]').forEach(t=>t.onclick=()=>setMode(stage,t.dataset.mode));
+  bindSwap(stage);
+});
+</script>
+</body>
+</html>

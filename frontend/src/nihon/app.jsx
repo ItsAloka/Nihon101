@@ -1,5 +1,6 @@
 // app.jsx — root, routing, theme, multi-user state
 import React from "react";
+import "./api.jsx";
 import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
@@ -125,7 +126,17 @@ function App() {
   const onSearch = React.useCallback((q)=>{ go({name:'search', q}); }, [go]);
 
   const onLogin = React.useCallback((user)=>{ setCurrentUser(user); setLoginOpen(false); }, []);
-  const onLogout = React.useCallback(()=>{ setCurrentUser(null); go({name:'home'}); }, [go]);
+  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); go({name:'home'}); }, [go]);
+
+  // Restore the session from the HttpOnly refresh cookie on load. If there's no
+  // valid backend session, clear any stale local user (real auth is the truth now).
+  React.useEffect(()=>{
+    let live = true;
+    window.N101_API.refresh()
+      .then(u=>{ if(live) setCurrentUser(prev=>window.N101_API.toAppUser(u, prev)); })
+      .catch(()=>{ if(live) setCurrentUser(null); });
+    return ()=>{ live = false; };
+  }, []);
 
   const onAddComment = React.useCallback((slug, text)=>{
     const u = window.__currentUser; if (!u) return;

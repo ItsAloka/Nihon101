@@ -25,11 +25,41 @@ const DEMO_USERS = [
 ];
 
 // ====== LOGIN MODAL ======
+const T = (lang, en, jp) => (lang === 'jp' ? jp : en);
+const AUTH_ERRORS = {
+  invalid_email: ['Enter a valid email.', '有効なメールアドレスを入力してください。'],
+  weak_password: ['Password must be at least 8 characters.', 'パスワードは8文字以上で入力してください。'],
+  email_taken: ['That email is already registered.', 'このメールアドレスは登録済みです。'],
+  invalid_credentials: ['Wrong email or password.', 'メールアドレスかパスワードが違います。'],
+};
+const authError = (code, lang) => T(lang, ...(AUTH_ERRORS[code] || ['Something went wrong. Try again.', '問題が発生しました。もう一度お試しください。']));
+
 function LoginModal({ p, lang, onLogin, onClose }) {
-  const [mode, setMode] = React.useState('pick'); // pick | create
+  const [mode, setMode] = React.useState('login'); // login | register
+  const [email, setEmail] = React.useState('');
   const [name, setName] = React.useState('');
-  const [city, setCity] = React.useState('');
-  const initials = (name.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,3) || 'YOU').toUpperCase();
+  const [password, setPassword] = React.useState('');
+  const [showPw, setShowPw] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const isReg = mode === 'register';
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setErr(''); setBusy(true);
+    try {
+      const api = window.N101_API;
+      const u = isReg
+        ? await api.register(email.trim(), password, name.trim())
+        : await api.login(email.trim(), password);
+      onLogin(api.toAppUser(u, window.__currentUser));
+    } catch (ex) {
+      setErr(authError(ex.code, lang));
+      setBusy(false);
+    }
+  };
+
   return (
     <div style={{
       position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center',
@@ -53,72 +83,81 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             </span>
           </div>
           <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:26, color:p.ink, letterSpacing:'-0.02em', lineHeight:1.1}}>
-            {lang==='jp'?'おかえりなさい':'Welcome back'}
+            {isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Welcome back','おかえりなさい')}
           </h2>
           <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, marginTop:6}}>
-            {lang==='jp'?'ログインして、書いて、共有しよう。':'Sign in to write, like, and share.'}
+            {isReg ? T(lang,'Join to write, like, and share.','登録して、書いて、共有しよう。') : T(lang,'Sign in to write, like, and share.','ログインして、書いて、共有しよう。')}
           </p>
         </div>
 
         <div style={{padding:'24px 32px 32px'}}>
-          {mode==='pick' ? (
-            <>
-              <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.14em', textTransform:'uppercase', marginBottom:12}}>
-                {lang==='jp'?'デモアカウントで入る':'Continue as'}
-              </div>
-              <div style={{display:'flex', flexDirection:'column', gap:8, marginBottom:18}}>
-                {DEMO_USERS.map(u=>(
-                  <button key={u.slug} onClick={()=>onLogin(u)} style={{
-                    appearance:'none', border:`1px solid ${p.line}`, background:p.bg, borderRadius:14,
-                    padding:'12px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:12, textAlign:'left',
-                  }}
-                  onMouseEnter={(e)=>e.currentTarget.style.borderColor=p.accent}
-                  onMouseLeave={(e)=>e.currentTarget.style.borderColor=p.line}>
-                    <Avatar user={u} p={p} size={40}/>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>{lang==='jp'?u.jp:u.en}</div>
-                      <div style={{fontFamily:'var(--fontBody)', fontSize:12, color:p.inkFaint}}>{u.role}{u.city!=='—'?` · ${u.city}`:''}</div>
-                    </div>
-                    <ArrowRight color={p.inkFaint}/>
-                  </button>
-                ))}
-              </div>
-              <button onClick={()=>setMode('create')} style={{
-                appearance:'none', border:'none', background:'transparent', cursor:'pointer', width:'100%',
-                fontFamily:'var(--fontBody)', fontSize:14, color:p.accentDeep, fontWeight:600, padding:'4px',
+          {/* tabs */}
+          <div style={{display:'flex', gap:24, marginBottom:20}}>
+            {['login','register'].map(m=>(
+              <button key={m} onClick={()=>{ setMode(m); setErr(''); }} style={{
+                appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:'0 0 8px',
+                fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, position:'relative',
+                color: mode===m ? p.ink : p.inkFaint,
               }}>
-                {lang==='jp'?'新しいアカウントを作る →':'Create a new account →'}
+                {m==='login' ? T(lang,'Sign in','ログイン') : T(lang,'Create account','新規登録')}
+                {mode===m && <span style={{position:'absolute', left:0, right:0, bottom:0, height:3, borderRadius:3, background:p.accentDeep}}/>}
               </button>
-            </>
-          ) : (
-            <>
-              <div style={{display:'flex', alignItems:'center', gap:14, marginBottom:18}}>
-                <Avatar user={{initials, tint:'rose'}} p={p} size={52}/>
-                <div style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft}}>
-                  {lang==='jp'?'お名前から頭文字を作ります。':'Your avatar uses your initials.'}
-                </div>
-              </div>
-              <label style={fieldLabel(p)}>{lang==='jp'?'お名前':'Display name'}</label>
-              <input value={name} onChange={(e)=>setName(e.target.value)} autoFocus placeholder={lang==='jp'?'山田 太郎':'Jane Doe'}
-                style={fieldInput(p)}/>
-              <label style={{...fieldLabel(p), marginTop:14}}>{lang==='jp'?'お住まい (任意)':'City (optional)'}</label>
-              <input value={city} onChange={(e)=>setCity(e.target.value)} placeholder={lang==='jp'?'東京':'Tokyo'}
-                style={fieldInput(p)}/>
-              <button disabled={!name.trim()}
-                onClick={()=>{
-                  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'writer';
-                  onLogin({ slug, en:name.trim(), jp:name.trim(), initials, tint:TINTS[Math.floor(Math.random()*TINTS.length)],
-                    city: city.trim()||'—', role:'Writer', bio_en:'New to nihon101.', bio_jp:'nihon101をはじめました。', posts:0 });
-                }}
-                style={{...gradStyle(p), width:'100%', justifyContent:'center', marginTop:22, opacity:name.trim()?1:0.5}}>
-                {lang==='jp'?'はじめる':'Create account & sign in'}
+            ))}
+          </div>
+
+          {/* google */}
+          <button onClick={()=>{ window.location.href = window.N101_API.googleStartUrl(lang); }} style={{
+            width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:10, cursor:'pointer',
+            border:`1px solid ${p.line}`, background:p.surface, borderRadius:12, padding:'12px',
+            fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:p.ink,
+          }}
+          onMouseEnter={(e)=>e.currentTarget.style.borderColor=p.inkFaint}
+          onMouseLeave={(e)=>e.currentTarget.style.borderColor=p.line}>
+            <GoogleMark/>{T(lang,'Continue with Google','Googleで続ける')}
+          </button>
+
+          <div style={{display:'flex', alignItems:'center', gap:12, color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.08em', textTransform:'uppercase', margin:'16px 0'}}>
+            <span style={{height:1, flex:1, background:p.line}}/>{T(lang,'or','または')}<span style={{height:1, flex:1, background:p.line}}/>
+          </div>
+
+          <form onSubmit={submit}>
+            <label style={fieldLabel(p)}>{T(lang,'Email','メールアドレス')}</label>
+            <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" autoFocus autoComplete="email"
+              placeholder="you@example.com" style={fieldInput(p)}/>
+
+            {isReg && <>
+              <label style={{...fieldLabel(p), marginTop:14}}>{T(lang,'Display name','お名前')}</label>
+              <input value={name} onChange={(e)=>setName(e.target.value)} autoComplete="name"
+                placeholder={T(lang,'Mio Tanaka','山田 太郎')} style={fieldInput(p)}/>
+            </>}
+
+            <label style={{...fieldLabel(p), marginTop:14}}>{T(lang,'Password','パスワード')}</label>
+            <div style={{position:'relative', display:'flex', alignItems:'center'}}>
+              <input value={password} onChange={(e)=>setPassword(e.target.value)} type={showPw?'text':'password'}
+                autoComplete={isReg?'new-password':'current-password'} placeholder="••••••••"
+                style={{...fieldInput(p), paddingRight:44}}/>
+              <button type="button" onClick={()=>setShowPw(s=>!s)} aria-label={showPw?'Hide password':'Show password'}
+                style={{position:'absolute', right:6, width:34, height:34, display:'grid', placeItems:'center',
+                  appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, borderRadius:9}}>
+                <EyeIcon off={showPw}/>
               </button>
-              <button onClick={()=>setMode('pick')} style={{
-                appearance:'none', border:'none', background:'transparent', cursor:'pointer', width:'100%',
-                fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft, padding:'12px 4px 0',
-              }}>← {lang==='jp'?'戻る':'back'}</button>
-            </>
-          )}
+            </div>
+
+            {err && <div style={{marginTop:12, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{err}</div>}
+
+            <button type="submit" disabled={busy}
+              style={{...gradStyle(p), width:'100%', justifyContent:'center', marginTop:20, opacity:busy?0.6:1}}>
+              {busy ? T(lang,'Please wait…','少々お待ちください…') : (isReg ? T(lang,'Create account','アカウントを作成') : T(lang,'Sign in','ログイン'))}
+            </button>
+          </form>
+
+          <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+            {isReg ? T(lang,'Already have an account? ','すでにアカウントをお持ちですか？ ') : T(lang,'New to nihon101? ','nihon101は初めてですか？ ')}
+            <button onClick={()=>{ setMode(isReg?'login':'register'); setErr(''); }} style={{
+              appearance:'none', border:'none', background:'transparent', cursor:'pointer',
+              fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0,
+            }}>{isReg ? T(lang,'Sign in','ログイン') : T(lang,'Create one','登録する')}</button>
+          </p>
         </div>
       </div>
     </div>
@@ -126,6 +165,24 @@ function LoginModal({ p, lang, onLogin, onClose }) {
 }
 function fieldLabel(p){ return {display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}; }
 function fieldInput(p){ return {width:'100%', border:`1px solid ${p.line}`, borderRadius:12, padding:'12px 14px', background:p.bg, fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, outline:'none'}; }
+function GoogleMark(){ return (
+  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.2 13.5 17.6 9.5 24 9.5z"/>
+    <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.4-4.1 7.1-10.1 7.1-17.6z"/>
+    <path fill="#FBBC05" d="M10.4 28.3c-.5-1.4-.8-2.9-.8-4.3s.3-3 .8-4.3l-7.8-6.1C.9 16.7 0 20.2 0 24s.9 7.3 2.6 10.4l7.8-6.1z"/>
+    <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.8 2.3-8.3 2.3-6.4 0-11.8-4-13.6-9.7l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/>
+  </svg>
+); }
+function EyeIcon({ off }){ return off ? (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>
+) : (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+  </svg>
+); }
 
 // ====== COMPOSER ======
 function ComposerPage({ p, lang, currentUser, onPublish, draft }) {
