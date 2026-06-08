@@ -281,15 +281,19 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
           </div>
         )}
 
-        {/* Lang */}
-        <button onClick={()=>onLang(lang==='en'?'jp':'en')} style={{
+        {/* Lang — locked while composing (can't flip site lang mid-write) */}
+        {(() => { const langLocked = route.name === 'compose'; return (
+        <button onClick={()=>{ if(!langLocked) onLang(lang==='en'?'jp':'en'); }} disabled={langLocked}
+          title={langLocked ? (lang==='jp'?'記事を保存してから言語を切り替えてください':'Save your post to switch language') : undefined}
+          style={{
           appearance:'none', border:`1px solid ${p.line}`, background:p.surface,
-          padding:'7px 10px', borderRadius:999, cursor:'pointer',
+          padding:'7px 10px', borderRadius:999, cursor: langLocked?'not-allowed':'pointer',
           fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600, color:p.ink,
-          letterSpacing:'0.04em', whiteSpace:'nowrap', flexShrink:0,
+          letterSpacing:'0.04em', whiteSpace:'nowrap', flexShrink:0, opacity: langLocked?0.45:1,
         }}>
           {lang==='en' ? 'EN / 日本語' : '日本語 / EN'}
         </button>
+        ); })()}
 
         {currentUser ? (
           <>

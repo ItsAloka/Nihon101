@@ -1,6 +1,8 @@
 // app.jsx — root, routing, theme, multi-user state
 import React from "react";
 import "./api.jsx";
+import "./content.jsx";
+import "./editor.jsx";
 import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
@@ -178,12 +180,9 @@ function App() {
   if (r.name === 'home') {
     screen = <HomePage p={p} lang={lang} posts={window.getAllPosts().filter(x=>!x.isDraft)} t={t} savedSet={savedSet} likedMap={claps} onLike={onLike} onSave={onSave}/>;
   } else if (r.name === 'article') {
-    const post = window.getPost(r.slug);
-    screen = post
-      ? <ArticlePage p={p} lang={lang} post={post} t={t} savedSet={savedSet} claps={claps} onClap={onLike} onSave={onSave}
-          comments={comments[post.slug]||[]} onAddComment={onAddComment} onLikeComment={onLikeComment}
-          currentUser={currentUser} onRequireLogin={()=>setLoginOpen(true)}/>
-      : <NotFound p={p} lang={lang}/>;
+    screen = <window.ArticleLoader p={p} lang={lang} slug={r.slug} t={t} savedSet={savedSet} claps={claps} onClap={onLike} onSave={onSave}
+          comments={comments[r.slug]||[]} onAddComment={onAddComment} onLikeComment={onLikeComment}
+          currentUser={currentUser} onRequireLogin={()=>setLoginOpen(true)}/>;
   } else if (r.name === 'category') {
     screen = <CategoryPage p={p} lang={lang} slug={r.slug} t={t} savedSet={savedSet} onSave={onSave}/>;
   } else if (r.name === 'search') {
@@ -207,7 +206,7 @@ function App() {
     screen = <TrendingPage p={p} lang={lang} t={t} savedSet={savedSet} onSave={onSave} claps={claps} comments={comments}/>;
   } else if (r.name === 'compose') {
     screen = currentUser
-      ? <ComposerPage p={p} lang={lang} currentUser={currentUser} onPublish={onPublish} draft={r.draft}/>
+      ? <ComposerPage p={p} lang={lang} currentUser={currentUser} editId={r.editId}/>
       : <LoginPrompt p={p} lang={lang} onLogin={()=>setLoginOpen(true)}/>;
   } else if (r.name === 'profile') {
     screen = currentUser

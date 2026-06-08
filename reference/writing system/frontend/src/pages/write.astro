@@ -1,0 +1,8 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Page from '../components/Page.tsx';
+---
+
+<Layout title="Write — Not Bagel">
+  <Page client:load route={{ view: 'editor' }} />
+</Layout>

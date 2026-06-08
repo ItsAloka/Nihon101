@@ -184,159 +184,310 @@ function EyeIcon({ off }){ return off ? (
   </svg>
 ); }
 
-// ====== COMPOSER ======
-function ComposerPage({ p, lang, currentUser, onPublish, draft }) {
-  const [title, setTitle] = React.useState(draft?.title_en || '');
-  const [excerpt, setExcerpt] = React.useState(draft?.excerpt_en || '');
-  const [category, setCategory] = React.useState(draft?.category || 'culture');
-  const [hue, setHue] = React.useState(draft?.cover?.hue || 'rose');
-  const [body, setBody] = React.useState(draft?._bodyRaw || '');
-  const [showPreview, setShowPreview] = React.useState(false);
-  const cats = window.NIHON_DATA.CATEGORIES;
-  const words = body.trim() ? body.trim().split(/\s+/).length : 0;
-  const readMins = Math.max(1, Math.round(words/200));
+// ====== COMPOSER (bilingual, TipTap, backend-wired) ======
+function ghostBtn(p){ return {appearance:'none', border:`1px solid ${p.line}`, background:p.surface, color:p.ink, padding:'10px 16px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', alignItems:'center', gap:8}; }
 
-  function build(isDraft) {
-    const paras = body.split(/\n{2,}/).map(s=>s.trim()).filter(Boolean);
-    const slug = (draft?.slug) || ('u-' + Date.now());
-    return {
-      slug,
-      title_en: title || (lang==='jp'?'無題':'Untitled'),
-      title_jp: title || '無題',
-      kicker_en: 'New story', kicker_jp: '新しい記事',
-      category, author: currentUser.slug,
-      date: new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),
-      readMins, featured:false,
-      cover:{ hue, label: title.slice(0,24) || 'cover' },
-      excerpt_en: excerpt || paras[0]?.slice(0,140) || '',
-      excerpt_jp: excerpt || paras[0]?.slice(0,140) || '',
-      body_en: paras.length?paras:[excerpt||''],
-      likes:0, saved:false, userPost:true, _bodyRaw: body, isDraft,
-      ts: Date.now(),
+// Strip HTML tags → plain text (word count + auto-excerpt source).
+function htmlToText(html){ const d = document.createElement('div'); d.innerHTML = html || ''; return d.textContent || ''; }
+
+function ComposerPage({ p, lang, currentUser, editId }) {
+  const Editor = window.NihonEditor;
+  // Single source language for the whole post. Fixed from the site language at
+  // mount (or the post's own language when editing). The OTHER language is
+  // machine-generated in the background on Publish — no tabs, no button.
+  const [blogLang, setBlogLang] = React.useState(lang==='jp' ? 'ja' : 'en');
+  const [postId, setPostId] = React.useState(null);
+  const [title, setTitle] = React.useState('');
+  const [excerpt, setExcerpt] = React.useState('');
+  const [bodyHtml, setBodyHtml] = React.useState('');
+  const other = React.useRef({ title:'', excerpt:'', body:'' }); // preserved opposite locale (edit)
+  const [cat, setCat] = React.useState('culture');
+  const [cover, setCover] = React.useState(null);
+  const [tags, setTags] = React.useState([]);
+  const [tagInput, setTagInput] = React.useState('');
+  const [density, setDensity] = React.useState('compact');
+  const [cats, setCats] = React.useState([]);
+  const [busy, setBusy] = React.useState(false);
+  const [savedStatus, setSavedStatus] = React.useState('draft');
+  const [status, setStatus] = React.useState('');   // inline status line
+  const [confirmDel, setConfirmDel] = React.useState(false);
+  const coverFileRef = React.useRef(null);
+  const edApi = React.useRef(null);
+  const savingRef = React.useRef(false);
+  const lastTranslated = React.useRef(''); // snapshot of source at last GPT translate (dirty-check)
+  const ja = blogLang==='ja';
+
+  const bodyText = htmlToText(bodyHtml);
+  const words = bodyText.trim() ? bodyText.trim().split(/\s+/).length : 0;
+  const readMins = Math.max(1, Math.round(words/200));
+  const hasContent = !!title.trim();
+  const canPublish = hasContent && !!cat && !!bodyText.trim();
+
+  // Load backend categories.
+  React.useEffect(()=>{
+    window.N101_CONTENT.categoryApi.list().then(setCats).catch(()=>{});
+  }, []);
+
+  // Edit mode: load an existing (owner) post once, in the SITE language — the
+  // side you open is the side you edit (both-way). Fall back to the authored
+  // side when the site-language side is empty, so the editor is never blank
+  // (and we never translate an empty source over the real text).
+  React.useEffect(()=>{
+    if (!editId || postId || !edApi.current) return;
+    window.N101_CONTENT.postApi.get(editId).then(po=>{
+      const site = lang==='jp' ? 'ja' : 'en';
+      const siteEmpty = !((site==='ja' ? po.titleJa : po.titleEn) || (site==='ja' ? po.bodyJa : po.bodyEn));
+      const L = siteEmpty ? (po.lang==='ja' ? 'ja' : 'en') : site;
+      setBlogLang(L);
+      setPostId(po.id);
+      setTitle(L==='ja' ? po.titleJa : po.titleEn);
+      setExcerpt(L==='ja' ? po.excerptJa : po.excerptEn);
+      const body = L==='ja' ? po.bodyJa : po.bodyEn;
+      setBodyHtml(body);
+      other.current = L==='ja'
+        ? { title: po.titleEn, excerpt: po.excerptEn, body: po.bodyEn }
+        : { title: po.titleJa, excerpt: po.excerptJa, body: po.bodyJa };
+      setCat(po.categoryId); setCover(po.cover); setTags(po.tags||[]);
+      setDensity(po.density||'compact'); setSavedStatus(po.status);
+      edApi.current.setHTML(body);
+    }).catch(()=>setStatus('Could not load that post'));
+  }, [editId, edApi.current]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onEditorChange = React.useCallback((html)=>{ setBodyHtml(html); }, []);
+
+  const onCoverFile = async (e)=>{
+    const f = e.target.files?.[0]; e.target.value='';
+    if (!f) return;
+    try { setCover(await window.N101_CONTENT.uploadImage(f)); }
+    catch { setStatus('Cover upload failed — try a smaller file'); }
+  };
+  const addTag = (e)=>{
+    if (e.key==='Enter' && tagInput.trim()) {
+      e.preventDefault();
+      if (!tags.includes(tagInput.trim())) setTags([...tags, tagInput.trim()]);
+      setTagInput('');
+    }
+  };
+
+  // Map the single source language onto the bilingual columns. The opposite
+  // locale keeps whatever was there (preserved on edit) — Publish refills it.
+  const buildPayload = (st, translate)=>{
+    const liveBody = edApi.current ? edApi.current.getHTML() : bodyHtml;
+    const ex = excerpt.trim() || htmlToText(liveBody).replace(/\s+/g,' ').trim().slice(0,160);
+    const o = other.current;
+    const base = {
+      categoryId: cat, cover, status: st, density, score: null, tags,
+      lang: blogLang, translate: !!translate,
     };
-  }
+    return ja
+      ? { ...base, titleJa: title.trim(), excerptJa: ex, bodyJa: liveBody,
+          titleEn: o.title, excerptEn: o.excerpt, bodyEn: o.body }
+      : { ...base, titleEn: title.trim(), excerptEn: ex, bodyEn: liveBody,
+          titleJa: o.title, excerptJa: o.excerpt, bodyJa: o.body };
+  };
+
+  const save = async (st)=>{
+    if (busy) return;
+    if (!hasContent || !cat) { setStatus('Add a title and pick a category first'); return; }
+    if (st==='published' && !canPublish) { setStatus('Write a body before publishing'); return; }
+    setBusy(true); setStatus(st==='published'?'Publishing…':'Saving…');
+    try {
+      // Manual save (draft OR publish) translates — but only if the source text
+      // changed since the last translation (dirty-check); rapid clicks cost nothing.
+      const liveBody = edApi.current ? edApi.current.getHTML() : bodyHtml;
+      const snap = JSON.stringify({ title: title.trim(), excerpt: excerpt.trim(), body: liveBody });
+      const dirty = snap !== lastTranslated.current;
+      const payload = buildPayload(st, dirty);
+      const po = postId ? await window.N101_CONTENT.postApi.update(postId, payload)
+                        : await window.N101_CONTENT.postApi.create(payload);
+      if (dirty) lastTranslated.current = snap;
+      setPostId(po.id); setSavedStatus(st);
+      if (st==='published') window.__nihon_go({name:'profile'});
+      else setStatus('Draft saved');
+    } catch (e) { setStatus('Save failed — ' + (e.code || 'try again')); }
+    finally { setBusy(false); }
+  };
+
+  const doDelete = async ()=>{
+    if (!postId || busy) return;
+    setBusy(true);
+    try { await window.N101_CONTENT.postApi.remove(postId); window.__nihon_go({name:'profile'}); }
+    catch { setBusy(false); setStatus('Delete failed — try again'); }
+  };
+
+  // Autosave (2s) as a DRAFT — never translates (keeps the current status,
+  // never flips a live post, so editing never re-burns the API).
+  React.useEffect(()=>{
+    if (!hasContent || !cat) return;
+    if (!postId && !bodyText.trim()) return;
+    const tmr = setTimeout(async ()=>{
+      if (savingRef.current || busy) return;
+      savingRef.current = true; setStatus('Saving…');
+      try {
+        const payload = buildPayload(savedStatus, false);
+        const po = postId ? await window.N101_CONTENT.postApi.update(postId, payload)
+                          : await window.N101_CONTENT.postApi.create(payload);
+        setPostId(po.id); setStatus('Saved');
+      } catch { setStatus(''); }
+      finally { savingRef.current = false; }
+    }, 2000);
+    return ()=>clearTimeout(tmr);
+  }, [title, excerpt, bodyHtml, cover, density, tags, cat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const densityLabel = density==='compact'?'Compact':density==='normal'?'Normal':'Relaxed';
+  const cycleDensity = ()=> setDensity(d=> d==='compact'?'normal':d==='normal'?'relaxed':'compact');
 
   return (
-    <div style={{...wrap(), paddingTop:32, paddingBottom:40}}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24}}>
-        <button onClick={()=>window.__nihon_back()} style={ghostBtn(p)}><ArrowLeft color={p.inkSoft}/> {lang==='jp'?'戻る':'Back'}</button>
-        <div style={{display:'flex', gap:10, alignItems:'center'}}>
-          <button onClick={()=>setShowPreview(v=>!v)} style={ghostBtn(p)}>
-            {showPreview ? (lang==='jp'?'編集':'Edit') : (lang==='jp'?'プレビュー':'Preview')}
-          </button>
-          <button onClick={()=>onPublish(build(true), true)} style={{...ghostBtn(p), border:`1px solid ${p.line}`}}>
-            {lang==='jp'?'下書き保存':'Save draft'}
-          </button>
-          <button disabled={!title.trim()} onClick={()=>onPublish(build(false), false)}
-            style={{...gradStyle(p), padding:'11px 22px', fontSize:14, opacity:title.trim()?1:0.5}}>
+    <div style={{...wrap(), paddingTop:24, paddingBottom:60}}>
+      {/* top bar */}
+      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:18}}>
+        <button onClick={()=>window.__nihon_go({name:'home'})} style={ghostBtn(p)}><ArrowLeft color={p.inkSoft}/> {lang==='jp'?'破棄':'Discard'}</button>
+        <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, marginLeft:6}}>
+          {words} {lang==='jp'?'語':'words'} · {readMins} min{status?` · ${status}`:''}
+        </span>
+        <div style={{marginLeft:'auto', display:'flex', gap:10, alignItems:'center'}}>
+          {postId && <button disabled={busy} onClick={()=>setConfirmDel(true)} style={{...ghostBtn(p), color:'#c0392b', borderColor:'#e6b3ab'}}>{lang==='jp'?'削除':'Delete'}</button>}
+          <button disabled={busy} onClick={()=>save('draft')} style={ghostBtn(p)}>{lang==='jp'?'下書き保存':'Save draft'}</button>
+          <button disabled={!canPublish||busy} onClick={()=>save('published')}
+            style={{...gradStyle(p), padding:'11px 22px', fontSize:14, opacity:canPublish&&!busy?1:0.5}}>
             {lang==='jp'?'公開する':'Publish'}
           </button>
         </div>
       </div>
 
-      <div style={{maxWidth:820, margin:'0 auto'}}>
-        {showPreview ? (
-          <ComposerPreview p={p} lang={lang} post={build(false)} currentUser={currentUser}/>
-        ) : (
-          <>
-            {/* cover hue picker */}
-            <div style={{marginBottom:20}}>
-              <Photo p={p} hue={hue} label={title.slice(0,24)||'cover'} h={260} radius={18}/>
-              <div style={{display:'flex', gap:8, marginTop:12, flexWrap:'wrap', alignItems:'center'}}>
-                <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', marginRight:4}}>{lang==='jp'?'表紙の色':'Cover'}</span>
-                {COVER_HUES.map(h=>{
-                  const [c1,c2] = window.tintGradient ? window.tintGradient(h) : ['#eee','#ddd'];
-                  return <button key={h} onClick={()=>setHue(h)} title={h} style={{
-                    width:30, height:30, borderRadius:9, cursor:'pointer', border: hue===h?`2px solid ${p.ink}`:`2px solid transparent`,
-                    background:`linear-gradient(135deg, ${c1}, ${c2})`, boxShadow:`0 0 0 1px ${p.line}`,
-                  }}></button>;
-                })}
-              </div>
-            </div>
+      <div style={{maxWidth:840, margin:'0 auto'}}>
+        {/* language notice + density */}
+        <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:18}}>
+          <span style={{display:'inline-flex', alignItems:'center', gap:8, padding:'7px 14px', borderRadius:999, background:p.surface, border:`1px solid ${p.line}`, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
+            <span style={{color:p.stamp}}>✎</span>
+            {ja ? '日本語で執筆中' : 'Writing in English'}
+            <span style={{color:p.inkFaint, fontWeight:400}}>· {ja ? '英語版は公開時に自動生成' : 'auto-translated on publish'}</span>
+          </span>
+          <button onClick={cycleDensity} style={{...ghostBtn(p), marginLeft:'auto'}}>↕ {densityLabel}</button>
+        </div>
 
-            {/* category */}
-            <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:22}}>
-              {cats.map(c=>(
-                <button key={c.slug} onClick={()=>setCategory(c.slug)} style={{
-                  appearance:'none', cursor:'pointer', padding:'7px 13px', borderRadius:999,
-                  border:`1px solid ${category===c.slug?p.ink:p.line}`,
-                  background: category===c.slug?p.ink:p.surface, color: category===c.slug?p.surface:p.ink,
-                  fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', gap:6, alignItems:'center',
-                }}>
-                  <span style={{color: category===c.slug?p.surface:p.stamp, fontFamily:'var(--fontDisplay)'}}>{c.kanji}</span>
-                  {lang==='jp'?c.jp:c.en}
-                </button>
-              ))}
-            </div>
+        {/* cover */}
+        <div onClick={()=>coverFileRef.current?.click()} style={{
+          height:240, borderRadius:18, marginBottom:18, cursor:'pointer', overflow:'hidden',
+          border:`1px dashed ${p.line}`, background:p.surface, display:'flex', alignItems:'center', justifyContent:'center'}}>
+          <input ref={coverFileRef} type="file" accept="image/*" hidden onChange={onCoverFile}/>
+          {cover ? <img src={cover} alt="cover" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+            : <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, letterSpacing:'0.1em'}}>{lang==='jp'?'表紙画像を選ぶ — 21:9 推奨':'DROP COVER ART — 21:9 RECOMMENDED'}</span>}
+        </div>
 
-            {/* title */}
-            <textarea value={title} onChange={(e)=>setTitle(e.target.value)} rows={2}
-              placeholder={lang==='jp'?'タイトルを書く':'Title your story'}
-              style={{
-                width:'100%', border:'none', outline:'none', background:'transparent', resize:'none',
-                fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(34px,4vw,52px)',
-                lineHeight:1.05, letterSpacing:'-0.025em', color:p.ink, marginBottom:8,
-              }}/>
-            {/* excerpt */}
-            <input value={excerpt} onChange={(e)=>setExcerpt(e.target.value)}
-              placeholder={lang==='jp'?'リード文（短い要約）':'A short standfirst / summary'}
-              style={{
-                width:'100%', border:'none', outline:'none', background:'transparent',
-                fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft,
-                marginBottom:20, paddingBottom:20, borderBottom:`1px solid ${p.line}`,
-              }}/>
-            {/* body */}
-            <textarea value={body} onChange={(e)=>setBody(e.target.value)}
-              placeholder={lang==='jp'?'ここから書きはじめましょう。空行で段落が分かれます。':'Start writing here. Leave a blank line between paragraphs.'}
-              style={{
-                width:'100%', minHeight:360, border:'none', outline:'none', background:'transparent', resize:'vertical',
-                fontFamily:'var(--fontDisplay)', fontSize:20, lineHeight:1.65, color:p.ink,
-              }}/>
-            <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.08em', marginTop:16, borderTop:`1px solid ${p.line}`, paddingTop:14}}>
-              {words} {lang==='jp'?'語':'words'} · {readMins} {lang==='jp'?'分':'min read'}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-function ghostBtn(p){ return {appearance:'none', border:`1px solid ${p.line}`, background:p.surface, color:p.ink, padding:'10px 16px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', alignItems:'center', gap:8}; }
+        {/* category */}
+        <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:22}}>
+          {cats.map(c=>(
+            <button key={c.id} onClick={()=>setCat(c.id)} style={{
+              appearance:'none', cursor:'pointer', padding:'7px 13px', borderRadius:999,
+              border:`1px solid ${cat===c.id?p.ink:p.line}`,
+              background: cat===c.id?p.ink:p.surface, color: cat===c.id?p.surface:p.ink,
+              fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', gap:6, alignItems:'center'}}>
+              <span style={{color: cat===c.id?p.surface:p.stamp, fontFamily:'var(--fontDisplay)'}}>{c.kanji}</span>
+              {lang==='jp'?c.labelJa:c.labelEn}
+            </button>
+          ))}
+        </div>
 
-function ComposerPreview({p, lang, post, currentUser}) {
-  return (
-    <div>
-      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:18}}>
-        <CategoryChip slug={post.category} p={p} lang={lang}/>
-        <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>{lang==='jp'?'プレビュー':'preview'} · {post.readMins} min</span>
+        {/* title */}
+        <textarea value={title} onChange={(e)=>setTitle(e.target.value)} rows={2}
+          placeholder={ja?'タイトルを書く':'Title your story'}
+          style={{width:'100%', border:'none', outline:'none', background:'transparent', resize:'none',
+            fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(32px,4vw,50px)',
+            lineHeight:1.05, letterSpacing:'-0.025em', color:p.ink, marginBottom:8}}/>
+        {/* excerpt */}
+        <input value={excerpt} onChange={(e)=>setExcerpt(e.target.value)}
+          placeholder={ja?'リード文（短い要約）':'A short standfirst / summary'}
+          style={{width:'100%', border:'none', outline:'none', background:'transparent',
+            fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft,
+            marginBottom:20, paddingBottom:20, borderBottom:`1px solid ${p.line}`}}/>
+
+        {/* rich body */}
+        <Editor p={p} onChange={onEditorChange} onReady={(api)=>{ edApi.current = api; }}/>
+
+        {/* tags */}
+        <div style={{marginTop:24}}>
+          <label style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>{lang==='jp'?'タグ':'Tags'}</label>
+          <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8}}>
+            {tags.map(tg=>(
+              <span key={tg} style={{display:'inline-flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:999, background:p.surface, border:`1px solid ${p.line}`, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink}}>
+                #{tg}
+                <button onClick={()=>setTags(tags.filter(x=>x!==tg))} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint}}>✕</button>
+              </span>
+            ))}
+            <input value={tagInput} onChange={(e)=>setTagInput(e.target.value)} onKeyDown={addTag}
+              placeholder={lang==='jp'?'タグ + Enter':'Add tag + Enter'}
+              style={{width:200, height:34, padding:'0 12px', border:`1px solid ${p.line}`, borderRadius:9, background:p.bg, color:p.ink, outline:'none', fontFamily:'var(--fontBody)'}}/>
+          </div>
+        </div>
       </div>
-      <h1 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(34px,4vw,56px)', lineHeight:1.05, letterSpacing:'-0.025em', color:p.ink, marginBottom:14, textWrap:'pretty'}}>{post.title_en}</h1>
-      <p style={{fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:22, color:p.inkSoft, marginBottom:24}}>{post.excerpt_en}</p>
-      <div style={{marginBottom:28}}><AuthorChip slug={currentUser.slug} p={p} lang={lang} date={post.date}/></div>
-      <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={420} radius={18}/>
-      <div style={{marginTop:32}}>
-        {post.body_en.map((para,i)=>(
-          <p key={i} style={{fontFamily:'var(--fontDisplay)', fontSize:20, lineHeight:1.65, color:p.ink, marginBottom:24, textWrap:'pretty'}}>{para}</p>
-        ))}
-      </div>
+
+      {confirmDel && (
+        <div onClick={()=>!busy&&setConfirmDel(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50}}>
+          <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, borderRadius:18, padding:28, maxWidth:420, border:`1px solid ${p.line}`}}>
+            <h3 style={{fontFamily:'var(--fontDisplay)', fontSize:20, fontWeight:700, color:p.ink}}>{lang==='jp'?'この記事を削除しますか？':'Delete this post?'}</h3>
+            <p style={{color:p.inkSoft, fontSize:14.5, lineHeight:1.6, marginTop:10, fontFamily:'var(--fontBody)'}}>{lang==='jp'?'この操作は取り消せません。':"This can't be undone."}</p>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:22}}>
+              <button disabled={busy} onClick={()=>setConfirmDel(false)} style={ghostBtn(p)}>{lang==='jp'?'キャンセル':'Cancel'}</button>
+              <button disabled={busy} onClick={doDelete} style={{...ghostBtn(p), background:'#c0392b', color:'#fff', border:'none'}}>{lang==='jp'?'削除':'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ====== PROFILE (current user) ======
+// Card for a real backend-authored post. Opens the post in reading mode on click.
+function MyPostCard({ p, lang, post, onChanged }) {
+  const title = (lang==='jp' ? post.titleJa : post.titleEn) || post.titleEn || post.titleJa || (lang==='jp'?'無題':'Untitled');
+  const excerpt = (lang==='jp' ? post.excerptJa : post.excerptEn) || '';
+  const cat = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.categoryId);
+  const tint = cat?.tint || 'rose';
+  const [c1,c2] = window.tintGradient ? window.tintGradient(tint) : ['#eee','#ddd'];
+  // Clicking the card opens the post in reading mode (where the owner gets
+  // Edit/Delete). No actions on the card itself.
+  const open = ()=> window.__nihon_go({name:'article', slug: post.slug});
+  return (
+    <div onClick={open} style={{position:'relative', borderRadius:16, overflow:'hidden', border:`1px solid ${p.line}`, background:p.surface, display:'flex', flexDirection:'column', cursor:'pointer'}}>
+      {post.status==='draft' && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
+      <div style={{height:150, background: post.cover?undefined:`linear-gradient(135deg, ${c1}, ${c2})`}}>
+        {post.cover && <img src={post.cover} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>}
+      </div>
+      <div style={{padding:'14px 16px', display:'flex', flexDirection:'column', gap:8, flex:1}}>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.stamp, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6}}>{cat?(lang==='jp'?cat.jp:cat.en):post.categoryId}</div>
+          <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, lineHeight:1.2, color:p.ink, marginBottom:6, textWrap:'pretty'}}>{title}</h3>
+          {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft, lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10, paddingTop:8, borderTop:`1px solid ${p.line}`}}>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>♥ {post.likes||0}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, comments }) {
   const all = window.getAllPosts();
-  const published = all.filter(po=>po.author===user.slug && !po.isDraft);
-  const drafts = all.filter(po=>po.author===user.slug && po.isDraft);
   const saved = all.filter(po=>savedSet.has(po.slug));
+  const [myPosts, setMyPosts] = React.useState([]);
+  const refreshMine = React.useCallback(()=>{
+    window.N101_CONTENT.postApi.list({status:'mine'}).then(setMyPosts).catch(()=>{});
+  }, []);
+  React.useEffect(()=>{ refreshMine(); }, [refreshMine]);
+  const published = myPosts.filter(po=>po.status==='published');
+  const drafts = myPosts.filter(po=>po.status==='draft');
   const [tab, setTab] = React.useState('published');
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(user.en);
   const [bio, setBio] = React.useState(user.bio_en);
   const c = window.tintBg(user.tint, p);
-  const totalLikes = published.reduce((s,po)=> s + (po.likes||0) + (claps[po.slug]||0), 0);
+  const totalLikes = published.reduce((s,po)=> s + (po.likes||0), 0);
 
   const list = tab==='published'?published : tab==='drafts'?drafts : saved;
+  const isMine = tab!=='saved';
 
   return (
     <div>
@@ -420,14 +571,21 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
             </button>}
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, paddingBottom:20}}>
-            {list.map(po=>(
-              <div key={po.slug} style={{position:'relative'}}>
-                {po.isDraft && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
-                <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>
-              </div>
-            ))}
-          </div>
+          isMine ? (
+            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, paddingBottom:20}}>
+              {list.map(po=>(
+                <MyPostCard key={po.id} p={p} lang={lang} post={po} onChanged={refreshMine}/>
+              ))}
+            </div>
+          ) : (
+            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, paddingBottom:20}}>
+              {list.map(po=>(
+                <div key={po.slug} style={{position:'relative'}}>
+                  <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
     </div>

@@ -10,6 +10,7 @@ export type AppVars = {
   RESEND_API_KEY: string;
   RESEND_FROM: string;
   DEEPL_API_KEY: string;
+  OPENAI_API_KEY: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;

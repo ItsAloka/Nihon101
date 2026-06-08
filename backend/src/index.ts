@@ -3,6 +3,10 @@ import { cors } from 'hono/cors';
 import type { AppEnv } from './types';
 import auth from './routes/auth';
 import google from './routes/google';
+import posts from './routes/posts';
+import categories from './routes/categories';
+import media from './routes/media';
+import translate from './routes/translate';
 
 const app = new Hono<AppEnv>();
 
@@ -20,6 +24,10 @@ app.get('/', (c) => c.json({ ok: true, service: 'nihon101-api' }));
 
 app.route('/auth', auth);
 app.route('/auth/google', google);
+app.route('/posts', posts);
+app.route('/categories', categories);
+app.route('/media', media);
+app.route('/translate', translate);
 
 export default {
   fetch: app.fetch,

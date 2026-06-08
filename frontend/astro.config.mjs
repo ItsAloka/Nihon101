@@ -13,4 +13,22 @@ export default defineConfig({
     routing: { prefixDefaultLocale: true },
   },
   server: { port: 4321 },
+  // Dev-only: proxy API calls through the web origin so the page reaches the
+  // Worker same-origin (the preview browser can't hit :8787 directly). Prod
+  // uses api.nihon101.com and is unaffected.
+  vite: {
+    server: {
+      // Poll for file changes: inotify doesn't fire for files on the Windows
+      // drive (/mnt/c) when the dev server runs in WSL, so without polling HMR
+      // never sees edits and serves stale modules. Dev-only.
+      watch: { usePolling: true, interval: 150 },
+      proxy: {
+        '/auth': 'http://localhost:8787',
+        '/posts': 'http://localhost:8787',
+        '/categories': 'http://localhost:8787',
+        '/media': 'http://localhost:8787',
+        '/translate': 'http://localhost:8787',
+      },
+    },
+  },
 });

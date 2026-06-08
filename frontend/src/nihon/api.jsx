@@ -2,8 +2,10 @@
 // localStorage); the session is restored from the HttpOnly refresh cookie via
 // /auth/refresh on load. Loaded before app.jsx.
 
+// Dev (localhost) is same-origin: Vite proxies /auth,/posts,/categories,/media,
+// /translate to :8787, so cookies (Path=/auth) work natively. Prod uses the API host.
 const API_BASE = (typeof location !== 'undefined' && location.hostname === 'localhost')
-  ? 'http://localhost:8787'
+  ? ''
   : 'https://api.nihon101.com';
 
 let accessToken = null;
@@ -62,10 +64,16 @@ async function login(email, password) {
   accessToken = d.access;
   return d.user;
 }
-async function refresh() {
-  const d = await req('/auth/refresh', { method: 'POST' });
-  accessToken = d.access;
-  return d.user;
+// Single-flight: concurrent callers (app boot + a data fetch's 401 retry) must
+// share ONE /auth/refresh, or the second one replays a rotated token and the
+// reuse-detection revokes the whole family. Coalesce into one in-flight promise.
+let refreshing = null;
+function refresh() {
+  if (refreshing) return refreshing;
+  refreshing = req('/auth/refresh', { method: 'POST' })
+    .then((d) => { accessToken = d.access; return d.user; })
+    .finally(() => { refreshing = null; });
+  return refreshing;
 }
 async function logout() {
   try { await req('/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }

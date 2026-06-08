@@ -7,22 +7,84 @@ const { maxWrap, SectionHeader, ArticleCard, CategoryChip, AuthorChip, Avatar, P
         CommentIcon, PencilIcon, TrendIcon, SearchIcon } = window;
 
 // ====== ARTICLE ======
-function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, currentUser, onRequireLogin }) {
-  const [progress, setProgress] = React.useState(0);
-  const containerRef = React.useRef(null);
+// Reading-progress bar in its own component: it updates the bar width via a DOM
+// ref inside requestAnimationFrame, so scrolling NEVER triggers a React render of
+// the article subtree (which would thrash the main thread and flicker the
+// out-of-process YouTube iframe).
+function ReadingProgress({ p, targetRef }) {
+  const barRef = React.useRef(null);
   React.useEffect(()=>{
-    const onScroll = ()=>{
-      const el = containerRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
+    let raf = 0;
+    const update = ()=>{
+      raf = 0;
+      const el = targetRef.current, bar = barRef.current;
+      if (!el || !bar) return;
       const h = el.scrollHeight - window.innerHeight;
-      const scrolled = Math.max(0, -top);
-      setProgress(Math.min(100, (scrolled / Math.max(1, h)) * 100));
+      const scrolled = Math.max(0, -el.getBoundingClientRect().top);
+      bar.style.width = Math.min(100, (scrolled / Math.max(1, h)) * 100) + '%';
     };
-    window.addEventListener('scroll', onScroll);
-    onScroll();
-    return ()=>window.removeEventListener('scroll', onScroll);
-  }, [post.slug]);
+    const onScroll = ()=>{ if (!raf) raf = requestAnimationFrame(update); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    update();
+    return ()=>{ window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [targetRef]);
+  return (
+    <div style={{ position:'sticky', top:0, height:3, background:p.line, zIndex:25 }}>
+      <div ref={barRef} style={{ height:'100%', width:'0%', background:p.stamp }}/>
+    </div>
+  );
+}
+
+// Initials from a display name (e.g. "Kage Loom" → "KL").
+function nameInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+function avatarCircle(p, name, size) {
+  const c = tintBg('rose', p);
+  return (
+    <div style={{
+      width:size, height:size, borderRadius:'50%', flexShrink:0,
+      background:`linear-gradient(135deg, ${c}, color-mix(in oklab, ${c} 50%, ${p.surface2}))`,
+      color:p.ink, display:'flex', alignItems:'center', justifyContent:'center',
+      fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:size*0.4, border:`1px solid ${p.line}`,
+    }}>{nameInitials(name)}</div>
+  );
+}
+// Byline for a real (backend) post: avatar + name + date.
+function RealByline({ p, name, date }) {
+  return (
+    <div style={{display:'flex', alignItems:'center', gap:14}}>
+      {avatarCircle(p, name, 48)}
+      <div>
+        <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, color:p.ink}}>{name}</div>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, marginTop:2}}>{date}</div>
+      </div>
+    </div>
+  );
+}
+// "Written by" card for a real post — same shape as the seed AuthorCard, but
+// built from the post's author name (real authors have no stored bio yet).
+function RealAuthorCard({ p, lang, name }) {
+  return (
+    <div style={{display:'flex', gap:20, padding:24, background:p.surface, border:`1px solid ${p.line}`, borderRadius:18, alignItems:'center'}}>
+      {avatarCircle(p, name, 80)}
+      <div style={{flex:1}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4}}>
+          {lang==='jp'?'書いた人':'written by'}
+        </div>
+        <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, color:p.ink}}>{name}</div>
+        <div style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, marginTop:6, lineHeight:1.5}}>
+          {lang==='jp'?'nihon101の書き手。':'Writer at nihon101.'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, currentUser, onRequireLogin }) {
+  const containerRef = React.useRef(null);
 
   const title = lang==='jp'?post.title_jp:post.title_en;
   const kicker = lang==='jp'?post.kicker_jp:post.kicker_en;
@@ -35,16 +97,34 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
   const clapped = claps[post.slug] || 0;
   const saved = savedSet.has(post.slug);
   const cat = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.category);
-  const related = window.getAllPosts().filter(x=>x.category===post.category && x.slug!==post.slug).slice(0,3);
+  const real = !!post._real;
+  const isOwner = real && currentUser && currentUser.id===post._authorId;
+  const realBody = real ? (lang==='jp' ? post._bodyJa : post._bodyEn) : '';
+  const related = real ? [] : window.getAllPosts().filter(x=>x.category===post.category && x.slug!==post.slug).slice(0,3);
+  const [confirmDel, setConfirmDel] = React.useState(false);
+  const [delBusy, setDelBusy] = React.useState(false);
+  const doDelete = async ()=>{
+    setDelBusy(true);
+    try { await window.N101_CONTENT.postApi.remove(post._id); window.__nihon_go({name:'profile'}); }
+    catch { setDelBusy(false); }
+  };
+  const ownerActions = (
+    <div style={{display:'flex', gap:10}}>
+      <button onClick={()=>window.__nihon_go({name:'compose', editId:post._id})} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'0 16px', height:40, borderRadius:999, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
+        <PencilIcon color={p.ink} size={15}/> {lang==='jp'?'編集':'Edit'}
+      </button>
+      <button onClick={()=>setConfirmDel(true)} style={{appearance:'none', border:'none', background:p.stamp, padding:'0 16px', height:40, borderRadius:999, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:700, color:'#fff'}}>
+        🗑 {lang==='jp'?'削除':'Delete'}
+      </button>
+    </div>
+  );
 
   return (
     <div ref={containerRef}>
-      {/* Progress bar */}
-      <div style={{
-        position:'sticky', top:0, height:3, background:p.line, zIndex:25,
-      }}>
-        <div style={{height:'100%', width:`${progress}%`, background:p.stamp, transition:'width 80ms linear'}}></div>
-      </div>
+      {/* Progress bar — isolated so scrolling never re-renders the article
+          (a per-scroll re-render thrashes the main thread and makes the
+          out-of-process YouTube iframe flicker on scroll). */}
+      <ReadingProgress p={p} targetRef={containerRef}/>
 
       {/* Article header */}
       <div style={{...maxWrap(), paddingTop:48}}>
@@ -69,7 +149,10 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
             {lang==='jp'?post.excerpt_jp:post.excerpt_en}
           </p>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:`1px solid ${p.line}`, borderBottom:`1px solid ${p.line}`, padding:'18px 0', marginBottom:48}}>
-            <AuthorChip slug={post.author} p={p} lang={lang} date={post.date} size="lg"/>
+            {real
+              ? <RealByline p={p} name={post.author} date={post.date}/>
+              : <AuthorChip slug={post.author} p={p} lang={lang} date={post.date} size="lg"/>}
+            {isOwner ? ownerActions : (
             <div style={{display:'flex', gap:10}}>
               <button onClick={()=>onSave(post.slug)} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, width:40, height:40, borderRadius:999, cursor:'pointer', color:saved?p.stamp:p.ink, display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
                 <BookmarkIcon filled={saved} color={saved?p.stamp:p.ink}/>
@@ -78,6 +161,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
                 <ShareIcon color={p.ink}/> {lang==='jp'?'共有':'Share'}
               </button>
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -85,17 +169,19 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
       {/* Cover */}
       <div style={{...maxWrap(), marginBottom:48}}>
         <div style={{maxWidth:1080, margin:'0 auto'}}>
-          <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={520} radius={20} accent={cat?.kanji || '読'}/>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.08em', textAlign:'center', marginTop:12}}>
-            photograph by the {lang==='jp'?'編集部':'editors'} · {post.date}
-          </div>
+          {real
+            ? (post._cover
+                ? <img src={post._cover} alt="" style={{width:'100%', height:520, objectFit:'cover', borderRadius:20, display:'block'}}/>
+                : <div style={{height:320, borderRadius:20, background:`linear-gradient(135deg, ${tintBg(cat?.tint||'rose', p)}, ${p.bg})`}}/>)
+            : <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={520} radius={20} accent={cat?.kanji || '読'}/>}
         </div>
       </div>
 
       {/* Body */}
       <div style={{...maxWrap()}}>
         <div style={{maxWidth:680, margin:'0 auto'}}>
-          {body.map((para, i)=>{
+          {real && <ArticleHtml p={p} html={realBody}/>}
+          {!real && body.map((para, i)=>{
             const firstLetter = i===0 && para.length;
             return (
               <p key={i} style={{
@@ -114,20 +200,20 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
               </p>
             );
           })}
-          {/* Pull quote */}
-          <blockquote style={{
+          {/* Pull quote (seed decoration only) */}
+          {!real && <blockquote style={{
             borderLeft:`3px solid ${p.stamp}`, paddingLeft:28, margin:'40px 0',
             fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:26, lineHeight:1.4,
             color:p.ink, textWrap:'pretty',
           }}>
             “{lang==='jp'?'急がない場所が、いちばん都会的なのかもしれない。':'The least efficient room may be the most quietly radical one in the city.'}”
-          </blockquote>
-          <p style={{fontFamily:'var(--fontDisplay)', fontSize:20, lineHeight:1.65, color:p.ink, marginBottom:48, textWrap:'pretty'}}>
+          </blockquote>}
+          {!real && <p style={{fontFamily:'var(--fontDisplay)', fontSize:20, lineHeight:1.65, color:p.ink, marginBottom:48, textWrap:'pretty'}}>
             {lang==='jp'?'もし、いつかこの店に行くことがあれば、長い時間そこに座って、何もしないでください。':'If you ever go, please sit a long time and do nothing.'}
-          </p>
+          </p>}
 
-          {/* End-of-article actions */}
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'24px 0', borderTop:`1px solid ${p.line}`, borderBottom:`1px solid ${p.line}`, marginBottom:48, flexWrap:'wrap', gap:16}}>
+          {/* End-of-article reader actions — hidden for the post's owner */}
+          {!isOwner && <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'24px 0', borderTop:`1px solid ${p.line}`, borderBottom:`1px solid ${p.line}`, marginBottom:48, flexWrap:'wrap', gap:16}}>
             <div style={{display:'flex', gap:10}}>
               <button onClick={()=> currentUser ? onClap(post.slug) : onRequireLogin()} style={{
                 appearance:'none', border:`1px solid ${clapped>0?p.stamp:p.line}`,
@@ -158,14 +244,17 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
                 <ShareIcon color={p.ink}/> {lang==='jp'?'共有':'Share'}
               </button>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
 
-      {/* Author card */}
+      {/* Author card — seed authors get the rich card; real posts get a card
+          built from the post's author name (no bio yet). */}
       <div style={{...maxWrap()}}>
         <div style={{maxWidth:780, margin:'0 auto'}}>
-          <AuthorCard p={p} lang={lang} slug={post.author}/>
+          {real
+            ? <RealAuthorCard p={p} lang={lang} name={post.author}/>
+            : <AuthorCard p={p} lang={lang} slug={post.author}/>}
         </div>
       </div>
 
@@ -178,17 +267,120 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         </div>
       </div>
 
-      {/* Related */}
-      <div style={{...maxWrap()}}>
+      {/* Related (seed only) */}
+      {!real && <div style={{...maxWrap()}}>
         <SectionHeader p={p} lang={lang}
           en={`More in ${cat?.en || ''}`} jp={`もっと ${cat?.jp || ''}`}
           kicker_en="related reading" kicker_jp="関連する記事"/>
         <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
           {related.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
         </div>
-      </div>
+      </div>}
+
+      {confirmDel && (
+        <div onClick={()=>!delBusy&&setConfirmDel(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60}}>
+          <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, borderRadius:18, padding:28, maxWidth:420, border:`1px solid ${p.line}`}}>
+            <h3 style={{fontFamily:'var(--fontDisplay)', fontSize:20, fontWeight:700, color:p.ink}}>{lang==='jp'?'この記事を削除しますか？':'Delete this post?'}</h3>
+            <p style={{color:p.inkSoft, fontSize:14.5, lineHeight:1.6, marginTop:10, fontFamily:'var(--fontBody)'}}>
+              {lang==='jp'?'この操作は取り消せません。記事と翻訳版の両方が完全に削除されます。':"This can't be undone. Both language versions will be permanently removed."}
+            </p>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:22}}>
+              <button disabled={delBusy} onClick={()=>setConfirmDel(false)} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'10px 18px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>{lang==='jp'?'キャンセル':'Cancel'}</button>
+              <button disabled={delBusy} onClick={doDelete} style={{appearance:'none', border:'none', background:p.stamp, color:'#fff', padding:'10px 18px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:700}}>{lang==='jp'?'削除する':'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// Renders stored post HTML in the reading view, with the magazine prose styling.
+function ArticleHtml({ p, html }) {
+  const ref = React.useRef(null);
+  // Replace every stored YouTube embed with a click-to-load poster: a plain <img>
+  // thumbnail scrolls perfectly, and no cross-origin iframe exists at rest, so the
+  // backdrop-filter nav can't flicker it on scroll. The real player mounts only
+  // when the reader clicks play — the standard way published blogs embed video.
+  React.useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    root.querySelectorAll('iframe').forEach((frame) => {
+      const src = frame.getAttribute('src') || '';
+      const m = src.match(/\/embed\/([\w-]{11})/) || src.match(/[?&]v=([\w-]{11})/);
+      if (!m) return;
+      const id = m[1];
+      const target = frame.closest('[data-youtube-video]') || frame;
+      const facade = document.createElement('button');
+      facade.type = 'button';
+      facade.className = 'yt-facade';
+      facade.setAttribute('aria-label', 'Play video');
+      facade.style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`;
+      facade.innerHTML = '<span class="yt-play" aria-hidden="true"></span>';
+      facade.addEventListener('click', () => {
+        const f = document.createElement('iframe');
+        f.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`;
+        f.title = 'YouTube video';
+        f.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+        f.setAttribute('allowfullscreen', '');
+        facade.replaceWith(f);
+      });
+      target.replaceWith(facade);
+    });
+  }, [html]);
+  const css = `
+  .art-html { font-family:var(--fontDisplay); font-size:20px; line-height:1.75; color:${p.ink}; }
+  .art-html p { margin:0 0 24px; }
+  .art-html h1 { font-size:34px; font-weight:600; letter-spacing:-0.02em; margin:32px 0 12px; }
+  .art-html h2 { font-size:26px; font-weight:600; margin:28px 0 10px; }
+  .art-html blockquote { border-left:3px solid ${p.stamp}; padding-left:24px; margin:28px 0; font-style:italic; color:${p.inkSoft}; }
+  .art-html ul { padding-left:28px; margin:0 0 24px; list-style:disc outside; }
+  .art-html ol { padding-left:28px; margin:0 0 24px; list-style:decimal outside; }
+  .art-html li { margin:6px 0; }
+  .art-html li::marker { color:${p.stamp}; }
+  .art-html a { color:${p.stamp}; text-decoration:underline; }
+  .art-html hr { border:none; border-top:1px solid ${p.line}; margin:32px 0; }
+  .art-html pre { background:${p.ink}; color:${p.surface}; padding:16px; border-radius:12px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0 0 24px; }
+  .art-html img { max-width:100%; height:auto; border-radius:12px; }
+  .art-html figure { margin:24px 0; }
+  .art-html figcaption { font-family:var(--fontMono); font-size:12px; color:${p.inkFaint}; text-align:center; margin-top:8px; }
+  .art-html table { border-collapse:collapse; width:100%; margin:24px 0; }
+  .art-html td,.art-html th { border:1px solid ${p.line}; padding:8px 10px; }
+  .art-html th { background:${p.bg}; font-weight:700; }
+  .art-html > p:first-of-type::first-letter { float:left; font-family:var(--fontDisplay); font-weight:600; font-size:96px; line-height:0.8; color:${p.stamp}; margin:8px 14px 0 0; }
+  .art-html iframe { width:100%; aspect-ratio:16/9; height:auto; border:0; border-radius:12px; margin:24px 0; display:block; }
+  .art-html .yt-facade { display:block; width:100%; aspect-ratio:16/9; margin:24px 0; padding:0; border:0; border-radius:12px; cursor:pointer; position:relative; background:#000 center/cover no-repeat; }
+  .art-html .yt-facade .yt-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:72px; height:50px; border-radius:14px; background:rgba(0,0,0,.6); transition:background .15s; }
+  .art-html .yt-facade:hover .yt-play { background:#f00; }
+  .art-html .yt-facade .yt-play::after { content:""; position:absolute; top:50%; left:54%; transform:translate(-50%,-50%); border-style:solid; border-width:12px 0 12px 20px; border-color:transparent transparent transparent #fff; }
+  .art-html::after { content:""; display:table; clear:both; }
+  `;
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: css }} />
+      <div ref={ref} className="art-html" dangerouslySetInnerHTML={{ __html: html || `<p style="color:${p.inkFaint}">${''}</p>` }} />
+    </>
+  );
+}
+
+// Resolves an article by slug: seed post if present, else a real backend post.
+function ArticleLoader(props) {
+  const { slug } = props;
+  const seed = window.getPost(slug);
+  const [real, setReal] = React.useState(null);
+  const [missing, setMissing] = React.useState(false);
+  React.useEffect(()=>{
+    if (seed) return;
+    let live = true;
+    window.N101_CONTENT.postApi.getBySlug(slug)
+      .then(po=>{ if(live) setReal(window.N101_CONTENT.hydrateReal(po)); })
+      .catch(()=>{ if(live) setMissing(true); });
+    return ()=>{ live=false; };
+  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  const post = seed || real;
+  if (post) return <ArticlePage {...props} post={post}/>;
+  if (missing) return <div style={{maxWidth:1320, margin:'0 auto', padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontDisplay)', fontSize:24, color:props.p.inkSoft}}>{props.lang==='jp'?'記事が見つかりません。':'Article not found.'}</div>;
+  return <div style={{padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontMono)', fontSize:13, color:props.p.inkFaint}}>…</div>;
 }
 
 function AuthorCard({p, lang, slug}) {
@@ -1045,6 +1237,6 @@ function ContactItem({p, lang, k, en, jp, body_en, body_jp, action}) {
 }
 
 Object.assign(window, {
-  ArticlePage, CategoryPage, SearchPage, AuthorPage, AuthorsPage, AboutPage, SavedPage,
+  ArticlePage, ArticleLoader, CategoryPage, SearchPage, AuthorPage, AuthorsPage, AboutPage, SavedPage,
   CommentSection, relTime, authorBeat, writerStats, PrivacyPage, ContactPage,
 });
