@@ -203,16 +203,21 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const other = React.useRef({ title:'', excerpt:'', body:'' }); // preserved opposite locale (edit)
   const [cat, setCat] = React.useState('culture');
   const [cover, setCover] = React.useState(null);
+  const [coverLabel, setCoverLabel] = React.useState('');
+  const [coverCredit, setCoverCredit] = React.useState('');
   const [tags, setTags] = React.useState([]);
   const [tagInput, setTagInput] = React.useState('');
   const [density, setDensity] = React.useState('compact');
-  const [cats, setCats] = React.useState([]);
+  const { cats, refresh: refreshCats } = window.useCategories();
+  const [catSearch, setCatSearch] = React.useState('');
+  const [catBusy, setCatBusy] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [savedStatus, setSavedStatus] = React.useState('draft');
   const [status, setStatus] = React.useState('');   // inline status line
   const [confirmDel, setConfirmDel] = React.useState(false);
   const coverFileRef = React.useRef(null);
   const edApi = React.useRef(null);
+  const [edReady, setEdReady] = React.useState(false); // editor mounted → safe to load content
   const savingRef = React.useRef(false);
   const lastTranslated = React.useRef(''); // snapshot of source at last GPT translate (dirty-check)
   const ja = blogLang==='ja';
@@ -223,17 +228,39 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const hasContent = !!title.trim();
   const canPublish = hasContent && !!cat && !!bodyText.trim();
 
-  // Load backend categories.
-  React.useEffect(()=>{
-    window.N101_CONTENT.categoryApi.list().then(setCats).catch(()=>{});
-  }, []);
+  // Category picker: top categories by post_count + search-to-find + create-new.
+  const TOP_N = 7;
+  const q = catSearch.trim().toLowerCase();
+  const matches = (c) => (c.labelEn||'').toLowerCase().includes(q) || (c.labelJa||'').toLowerCase().includes(q);
+  const exactMatch = !!q && cats.some((c) => (c.labelEn||'').toLowerCase()===q || (c.labelJa||'').toLowerCase()===q);
+  // Searching → all matches; idle → the busiest TOP_N. Always keep the selected
+  // chip visible even if it isn't in the top slice.
+  let shownCats = q ? cats.filter(matches) : cats.slice(0, TOP_N);
+  if (!q && cat && !shownCats.some((c) => c.id===cat)) {
+    const sel = cats.find((c) => c.id===cat);
+    if (sel) shownCats = [sel, ...shownCats];
+  }
+  const createCat = async () => {
+    const label = catSearch.trim();
+    if (!label || catBusy) return;
+    setCatBusy(true);
+    try {
+      const created = await window.N101_CONTENT.categoryApi.create({
+        labelEn: label, labelJa: label, kanji: label.slice(0, 1).toUpperCase(),
+      });
+      await refreshCats();
+      setCat(created.id);
+      setCatSearch('');
+    } catch { setStatus('Could not create category'); }
+    finally { setCatBusy(false); }
+  };
 
   // Edit mode: load an existing (owner) post once, in the SITE language — the
   // side you open is the side you edit (both-way). Fall back to the authored
   // side when the site-language side is empty, so the editor is never blank
   // (and we never translate an empty source over the real text).
   React.useEffect(()=>{
-    if (!editId || postId || !edApi.current) return;
+    if (!editId || postId || !edReady || !edApi.current) return;
     window.N101_CONTENT.postApi.get(editId).then(po=>{
       const site = lang==='jp' ? 'ja' : 'en';
       const siteEmpty = !((site==='ja' ? po.titleJa : po.titleEn) || (site==='ja' ? po.bodyJa : po.bodyEn));
@@ -248,10 +275,11 @@ function ComposerPage({ p, lang, currentUser, editId }) {
         ? { title: po.titleEn, excerpt: po.excerptEn, body: po.bodyEn }
         : { title: po.titleJa, excerpt: po.excerptJa, body: po.bodyJa };
       setCat(po.categoryId); setCover(po.cover); setTags(po.tags||[]);
+      setCoverLabel(po.coverLabel||''); setCoverCredit(po.coverCredit||'');
       setDensity(po.density||'compact'); setSavedStatus(po.status);
       edApi.current.setHTML(body);
     }).catch(()=>setStatus('Could not load that post'));
-  }, [editId, edApi.current]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editId, edReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onEditorChange = React.useCallback((html)=>{ setBodyHtml(html); }, []);
 
@@ -276,7 +304,8 @@ function ComposerPage({ p, lang, currentUser, editId }) {
     const ex = excerpt.trim() || htmlToText(liveBody).replace(/\s+/g,' ').trim().slice(0,160);
     const o = other.current;
     const base = {
-      categoryId: cat, cover, status: st, density, score: null, tags,
+      categoryId: cat, cover, coverLabel: coverLabel.trim(), coverCredit: coverCredit.trim(),
+      status: st, density, score: null, tags,
       lang: blogLang, translate: !!translate,
     };
     return ja
@@ -302,6 +331,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
                         : await window.N101_CONTENT.postApi.create(payload);
       if (dirty) lastTranslated.current = snap;
       setPostId(po.id); setSavedStatus(st);
+      refreshCats();   // publish/unpublish/move changed post_count — refresh the badges
       if (st==='published') window.__nihon_go({name:'profile'});
       else setStatus('Draft saved');
     } catch (e) { setStatus('Save failed — ' + (e.code || 'try again')); }
@@ -311,7 +341,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const doDelete = async ()=>{
     if (!postId || busy) return;
     setBusy(true);
-    try { await window.N101_CONTENT.postApi.remove(postId); window.__nihon_go({name:'profile'}); }
+    try { await window.N101_CONTENT.postApi.remove(postId); refreshCats(); window.__nihon_go({name:'profile'}); }
     catch { setBusy(false); setStatus('Delete failed — try again'); }
   };
 
@@ -332,7 +362,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       finally { savingRef.current = false; }
     }, 2000);
     return ()=>clearTimeout(tmr);
-  }, [title, excerpt, bodyHtml, cover, density, tags, cat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [title, excerpt, bodyHtml, cover, coverLabel, coverCredit, density, tags, cat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const densityLabel = density==='compact'?'Compact':density==='normal'?'Normal':'Relaxed';
   const cycleDensity = ()=> setDensity(d=> d==='compact'?'normal':d==='normal'?'relaxed':'compact');
@@ -356,14 +386,13 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       </div>
 
       <div style={{maxWidth:840, margin:'0 auto'}}>
-        {/* language notice + density */}
+        {/* language notice (density now lives in the editor toolbar) */}
         <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:18}}>
           <span style={{display:'inline-flex', alignItems:'center', gap:8, padding:'7px 14px', borderRadius:999, background:p.surface, border:`1px solid ${p.line}`, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
             <span style={{color:p.stamp}}>✎</span>
             {ja ? '日本語で執筆中' : 'Writing in English'}
             <span style={{color:p.inkFaint, fontWeight:400}}>· {ja ? '英語版は公開時に自動生成' : 'auto-translated on publish'}</span>
           </span>
-          <button onClick={cycleDensity} style={{...ghostBtn(p), marginLeft:'auto'}}>↕ {densityLabel}</button>
         </div>
 
         {/* cover */}
@@ -375,18 +404,48 @@ function ComposerPage({ p, lang, currentUser, editId }) {
             : <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, letterSpacing:'0.1em'}}>{lang==='jp'?'表紙画像を選ぶ — 21:9 推奨':'DROP COVER ART — 21:9 RECOMMENDED'}</span>}
         </div>
 
-        {/* category */}
-        <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:22}}>
-          {cats.map(c=>(
-            <button key={c.id} onClick={()=>setCat(c.id)} style={{
-              appearance:'none', cursor:'pointer', padding:'7px 13px', borderRadius:999,
-              border:`1px solid ${cat===c.id?p.ink:p.line}`,
-              background: cat===c.id?p.ink:p.surface, color: cat===c.id?p.surface:p.ink,
-              fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', gap:6, alignItems:'center'}}>
-              <span style={{color: cat===c.id?p.surface:p.stamp, fontFamily:'var(--fontDisplay)'}}>{c.kanji}</span>
-              {lang==='jp'?c.labelJa:c.labelEn}
-            </button>
-          ))}
+        {/* cover caption — the PHOTO tag shown on the image + the credit line under it */}
+        <div style={{display:'flex', gap:10, marginBottom:22, flexWrap:'wrap'}}>
+          <input value={coverLabel} onChange={(e)=>setCoverLabel(e.target.value)}
+            placeholder={lang==='jp'?'写真キャプション（例：「君の名は。」より）':'Photo caption — e.g. still from Your Name'}
+            style={{flex:'1 1 240px', height:38, padding:'0 12px', border:`1px solid ${p.line}`, borderRadius:9, background:p.bg, color:p.ink, outline:'none', fontFamily:'var(--fontMono)', fontSize:12, letterSpacing:'0.04em'}}/>
+          <input value={coverCredit} onChange={(e)=>setCoverCredit(e.target.value)}
+            placeholder={lang==='jp'?'クレジット（例：© CoMix Wave Films）':'Credit — e.g. © CoMix Wave Films'}
+            style={{flex:'1 1 240px', height:38, padding:'0 12px', border:`1px solid ${p.line}`, borderRadius:9, background:p.bg, color:p.ink, outline:'none', fontFamily:'var(--fontMono)', fontSize:12, letterSpacing:'0.04em'}}/>
+        </div>
+
+        {/* category — busiest first; search to find any, or create a new one */}
+        <div style={{marginBottom:22}}>
+          <input value={catSearch} onChange={(e)=>setCatSearch(e.target.value)}
+            placeholder={lang==='jp'?'カテゴリーを検索、または新規作成…':'Search a category, or type a new one…'}
+            style={{width:'100%', maxWidth:360, height:38, padding:'0 14px', marginBottom:12,
+              border:`1px solid ${p.line}`, borderRadius:10, background:p.bg, color:p.ink, outline:'none',
+              fontFamily:'var(--fontBody)', fontSize:14}}/>
+          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+            {shownCats.map(c=>(
+              <button key={c.id} onClick={()=>setCat(c.id)} style={{
+                appearance:'none', cursor:'pointer', padding:'7px 13px', borderRadius:999,
+                border:`1px solid ${cat===c.id?p.ink:p.line}`,
+                background: cat===c.id?p.ink:p.surface, color: cat===c.id?p.surface:p.ink,
+                fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', gap:7, alignItems:'center'}}>
+                <span style={{color: cat===c.id?p.surface:p.stamp, fontFamily:'var(--fontDisplay)'}}>{c.kanji}</span>
+                {lang==='jp'?c.labelJa:c.labelEn}
+                <span style={{fontFamily:'var(--fontMono)', fontSize:11, fontWeight:500,
+                  color: cat===c.id?p.surface:p.inkFaint, opacity:0.8}}>{c.postCount ?? 0}</span>
+              </button>
+            ))}
+            {q && !exactMatch && (
+              <button onClick={createCat} disabled={catBusy} style={{
+                appearance:'none', cursor:catBusy?'default':'pointer', padding:'7px 13px', borderRadius:999,
+                border:`1px dashed ${p.stamp}`, background:p.surface, color:p.stamp,
+                fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, display:'inline-flex', gap:6, alignItems:'center'}}>
+                ＋ {lang==='jp'?`「${catSearch.trim()}」を作成`:`Create “${catSearch.trim()}”`}
+              </button>
+            )}
+            {!q && shownCats.length===0 && (
+              <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint}}>{lang==='jp'?'読み込み中…':'Loading…'}</span>
+            )}
+          </div>
         </div>
 
         {/* title */}
@@ -403,7 +462,8 @@ function ComposerPage({ p, lang, currentUser, editId }) {
             marginBottom:20, paddingBottom:20, borderBottom:`1px solid ${p.line}`}}/>
 
         {/* rich body */}
-        <Editor p={p} onChange={onEditorChange} onReady={(api)=>{ edApi.current = api; }}/>
+        <Editor p={p} onChange={onEditorChange} onReady={(api)=>{ edApi.current = api; setEdReady(true); }}
+          density={density} densityLabel={densityLabel} onCycleDensity={cycleDensity}/>
 
         {/* tags */}
         <div style={{marginTop:24}}>
@@ -443,7 +503,13 @@ function ComposerPage({ p, lang, currentUser, editId }) {
 function MyPostCard({ p, lang, post, onChanged }) {
   const title = (lang==='jp' ? post.titleJa : post.titleEn) || post.titleEn || post.titleJa || (lang==='jp'?'無題':'Untitled');
   const excerpt = (lang==='jp' ? post.excerptJa : post.excerptEn) || '';
-  const cat = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.categoryId);
+  // Resolve the category from the live table (covers user-created ones); fall
+  // back to the seed list, then the raw id.
+  const live = window.useCategories().byId(post.categoryId);
+  const seed = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.categoryId);
+  const cat = live
+    ? { label: lang==='jp' ? live.labelJa : live.labelEn, tint: live.tint }
+    : seed ? { label: lang==='jp' ? seed.jp : seed.en, tint: seed.tint } : null;
   const tint = cat?.tint || 'rose';
   const [c1,c2] = window.tintGradient ? window.tintGradient(tint) : ['#eee','#ddd'];
   // Clicking the card opens the post in reading mode (where the owner gets
@@ -457,7 +523,7 @@ function MyPostCard({ p, lang, post, onChanged }) {
       </div>
       <div style={{padding:'14px 16px', display:'flex', flexDirection:'column', gap:8, flex:1}}>
         <div style={{flex:1}}>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.stamp, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6}}>{cat?(lang==='jp'?cat.jp:cat.en):post.categoryId}</div>
+          <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.stamp, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6}}>{cat ? cat.label : post.categoryId}</div>
           <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, lineHeight:1.2, color:p.ink, marginBottom:6, textWrap:'pretty'}}>{title}</h3>
           {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft, lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
         </div>

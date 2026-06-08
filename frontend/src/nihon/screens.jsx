@@ -35,6 +35,36 @@ function ReadingProgress({ p, targetRef }) {
   );
 }
 
+// "PHOTO: <label>" pill overlaid on a real cover image (mirrors the seed Photo
+// component's caption so authored covers read the same as the prototype).
+function PhotoTag({ p, label }) {
+  return (
+    <div style={{
+      position:'absolute', left:14, bottom:12, display:'flex', alignItems:'center', gap:8,
+      background:`color-mix(in oklab, ${p.surface} 92%, transparent)`, backdropFilter:'blur(6px)',
+      padding:'5px 10px', borderRadius:999, fontFamily:'var(--fontMono)',
+      fontSize:10, letterSpacing:'0.08em', color:p.inkSoft, textTransform:'uppercase',
+    }}>
+      <span style={{width:6, height:6, borderRadius:3, background:p.stamp, display:'inline-block'}}/>
+      photo: {label}
+    </div>
+  );
+}
+
+// Centered credit line under the cover ("<credit> · <date>"). Real posts use the
+// author-entered credit; seed posts fall back to the editorial caption.
+function CoverCredit({ p, lang, credit, date }) {
+  const text = credit && credit.trim()
+    ? credit.trim()
+    : (lang==='jp' ? '撮影：編集部' : 'photograph by the editors');
+  return (
+    <div style={{
+      fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint,
+      letterSpacing:'0.04em', textAlign:'center', marginTop:14,
+    }}>{text} · {date}</div>
+  );
+}
+
 // Initials from a display name (e.g. "Kage Loom" → "KL").
 function nameInitials(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -171,16 +201,24 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         <div style={{maxWidth:1080, margin:'0 auto'}}>
           {real
             ? (post._cover
-                ? <img src={post._cover} alt="" style={{width:'100%', height:520, objectFit:'cover', borderRadius:20, display:'block'}}/>
+                ? <div style={{position:'relative'}}>
+                    <img src={post._cover} alt="" style={{width:'100%', height:520, objectFit:'cover', borderRadius:20, display:'block'}}/>
+                    {post._coverLabel && <PhotoTag p={p} label={post._coverLabel}/>}
+                  </div>
                 : <div style={{height:320, borderRadius:20, background:`linear-gradient(135deg, ${tintBg(cat?.tint||'rose', p)}, ${p.bg})`}}/>)
             : <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={520} radius={20} accent={cat?.kanji || '読'}/>}
+          {/* credit line — authored posts show it only when a credit was entered;
+              seed posts keep the prototype's editorial caption. */}
+          {(!real || (post._coverCredit && post._coverCredit.trim())) &&
+            <CoverCredit p={p} lang={lang}
+              credit={real ? post._coverCredit : ''} date={post.date}/>}
         </div>
       </div>
 
       {/* Body */}
       <div style={{...maxWrap()}}>
         <div style={{maxWidth:680, margin:'0 auto'}}>
-          {real && <ArticleHtml p={p} html={realBody}/>}
+          {real && <ArticleHtml p={p} html={realBody} density={post._density}/>}
           {!real && body.map((para, i)=>{
             const firstLetter = i===0 && para.length;
             return (
@@ -296,41 +334,16 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
 }
 
 // Renders stored post HTML in the reading view, with the magazine prose styling.
-function ArticleHtml({ p, html }) {
-  const ref = React.useRef(null);
-  // Replace every stored YouTube embed with a click-to-load poster: a plain <img>
-  // thumbnail scrolls perfectly, and no cross-origin iframe exists at rest, so the
-  // backdrop-filter nav can't flicker it on scroll. The real player mounts only
-  // when the reader clicks play — the standard way published blogs embed video.
-  React.useEffect(() => {
-    const root = ref.current;
-    if (!root) return;
-    root.querySelectorAll('iframe').forEach((frame) => {
-      const src = frame.getAttribute('src') || '';
-      const m = src.match(/\/embed\/([\w-]{11})/) || src.match(/[?&]v=([\w-]{11})/);
-      if (!m) return;
-      const id = m[1];
-      const target = frame.closest('[data-youtube-video]') || frame;
-      const facade = document.createElement('button');
-      facade.type = 'button';
-      facade.className = 'yt-facade';
-      facade.setAttribute('aria-label', 'Play video');
-      facade.style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`;
-      facade.innerHTML = '<span class="yt-play" aria-hidden="true"></span>';
-      facade.addEventListener('click', () => {
-        const f = document.createElement('iframe');
-        f.src = `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`;
-        f.title = 'YouTube video';
-        f.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
-        f.setAttribute('allowfullscreen', '');
-        facade.replaceWith(f);
-      });
-      target.replaceWith(facade);
-    });
-  }, [html]);
+// Stored YouTube embeds render as plain live iframes (same as the reference) —
+// no GPU layer promotion, so they don't shake under the backdrop-filter nav.
+function ArticleHtml({ p, html, density }) {
+  // Density → paragraph rhythm (line-height + gap between paragraphs).
+  const d = density === 'normal' ? 'normal' : density === 'relaxed' ? 'relaxed' : 'compact';
+  const line = d === 'compact' ? 1.65 : d === 'normal' ? 1.75 : 1.9;
+  const gap = d === 'compact' ? 18 : d === 'normal' ? 24 : 34;
   const css = `
-  .art-html { font-family:var(--fontDisplay); font-size:20px; line-height:1.75; color:${p.ink}; }
-  .art-html p { margin:0 0 24px; }
+  .art-html { font-family:var(--fontDisplay); font-size:20px; line-height:${line}; color:${p.ink}; }
+  .art-html p { margin:0 0 ${gap}px; }
   .art-html h1 { font-size:34px; font-weight:600; letter-spacing:-0.02em; margin:32px 0 12px; }
   .art-html h2 { font-size:26px; font-weight:600; margin:28px 0 10px; }
   .art-html blockquote { border-left:3px solid ${p.stamp}; padding-left:24px; margin:28px 0; font-style:italic; color:${p.inkSoft}; }
@@ -348,17 +361,14 @@ function ArticleHtml({ p, html }) {
   .art-html td,.art-html th { border:1px solid ${p.line}; padding:8px 10px; }
   .art-html th { background:${p.bg}; font-weight:700; }
   .art-html > p:first-of-type::first-letter { float:left; font-family:var(--fontDisplay); font-weight:600; font-size:96px; line-height:0.8; color:${p.stamp}; margin:8px 14px 0 0; }
-  .art-html iframe { width:100%; aspect-ratio:16/9; height:auto; border:0; border-radius:12px; margin:24px 0; display:block; }
-  .art-html .yt-facade { display:block; width:100%; aspect-ratio:16/9; margin:24px 0; padding:0; border:0; border-radius:12px; cursor:pointer; position:relative; background:#000 center/cover no-repeat; }
-  .art-html .yt-facade .yt-play { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:72px; height:50px; border-radius:14px; background:rgba(0,0,0,.6); transition:background .15s; }
-  .art-html .yt-facade:hover .yt-play { background:#f00; }
-  .art-html .yt-facade .yt-play::after { content:""; position:absolute; top:50%; left:54%; transform:translate(-50%,-50%); border-style:solid; border-width:12px 0 12px 20px; border-color:transparent transparent transparent #fff; }
+  .art-html [data-youtube-video], .art-html iframe { max-width:100%; }
+  .art-html [data-youtube-video] iframe, .art-html iframe { width:100%; aspect-ratio:16/9; height:auto; border:0; border-radius:12px; margin:24px 0; display:block; }
   .art-html::after { content:""; display:table; clear:both; }
   `;
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: css }} />
-      <div ref={ref} className="art-html" dangerouslySetInnerHTML={{ __html: html || `<p style="color:${p.inkFaint}">${''}</p>` }} />
+      <div className="art-html" dangerouslySetInnerHTML={{ __html: html || `<p style="color:${p.inkFaint}">${''}</p>` }} />
     </>
   );
 }

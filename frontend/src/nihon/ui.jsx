@@ -180,6 +180,26 @@ function deriveDark(p) {
 
 Object.assign(window, { getAuthor, getAllPosts, getPost, deriveDark, subjectGlyph, tintGradient });
 
+// ------- Live categories (from the backend table, post_count desc) -------
+// Shared hook over window.N101_CATS. Returns the cached list + helpers; loads
+// once on first mount and re-renders subscribers when the cache changes.
+function useCategories() {
+  const store = window.N101_CATS;
+  const [cats, setCats] = React.useState(() => (store && store.get()) || []);
+  React.useEffect(() => {
+    if (!store) return;
+    const unsub = store.subscribe((list) => setCats(list || []));
+    store.load().catch(() => {});
+    return unsub;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return {
+    cats,
+    byId: (id) => (store ? store.byId(id) : null),
+    refresh: () => (store ? store.refresh() : Promise.resolve()),
+  };
+}
+Object.assign(window, { useCategories });
+
 // ------- Logo -------
 // The mark IS the wordmark: nihon + "1" + a hinomaru sun-disc (the "0") + "1".
 function Logo({ p, jp, size = 28 }) {

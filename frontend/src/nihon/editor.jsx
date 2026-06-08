@@ -123,8 +123,8 @@ function toEmbed(url) {
   return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : url;
 }
 // Memoized so an unchanged video node doesn't re-render (and reload its iframe)
-// as the document scrolls or selection moves. The .ri-video CSS also pins it to
-// its own compositor layer to stop the on-scroll shake.
+// as the document scrolls or selection moves. Like the reference, the iframe is
+// left in normal flow — no GPU layer promotion, which is what caused the shake.
 const YoutubeView = React.memo(function YoutubeView({ node, deleteNode }) {
   return (
     <NodeViewWrapper as="div" className="ri-wrap ri-video" style={{ position: "relative", margin: "16px 0" }} data-drag-handle="">
@@ -150,7 +150,7 @@ function stripEmptyParas(html) {
 }
 
 // Imperative handle: parent gets { getHTML, setHTML, focus, chain } via onReady.
-function NihonEditor({ p, onChange, onReady, placeholder }) {
+function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel, onCycleDensity }) {
   const [linkBox, setLinkBox] = React.useState(null); // 'link'|'image'|'youtube'
   const [linkVal, setLinkVal] = React.useState("");
   const imgFileRef = React.useRef(null);
@@ -225,7 +225,7 @@ function NihonEditor({ p, onChange, onReady, placeholder }) {
 
   return (
     <div className="nihon-editor">
-      <EditorStyles p={p} />
+      <EditorStyles p={p} density={density} />
       <div className="ed-toolbar">
         <button type="button" title="Undo" disabled={!editor?.can().undo()} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().undo().run()}>↺</button>
         <button type="button" title="Redo" disabled={!editor?.can().redo()} onMouseDown={(e) => e.preventDefault()} onClick={() => editor?.chain().focus().redo().run()}>↻</button>
@@ -244,6 +244,11 @@ function NihonEditor({ p, onChange, onReady, placeholder }) {
         {tb("🖼", "Image", () => openBox("image"), false)}
         {tb("▶", "YouTube", () => openBox("youtube"), false)}
         {tb("▦", "Table", () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), false)}
+        {onCycleDensity && (
+          <button type="button" title={`Line spacing: ${densityLabel} (click to change)`}
+            onMouseDown={(e) => e.preventDefault()} onClick={onCycleDensity}
+            style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 600 }}>↕ {densityLabel}</button>
+        )}
       </div>
 
       {linkBox && (
@@ -268,7 +273,10 @@ function NihonEditor({ p, onChange, onReady, placeholder }) {
   );
 }
 
-function EditorStyles({ p }) {
+function EditorStyles({ p, density }) {
+  const d = density === "normal" ? "normal" : density === "relaxed" ? "relaxed" : "compact";
+  const line = d === "compact" ? 1.6 : d === "normal" ? 1.7 : 1.85;
+  const gap = d === "compact" ? 12 : d === "normal" ? 16 : 26;
   const css = `
   .nihon-editor .ed-toolbar { position:sticky; top:64px; z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:2px;
     padding:8px; margin-bottom:14px; border:1px solid ${p.line}; border-radius:12px; background:${p.surface};
@@ -284,11 +292,11 @@ function EditorStyles({ p }) {
     border:1px solid ${p.line}; border-radius:9px; background:${p.bg}; color:${p.ink}; outline:none; font-family:var(--fontBody); }
   .nihon-editor .ed-linkbox button { height:36px; padding:0 14px; border:1px solid ${p.line}; border-radius:9px;
     background:${p.surface}; color:${p.ink}; cursor:pointer; font-weight:600; }
-  .nihon-editor .ed-body { min-height:340px; outline:none; font-family:var(--fontDisplay); font-size:20px; line-height:1.7; color:${p.ink}; }
+  .nihon-editor .ed-body { min-height:340px; outline:none; font-family:var(--fontDisplay); font-size:20px; line-height:${line}; color:${p.ink}; }
   .nihon-editor .ed-body:focus { outline:none; }
   .nihon-editor .ed-body h1 { font-size:34px; font-weight:600; margin:18px 0 8px; letter-spacing:-0.02em; }
   .nihon-editor .ed-body h2 { font-size:26px; font-weight:600; margin:16px 0 6px; }
-  .nihon-editor .ed-body p { margin:0 0 16px; }
+  .nihon-editor .ed-body p { margin:0 0 ${gap}px; }
   .nihon-editor .ed-body blockquote { border-left:3px solid ${p.stamp}; padding-left:16px; color:${p.inkSoft}; font-style:italic; margin:16px 0; }
   .nihon-editor .ed-body pre { background:${p.ink}; color:${p.surface}; padding:14px 16px; border-radius:10px; overflow:auto; font-family:var(--fontMono); font-size:14px; }
   .nihon-editor .ed-body ul { padding-left:28px; margin:0 0 16px; list-style:disc outside; }
@@ -301,7 +309,6 @@ function EditorStyles({ p }) {
   .nihon-editor .ed-body td,.nihon-editor .ed-body th { border:1px solid ${p.line}; padding:8px 10px; }
   .nihon-editor .ed-body th { background:${p.bg}; font-weight:700; }
   .nihon-editor .ri-wrap.ri-selected { outline:2px solid ${p.stamp}; outline-offset:2px; border-radius:10px; }
-  .nihon-editor .ri-video { transform:translateZ(0); will-change:transform; contain:paint; }
   .nihon-editor .ri-handle { position:absolute; right:-5px; top:50%; width:12px; height:40px; transform:translateY(-50%);
     background:${p.stamp}; border-radius:6px; cursor:ew-resize; }
   .nihon-editor .ri-bar { position:absolute; top:-40px; left:50%; transform:translateX(-50%); display:flex; gap:4px; align-items:center;

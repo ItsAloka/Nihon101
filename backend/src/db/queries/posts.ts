@@ -21,6 +21,8 @@ export interface NewPostInput {
   bodyEn: string;
   bodyJa: string;
   cover: string | null;
+  coverLabel: string;
+  coverCredit: string;
   status: PostStatus;
   density: PostDensity;
   score: number | null;
@@ -55,6 +57,8 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     bodyEn: input.bodyEn,
     bodyJa: input.bodyJa,
     cover: input.cover,
+    coverLabel: input.coverLabel,
+    coverCredit: input.coverCredit,
     status: input.status,
     density: input.density,
     score: input.score,
@@ -129,6 +133,8 @@ export interface UpdatePostInput {
   bodyEn?: string;
   bodyJa?: string;
   cover?: string | null;
+  coverLabel?: string;
+  coverCredit?: string;
   status?: PostStatus;
   density?: PostDensity;
   score?: number | null;
@@ -170,6 +176,8 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     bodyEn: p.bodyEn,
     bodyJa: p.bodyJa,
     cover: p.cover,
+    coverLabel: p.coverLabel,
+    coverCredit: p.coverCredit,
     status: p.status,
     density: p.density,
     score: p.score,
