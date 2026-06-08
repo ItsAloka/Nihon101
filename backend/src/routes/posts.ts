@@ -24,6 +24,13 @@ import { translateFields, type Locale } from '../lib/openai';
 const app = new Hono<AppEnv>();
 const db = (c: Context<AppEnv>) => drizzle(c.env.DB, { schema });
 
+// Length caps (chars). Generous enough for long-form essays; block abuse / huge
+// pastes that would bloat D1 rows. Body is sanitized HTML, so it runs larger.
+const MAX_TITLE = 300;
+const MAX_EXCERPT = 600;
+const MAX_BODY = 200_000;
+const clampBody = (v: unknown) => String(v ?? '').slice(0, MAX_BODY);
+
 const STATUSES: PostStatus[] = ['draft', 'published'];
 const DENSITIES: PostDensity[] = ['compact', 'normal', 'relaxed'];
 const parseDensity = (v: unknown, fallback: PostDensity): PostDensity =>
@@ -133,8 +140,8 @@ app.post('/', requireAuth, async (c) => {
   const d = db(c);
   const body = await c.req.json().catch(() => null);
 
-  const titleEn = String(body?.titleEn ?? '').trim();
-  const titleJa = String(body?.titleJa ?? '').trim();
+  const titleEn = String(body?.titleEn ?? '').trim().slice(0, MAX_TITLE);
+  const titleJa = String(body?.titleJa ?? '').trim().slice(0, MAX_TITLE);
   const categoryId = String(body?.categoryId ?? '').trim();
   const status: PostStatus = STATUSES.includes(body?.status) ? body.status : 'draft';
   if (!titleEn && !titleJa) return c.json({ error: 'missing_title' }, 400);
@@ -148,11 +155,13 @@ app.post('/', requireAuth, async (c) => {
     lang: parseLang(body?.lang, 'en'),
     titleEn,
     titleJa,
-    excerptEn: String(body?.excerptEn ?? '').trim(),
-    excerptJa: String(body?.excerptJa ?? '').trim(),
-    bodyEn: String(body?.bodyEn ?? ''),
-    bodyJa: String(body?.bodyJa ?? ''),
+    excerptEn: String(body?.excerptEn ?? '').trim().slice(0, MAX_EXCERPT),
+    excerptJa: String(body?.excerptJa ?? '').trim().slice(0, MAX_EXCERPT),
+    bodyEn: clampBody(body?.bodyEn),
+    bodyJa: clampBody(body?.bodyJa),
     cover: body?.cover ? String(body.cover) : null,
+    coverLabel: String(body?.coverLabel ?? '').trim().slice(0, 120),
+    coverCredit: String(body?.coverCredit ?? '').trim().slice(0, 120),
     status,
     density: parseDensity(body?.density, 'compact'),
     score: parseScore(body?.score),
@@ -185,13 +194,15 @@ app.put('/:id', requireAuth, async (c) => {
 
   const patch: Record<string, unknown> = { status: nextStatus, categoryId: nextCategoryId };
   if (body?.lang !== undefined) patch.lang = parseLang(body.lang, existing.lang as Locale);
-  if (body?.titleEn !== undefined) patch.titleEn = String(body.titleEn).trim();
-  if (body?.titleJa !== undefined) patch.titleJa = String(body.titleJa).trim();
-  if (body?.excerptEn !== undefined) patch.excerptEn = String(body.excerptEn).trim();
-  if (body?.excerptJa !== undefined) patch.excerptJa = String(body.excerptJa).trim();
-  if (body?.bodyEn !== undefined) patch.bodyEn = String(body.bodyEn);
-  if (body?.bodyJa !== undefined) patch.bodyJa = String(body.bodyJa);
+  if (body?.titleEn !== undefined) patch.titleEn = String(body.titleEn).trim().slice(0, MAX_TITLE);
+  if (body?.titleJa !== undefined) patch.titleJa = String(body.titleJa).trim().slice(0, MAX_TITLE);
+  if (body?.excerptEn !== undefined) patch.excerptEn = String(body.excerptEn).trim().slice(0, MAX_EXCERPT);
+  if (body?.excerptJa !== undefined) patch.excerptJa = String(body.excerptJa).trim().slice(0, MAX_EXCERPT);
+  if (body?.bodyEn !== undefined) patch.bodyEn = clampBody(body.bodyEn);
+  if (body?.bodyJa !== undefined) patch.bodyJa = clampBody(body.bodyJa);
   if (body?.cover !== undefined) patch.cover = body.cover ? String(body.cover) : null;
+  if (body?.coverLabel !== undefined) patch.coverLabel = String(body.coverLabel).trim().slice(0, 120);
+  if (body?.coverCredit !== undefined) patch.coverCredit = String(body.coverCredit).trim().slice(0, 120);
   if (body?.density !== undefined) patch.density = parseDensity(body.density, existing.density as PostDensity);
   if (body?.score !== undefined) patch.score = parseScore(body.score);
   if (body?.tags !== undefined) patch.tags = parseTags(body.tags);

@@ -1,0 +1,11 @@
+---
+// Reading view for runtime (API) posts. Static shell — the post id arrives as
+// `?id=<uuid>` and ArticleView fetches it client-side. Seed posts keep their
+// prerendered /post/<id> pages.
+import Layout from '../layouts/Layout.astro';
+import Page from '../components/Page.tsx';
+---
+
+<Layout title="Not Bagel">
+  <Page client:load route={{ view: 'article' }} />
+</Layout>

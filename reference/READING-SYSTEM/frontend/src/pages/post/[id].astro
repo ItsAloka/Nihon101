@@ -1,0 +1,17 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Page from '../../components/Page.tsx';
+import { POSTS, postById } from '../../data/seed';
+
+export function getStaticPaths() {
+  return POSTS.map((p) => ({ params: { id: p.id } }));
+}
+
+const { id } = Astro.params;
+const post = postById(id!);
+const title = post ? `${post.title} — Not Bagel` : 'Not Bagel';
+---
+
+<Layout title={title} description={post?.excerpt}>
+  <Page client:load route={{ view: 'article', arg: id }} />
+</Layout>

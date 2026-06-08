@@ -69,6 +69,8 @@ export const posts = sqliteTable('posts', {
   bodyEn: text('body_en').notNull().default(''),   // sanitized HTML
   bodyJa: text('body_ja').notNull().default(''),   // sanitized HTML
   cover: text('cover'),                            // R2 url, null = none
+  coverLabel: text('cover_label').notNull().default(''),   // PHOTO tag on the cover
+  coverCredit: text('cover_credit').notNull().default(''), // credit line under it
   status: text('status').notNull().default('draft'),   // 'draft' | 'published'
   density: text('density').notNull().default('compact'), // line spacing
   score: real('score'),                            // optional review score 0–10

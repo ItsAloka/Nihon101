@@ -53,6 +53,26 @@ const categoryApi = {
   create: (input) => req('/categories', { method: 'POST', auth: true, body: input }).then((r) => r.category),
 };
 
+// Category store — single source of truth for the live category table. The
+// backend returns them ordered by post_count desc; we cache once and let any
+// screen subscribe (composer, profile now; explore / hot-topics later).
+let _cats = null;            // CategoryRow[] once loaded
+let _catsPromise = null;
+const _catSubs = new Set();
+const catStore = {
+  get: () => _cats,
+  load: () => {
+    if (_catsPromise) return _catsPromise;
+    _catsPromise = categoryApi.list()
+      .then((list) => { _cats = list; _catSubs.forEach((fn) => fn(_cats)); return list; })
+      .catch((e) => { _catsPromise = null; throw e; });
+    return _catsPromise;
+  },
+  refresh: () => { _catsPromise = null; return catStore.load(); },
+  byId: (id) => (_cats || []).find((c) => c.id === id) || null,
+  subscribe: (fn) => { _catSubs.add(fn); return () => _catSubs.delete(fn); },
+};
+
 const postApi = {
   // params: { cat, author, status: 'published'|'draft'|'mine' }
   list: (params = {}) => {
@@ -83,6 +103,8 @@ function hydrateReal(po) {
   const words = String(po.bodyEn || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
   return {
     _real: true, _id: po.id, _authorId: po.authorId, _bodyEn: po.bodyEn, _bodyJa: po.bodyJa, _cover: po.cover,
+    _coverLabel: po.coverLabel || '', _coverCredit: po.coverCredit || '',
+    _density: po.density || 'compact',
     slug: po.slug, category: po.categoryId, status: po.status,
     title_en: po.titleEn, title_jp: po.titleJa,
     excerpt_en: po.excerptEn, excerpt_jp: po.excerptJa,
@@ -95,4 +117,5 @@ function hydrateReal(po) {
 
 if (typeof window !== 'undefined') {
   window.N101_CONTENT = { categoryApi, postApi, uploadImage, translate, hydrateReal };
+  window.N101_CATS = catStore;
 }

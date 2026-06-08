@@ -259,7 +259,7 @@ function parseHash(h) {
   if (path[0]==='saved') return {name:'saved'};
   if (path[0]==='trending') return {name:'trending'};
   if (path[0]==='feed' || path[0]==='following') return {name:'feed'};
-  if (path[0]==='compose' || path[0]==='write') return {name:'compose'};
+  if (path[0]==='compose' || path[0]==='write') return path[1] ? {name:'compose', editId:path[1]} : {name:'compose'};
   if (path[0]==='profile') return {name:'profile'};
   if (path[0]==='search') return {name:'search', q: qp.get('q')||''};
   return {name:'home'};
@@ -276,7 +276,7 @@ function serializeHash(r) {
   if (r.name==='saved') return '#/saved';
   if (r.name==='trending') return '#/trending';
   if (r.name==='feed') return '#/following';
-  if (r.name==='compose') return '#/compose';
+  if (r.name==='compose') return r.editId ? `#/compose/${r.editId}` : '#/compose';
   if (r.name==='profile') return '#/profile';
   if (r.name==='search') return r.q ? `#/search?q=${encodeURIComponent(r.q)}` : '#/search';
   return '#/';

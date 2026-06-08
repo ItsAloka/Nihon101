@@ -1,0 +1,45 @@
+---
+/* NOT BAGEL — base document. Loads fonts + the design system, and applies the
+ * saved theme before paint to avoid a flash. The cozy "vibe" is the default. */
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const {
+  title = 'Not Bagel — Otaku blogging',
+  description = 'The home for otaku writing. Reviews, deep dives, and hot takes on anime, manga, manhwa, manhua, novels & games — by fans, for fans.',
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en" data-vibe="cozy">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" href="/assets/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <script is:inline>
+      // Apply the saved theme before first paint (no flash of wrong theme).
+      (function () {
+        try {
+          var t = localStorage.getItem('nb_theme') || 'light';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
