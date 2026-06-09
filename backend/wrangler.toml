@@ -3,10 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-[[d1_databases]]
-binding = "DB"
-database_name = "nihon101"
-database_id = "0e5896d7-4757-485c-bfea-7dfca1e11b67"
+# Postgres connection string lives in .dev.vars (local) and as a secret in prod
+# (`wrangler secret put DATABASE_URL`). Local dev points at Docker Postgres,
+# prod points at Neon.
 
 [[r2_buckets]]
 binding = "MEDIA"

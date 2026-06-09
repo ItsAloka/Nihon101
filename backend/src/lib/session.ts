@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, isNull } from 'drizzle-orm';
+import { getDb } from '../db/client';
 import { refreshTokens } from '../db/schema';
 import { id } from './ids';
 import { randomToken, hashToken } from './crypto';
@@ -11,7 +11,7 @@ const now = () => Date.now();
 
 /** Mint a fresh refresh-token row in a (possibly new) family + set the cookie. */
 export async function startSession(c: Context, userId: string, familyId?: string): Promise<string> {
-  const db = drizzle(c.env.DB);
+  const db = getDb(c);
   const raw = randomToken();
   const rowId = id('rt');
   await db.insert(refreshTokens).values({
@@ -31,7 +31,7 @@ export async function startSession(c: Context, userId: string, familyId?: string
 
 /** Revoke every active token in a family (reuse detection / logout-all). */
 export async function revokeFamily(c: Context, familyId: string): Promise<void> {
-  const db = drizzle(c.env.DB);
+  const db = getDb(c);
   await db
     .update(refreshTokens)
     .set({ revokedAt: now() })

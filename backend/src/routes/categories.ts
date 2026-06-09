@@ -1,12 +1,11 @@
 import { Hono, type Context } from 'hono';
-import { drizzle } from 'drizzle-orm/d1';
-import * as schema from '../db/schema';
+import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { listCategories, createCategory, publicCategory } from '../db/queries/categories';
 
 const app = new Hono<AppEnv>();
-const db = (c: Context<AppEnv>) => drizzle(c.env.DB, { schema });
+const db = (c: Context<AppEnv>) => getDb(c);
 
 // Public list — categories power the composer picker and category pages.
 app.get('/', async (c) => {

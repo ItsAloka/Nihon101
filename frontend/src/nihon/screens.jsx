@@ -494,21 +494,28 @@ function ShareIcon({color='currentColor', size=14}) {
 }
 
 // ====== COMMENTS (level-1 threads: top-level comments + one reply level) ======
+const MAX_COMMENT = 4000; // mirrors the backend cap in routes/posts.ts
+
 function CommentComposer({ p, lang, currentUser, onSubmit, onCancel, autoFocus, compact, placeholder }) {
   const [text, setText] = React.useState('');
   const submit = ()=>{ if(!text.trim()) return; onSubmit(text.trim()); setText(''); };
+  const near = text.length > MAX_COMMENT * 0.9;
   return (
     <div style={{display:'flex', gap:compact?10:14, marginBottom:compact?0:36}}>
       <Avatar user={currentUser} p={p} size={compact?34:44}/>
       <div style={{flex:1}}>
-        <textarea value={text} autoFocus={autoFocus} onChange={(e)=>setText(e.target.value)}
+        <textarea value={text} autoFocus={autoFocus} maxLength={MAX_COMMENT}
+          onChange={(e)=>setText(e.target.value.slice(0, MAX_COMMENT))}
           placeholder={placeholder || (lang==='jp'?'感想を書く…':'Add to the conversation…')}
           style={{
             width:'100%', minHeight:compact?56:80, resize:'vertical', border:`1px solid ${p.line}`,
             borderRadius:14, padding:'12px 16px', background:p.surface,
             fontFamily:'var(--fontBody)', fontSize:compact?14:15, color:p.ink, outline:'none', lineHeight:1.5,
           }}/>
-        <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'flex-end', gap:8, marginTop:10}}>
+          <span style={{marginRight:'auto', fontFamily:'var(--fontMono)', fontSize:12, color: near ? p.stamp : p.inkFaint}}>
+            {text.length}/{MAX_COMMENT}
+          </span>
           {onCancel && <button onClick={onCancel} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'8px 16px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft}}>{lang==='jp'?'キャンセル':'Cancel'}</button>}
           <button disabled={!text.trim()} onClick={submit}
             style={{...gradStyle(p), padding:compact?'8px 16px':'10px 20px', fontSize:13, opacity: text.trim()?1:0.5, cursor: text.trim()?'pointer':'default'}}>

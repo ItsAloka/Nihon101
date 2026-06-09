@@ -1,10 +1,7 @@
 import { eq, sql, desc } from 'drizzle-orm';
-import type { DrizzleD1Database } from 'drizzle-orm/d1';
-import * as schema from '../schema';
+import type { DB } from '../client';
 import { categories } from '../schema';
-import { id as newId } from '../../lib/ids';
 
-type DB = DrizzleD1Database<typeof schema>;
 export type CategoryRow = typeof categories.$inferSelect;
 
 /** Lowercase, ASCII-slug a label (used for category ids and post slugs). */
@@ -18,11 +15,12 @@ export function slugify(s: string): string {
 }
 
 export function listCategories(db: DB): Promise<CategoryRow[]> {
-  return db.select().from(categories).orderBy(desc(categories.postCount)).all();
+  return db.select().from(categories).orderBy(desc(categories.postCount));
 }
 
-export function getCategoryById(db: DB, id: string): Promise<CategoryRow | undefined> {
-  return db.select().from(categories).where(eq(categories.id, id)).get();
+export async function getCategoryById(db: DB, id: string): Promise<CategoryRow | undefined> {
+  const [row] = await db.select().from(categories).where(eq(categories.id, id));
+  return row;
 }
 
 export interface NewCategoryInput {
@@ -62,7 +60,7 @@ export async function createCategory(db: DB, input: NewCategoryInput): Promise<C
 export function bumpCategoryCount(db: DB, id: string, delta: number): Promise<unknown> {
   return db
     .update(categories)
-    .set({ postCount: sql`MAX(0, ${categories.postCount} + ${delta})` })
+    .set({ postCount: sql`GREATEST(0, ${categories.postCount} + ${delta})` })
     .where(eq(categories.id, id));
 }
 

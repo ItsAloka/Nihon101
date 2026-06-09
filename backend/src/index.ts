@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { AppEnv } from './types';
+import { closeDb } from './db/client';
 import auth from './routes/auth';
 import google from './routes/google';
 import posts from './routes/posts';
@@ -18,6 +19,15 @@ app.use('*', async (c, next) => {
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   return corsMw(c, next);
+});
+
+// Close the per-request Postgres pool once the request finishes.
+app.use('*', async (c, next) => {
+  try {
+    await next();
+  } finally {
+    await closeDb(c);
+  }
 });
 
 app.get('/', (c) => c.json({ ok: true, service: 'nihon101-api' }));

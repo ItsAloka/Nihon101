@@ -5,16 +5,21 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:apply": "wrangler d1 execute nihon101 --local --file"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
-    "nanoid": "^5.0.7"
+    "nanoid": "^5.0.7",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.0",
     "wrangler": "4"

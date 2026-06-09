@@ -1,9 +1,9 @@
 export type AppBindings = {
-  DB: D1Database;
   MEDIA: R2Bucket;
 };
 
 export type AppVars = {
+  DATABASE_URL: string;
   JWT_SECRET: string;
   REFRESH_PEPPER: string;
   FRONTEND_ORIGIN: string;
