@@ -83,6 +83,34 @@ export const posts = sqliteTable('posts', {
   updatedAt: integer('updated_at').notNull(),
 });
 
+// ---- Engagement: per-user likes + flat comments (Portability-Law compliant) ----
+
+export const postLikes = sqliteTable('post_likes', {
+  id: text('id').primaryKey(),
+  postId: text('post_id').notNull(),
+  userId: text('user_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const postComments = sqliteTable('post_comments', {
+  id: text('id').primaryKey(),
+  postId: text('post_id').notNull(),
+  userId: text('user_id').notNull(),
+  parentId: text('parent_id'),   // null = top-level; else the top-level comment it replies to
+  body: text('body').notNull().default(''),
+  likes: integer('likes').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
+export const commentLikes = sqliteTable('comment_likes', {
+  id: text('id').primaryKey(),
+  commentId: text('comment_id').notNull(),
+  userId: text('user_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Post = typeof posts.$inferSelect;
+export type PostComment = typeof postComments.$inferSelect;

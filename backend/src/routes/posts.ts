@@ -20,9 +20,21 @@ import {
   type PostDensity,
 } from '../db/queries/posts';
 import { translateFields, type Locale } from '../lib/openai';
+import {
+  togglePostLike,
+  hasLikedPost,
+  listComments,
+  createComment,
+  getComment,
+  deleteComment,
+  toggleCommentLike,
+  publicComment,
+} from '../db/queries/engagement';
 
 const app = new Hono<AppEnv>();
 const db = (c: Context<AppEnv>) => drizzle(c.env.DB, { schema });
+
+const MAX_COMMENT = 4_000;
 
 // Length caps (chars). Generous enough for long-form essays; block abuse / huge
 // pastes that would bloat D1 rows. Body is sanitized HTML, so it runs larger.
@@ -121,18 +133,22 @@ app.get('/', async (c) => {
 app.get('/slug/:slug', async (c) => {
   const post = await getPostWithAuthorBySlug(db(c), c.req.param('slug'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  if (post.status === 'draft' && (await currentUserId(c)) !== post.authorId)
+  const uid = await currentUserId(c);
+  if (post.status === 'draft' && uid !== post.authorId)
     return c.json({ error: 'not_found' }, 404);
-  return c.json({ post: publicPost(post) });
+  const liked = await hasLikedPost(db(c), post.id, uid);
+  return c.json({ post: { ...publicPost(post), liked } });
 });
 
 // Single post. Drafts visible only to their author.
 app.get('/:id', async (c) => {
   const post = await getPostWithAuthor(db(c), c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  if (post.status === 'draft' && (await currentUserId(c)) !== post.authorId)
+  const uid = await currentUserId(c);
+  if (post.status === 'draft' && uid !== post.authorId)
     return c.json({ error: 'not_found' }, 404);
-  return c.json({ post: publicPost(post) });
+  const liked = await hasLikedPost(db(c), post.id, uid);
+  return c.json({ post: { ...publicPost(post), liked } });
 });
 
 // Create a draft or published post.
@@ -239,6 +255,71 @@ app.delete('/:id', requireAuth, async (c) => {
   await deletePost(d, existing.id);
   if (existing.status === 'published') await bumpCategoryCount(d, existing.categoryId, -1);
   return c.json({ ok: true });
+});
+
+// ---- Engagement: likes + comments (published posts only) ----------------
+
+// Toggle the requester's like on a post.
+app.post('/:id/like', requireAuth, async (c) => {
+  const d = db(c);
+  const post = await getPostById(d, c.req.param('id'));
+  if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
+  const res = await togglePostLike(d, post.id, c.var.user!.id);
+  return c.json(res);
+});
+
+// List a post's comments (public). Includes the viewer's per-comment liked
+// state when a valid token is present.
+app.get('/:id/comments', async (c) => {
+  const d = db(c);
+  const post = await getPostById(d, c.req.param('id'));
+  if (!post) return c.json({ error: 'not_found' }, 404);
+  if (post.status === 'draft' && (await currentUserId(c)) !== post.authorId)
+    return c.json({ error: 'not_found' }, 404);
+  const rows = await listComments(d, post.id, await currentUserId(c));
+  return c.json({ comments: rows.map(publicComment) });
+});
+
+// Add a comment.
+app.post('/:id/comments', requireAuth, async (c) => {
+  const d = db(c);
+  const post = await getPostById(d, c.req.param('id'));
+  if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
+  const body = await c.req.json().catch(() => null);
+  const text = String(body?.body ?? '').trim().slice(0, MAX_COMMENT);
+  if (!text) return c.json({ error: 'empty_comment' }, 400);
+
+  // Resolve an optional reply target. Only one level is allowed, so a reply to a
+  // reply is flattened onto the original top-level comment.
+  let parentId: string | null = null;
+  if (body?.parentId) {
+    const parent = await getComment(d, String(body.parentId));
+    if (!parent || parent.postId !== post.id) return c.json({ error: 'invalid_parent' }, 400);
+    parentId = parent.parentId ?? parent.id;
+  }
+  const row = await createComment(d, post.id, c.var.user!.id, text, parentId);
+  return c.json({ comment: publicComment({ ...row, authorName: c.var.user!.username, liked: false }) }, 201);
+});
+
+// Delete a comment (its author or the post's owner).
+app.delete('/:id/comments/:cid', requireAuth, async (c) => {
+  const d = db(c);
+  const comment = await getComment(d, c.req.param('cid'));
+  if (!comment || comment.postId !== c.req.param('id')) return c.json({ error: 'not_found' }, 404);
+  const post = await getPostById(d, comment.postId);
+  const uid = c.var.user!.id;
+  if (comment.userId !== uid && post?.authorId !== uid) return c.json({ error: 'forbidden' }, 403);
+  await deleteComment(d, comment);
+  return c.json({ ok: true });
+});
+
+// Toggle the requester's like on a comment.
+app.post('/:id/comments/:cid/like', requireAuth, async (c) => {
+  const d = db(c);
+  const comment = await getComment(d, c.req.param('cid'));
+  if (!comment || comment.postId !== c.req.param('id')) return c.json({ error: 'not_found' }, 404);
+  const res = await toggleCommentLike(d, comment.id, c.var.user!.id);
+  return c.json(res);
 });
 
 export default app;
