@@ -1,0 +1,25 @@
+# Local Postgres for Nihon101 dev. Prod uses Neon (swap DATABASE_URL only).
+#   docker compose up -d        # start
+#   docker compose down         # stop (keeps data)
+#   docker compose down -v      # stop + wipe data
+services:
+  db:
+    image: postgres:16
+    container_name: nihon101-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nihon101
+      POSTGRES_PASSWORD: nihon101
+      POSTGRES_DB: nihon101
+    ports:
+      - "5432:5432"
+    volumes:
+      - nihon101_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nihon101 -d nihon101"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nihon101_pgdata:

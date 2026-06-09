@@ -190,6 +190,21 @@ function ghostBtn(p){ return {appearance:'none', border:`1px solid ${p.line}`, b
 // Strip HTML tags → plain text (word count + auto-excerpt source).
 function htmlToText(html){ const d = document.createElement('div'); d.innerHTML = html || ''; return d.textContent || ''; }
 
+// Length caps — mirror the backend (routes/posts.ts) so what the writer sees is
+// exactly what the server will accept.
+const MAX_TITLE = 300;
+const MAX_EXCERPT = 600;
+const MAX_BODY = 200_000;
+
+// Small mono "n/max" counter; turns to the red stamp accent past 90%.
+function CharCount({ p, n, max, suffix }){
+  return (
+    <div style={{fontFamily:'var(--fontMono)', fontSize:11, color: n > max*0.9 ? p.stamp : p.inkFaint, marginBottom:8}}>
+      {n}/{max}{suffix ? ` · ${suffix}` : ''}
+    </div>
+  );
+}
+
 function ComposerPage({ p, lang, currentUser, editId }) {
   const Editor = window.NihonEditor;
   // Single source language for the whole post. Fixed from the site language at
@@ -449,21 +464,28 @@ function ComposerPage({ p, lang, currentUser, editId }) {
         </div>
 
         {/* title */}
-        <textarea value={title} onChange={(e)=>setTitle(e.target.value)} rows={2}
+        <textarea value={title} maxLength={MAX_TITLE} onChange={(e)=>setTitle(e.target.value.slice(0, MAX_TITLE))} rows={2}
           placeholder={ja?'タイトルを書く':'Title your story'}
           style={{width:'100%', border:'none', outline:'none', background:'transparent', resize:'none',
             fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(32px,4vw,50px)',
             lineHeight:1.05, letterSpacing:'-0.025em', color:p.ink, marginBottom:8}}/>
+        <CharCount p={p} n={title.length} max={MAX_TITLE}/>
         {/* excerpt */}
-        <input value={excerpt} onChange={(e)=>setExcerpt(e.target.value)}
+        <input value={excerpt} maxLength={MAX_EXCERPT} onChange={(e)=>setExcerpt(e.target.value.slice(0, MAX_EXCERPT))}
           placeholder={ja?'リード文（短い要約）':'A short standfirst / summary'}
           style={{width:'100%', border:'none', outline:'none', background:'transparent',
-            fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft,
-            marginBottom:20, paddingBottom:20, borderBottom:`1px solid ${p.line}`}}/>
+            fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft, marginBottom:8}}/>
+        <div style={{marginBottom:20, paddingBottom:20, borderBottom:`1px solid ${p.line}`}}>
+          <CharCount p={p} n={excerpt.length} max={MAX_EXCERPT}/>
+        </div>
 
         {/* rich body */}
         <Editor p={p} onChange={onEditorChange} onReady={(api)=>{ edApi.current = api; setEdReady(true); }}
           density={density} densityLabel={densityLabel} onCycleDensity={cycleDensity}/>
+        {/* body length + word count */}
+        {(()=>{ const words = htmlToText(bodyHtml).trim().split(/\s+/).filter(Boolean).length;
+          return <div style={{marginTop:10}}><CharCount p={p} n={bodyHtml.length} max={MAX_BODY}
+            suffix={`${words} ${ja?'語':words===1?'word':'words'}`}/></div>; })()}
 
         {/* tags */}
         <div style={{marginTop:24}}>

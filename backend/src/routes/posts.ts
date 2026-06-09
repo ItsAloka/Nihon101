@@ -1,6 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { drizzle } from 'drizzle-orm/d1';
-import * as schema from '../db/schema';
+import { getDb, standaloneDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { verifyAccess } from '../lib/tokens';
@@ -32,7 +31,7 @@ import {
 } from '../db/queries/engagement';
 
 const app = new Hono<AppEnv>();
-const db = (c: Context<AppEnv>) => drizzle(c.env.DB, { schema });
+const db = (c: Context<AppEnv>) => getDb(c);
 
 const MAX_COMMENT = 4_000;
 
@@ -66,14 +65,18 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
   if (!src.title && !src.excerpt && !src.body) return;
 
   const job = (async () => {
+    // Own pool — this outlives the request, so it can't share the request pool
+    // (which the cleanup middleware closes when the response is sent).
+    const { db: bgDb, pool } = standaloneDb(c.env);
     try {
       const out = await translateFields(c.env.OPENAI_API_KEY, to, src);
       const patch: Record<string, unknown> = {};
       if (out.title != null) patch[to === 'en' ? 'titleEn' : 'titleJa'] = out.title;
       if (out.excerpt != null) patch[to === 'en' ? 'excerptEn' : 'excerptJa'] = out.excerpt;
       if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = out.body;
-      if (Object.keys(patch).length) await updatePost(db(c), post.id, patch);
+      if (Object.keys(patch).length) await updatePost(bgDb, post.id, patch);
     } catch { /* leave the other locale empty; next publish retries */ }
+    finally { try { await pool.end(); } catch { /* noop */ } }
   })();
   c.executionCtx.waitUntil(job);
 }

@@ -1,26 +1,22 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
-import type { DrizzleD1Database } from 'drizzle-orm/d1';
-import * as schema from '../schema';
+import type { DB } from '../client';
 import { posts, postLikes, postComments, commentLikes, users } from '../schema';
 import { id as newId } from '../../lib/ids';
-
-type DB = DrizzleD1Database<typeof schema>;
 
 // ---- Post likes (toggle) -------------------------------------------------
 
 /** Toggle a user's like on a post. Returns the new state + the post's count.
  * The UNIQUE (post_id, user_id) index makes the like idempotent. */
 export async function togglePostLike(db: DB, postId: string, userId: string) {
-  const existing = await db
+  const [existing] = await db
     .select({ id: postLikes.id })
     .from(postLikes)
-    .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)))
-    .get();
+    .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
 
   if (existing) {
     await db.delete(postLikes).where(eq(postLikes.id, existing.id));
     await db.update(posts)
-      .set({ likes: sql`MAX(${posts.likes} - 1, 0)` })
+      .set({ likes: sql`GREATEST(${posts.likes} - 1, 0)` })
       .where(eq(posts.id, postId));
   } else {
     await db.insert(postLikes).values({
@@ -31,18 +27,17 @@ export async function togglePostLike(db: DB, postId: string, userId: string) {
       .where(eq(posts.id, postId));
   }
 
-  const row = await db.select({ likes: posts.likes }).from(posts).where(eq(posts.id, postId)).get();
+  const [row] = await db.select({ likes: posts.likes }).from(posts).where(eq(posts.id, postId));
   return { liked: !existing, likes: row?.likes ?? 0 };
 }
 
 /** Whether a user has liked a post (null user → false). */
 export async function hasLikedPost(db: DB, postId: string, userId: string | null): Promise<boolean> {
   if (!userId) return false;
-  const row = await db
+  const [row] = await db
     .select({ id: postLikes.id })
     .from(postLikes)
-    .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)))
-    .get();
+    .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
   return !!row;
 }
 
@@ -68,16 +63,14 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
     .from(postComments)
     .leftJoin(users, eq(postComments.userId, users.id))
     .where(eq(postComments.postId, postId))
-    .orderBy(desc(postComments.createdAt))
-    .all();
+    .orderBy(desc(postComments.createdAt));
 
   if (!viewerId || rows.length === 0) return rows.map((r) => ({ ...r, liked: false }));
 
   const liked = await db
     .select({ commentId: commentLikes.commentId })
     .from(commentLikes)
-    .where(eq(commentLikes.userId, viewerId))
-    .all();
+    .where(eq(commentLikes.userId, viewerId));
   const likedSet = new Set(liked.map((l) => l.commentId));
   return rows.map((r) => ({ ...r, liked: likedSet.has(r.id) }));
 }
@@ -95,8 +88,9 @@ export async function createComment(db: DB, postId: string, userId: string, body
   return row;
 }
 
-export function getComment(db: DB, id: string) {
-  return db.select().from(postComments).where(eq(postComments.id, id)).get();
+export async function getComment(db: DB, id: string) {
+  const [row] = await db.select().from(postComments).where(eq(postComments.id, id));
+  return row;
 }
 
 /** Delete a comment, its likes, and (for a top-level comment) its replies +
@@ -105,7 +99,7 @@ export async function deleteComment(db: DB, comment: typeof postComments.$inferS
   // Gather this comment + any direct replies (one level only).
   const replies = comment.parentId
     ? []
-    : await db.select({ id: postComments.id }).from(postComments).where(eq(postComments.parentId, comment.id)).all();
+    : await db.select({ id: postComments.id }).from(postComments).where(eq(postComments.parentId, comment.id));
   const ids = [comment.id, ...replies.map((r) => r.id)];
 
   for (const cid of ids) {
@@ -113,22 +107,21 @@ export async function deleteComment(db: DB, comment: typeof postComments.$inferS
     await db.delete(postComments).where(eq(postComments.id, cid));
   }
   await db.update(posts)
-    .set({ comments: sql`MAX(${posts.comments} - ${ids.length}, 0)` })
+    .set({ comments: sql`GREATEST(${posts.comments} - ${ids.length}, 0)` })
     .where(eq(posts.id, comment.postId));
 }
 
 /** Toggle a user's like on a comment. Returns new state + count. */
 export async function toggleCommentLike(db: DB, commentId: string, userId: string) {
-  const existing = await db
+  const [existing] = await db
     .select({ id: commentLikes.id })
     .from(commentLikes)
-    .where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)))
-    .get();
+    .where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)));
 
   if (existing) {
     await db.delete(commentLikes).where(eq(commentLikes.id, existing.id));
     await db.update(postComments)
-      .set({ likes: sql`MAX(${postComments.likes} - 1, 0)` })
+      .set({ likes: sql`GREATEST(${postComments.likes} - 1, 0)` })
       .where(eq(postComments.id, commentId));
   } else {
     await db.insert(commentLikes).values({
@@ -139,7 +132,7 @@ export async function toggleCommentLike(db: DB, commentId: string, userId: strin
       .where(eq(postComments.id, commentId));
   }
 
-  const row = await db.select({ likes: postComments.likes }).from(postComments).where(eq(postComments.id, commentId)).get();
+  const [row] = await db.select({ likes: postComments.likes }).from(postComments).where(eq(postComments.id, commentId));
   return { liked: !existing, likes: row?.likes ?? 0 };
 }
 

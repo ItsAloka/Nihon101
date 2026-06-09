@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
+import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { users, googleLinks } from '../db/schema';
 import { id } from '../lib/ids';
@@ -73,18 +73,18 @@ google.get('/callback', async (c) => {
     return c.redirect(`${c.env.FRONTEND_ORIGIN}/${locale}/login?error=google`);
   }
 
-  const db = drizzle(c.env.DB);
+  const db = getDb(c);
   const sub = String(claims.sub);
   const email = String(claims.email).toLowerCase();
   const name = String(claims.name ?? email.split('@')[0]);
 
   // a) already linked? -> that user.  b) email exists? -> link it.  c) else create.
   let userId: string;
-  const link = await db.select().from(googleLinks).where(eq(googleLinks.googleSub, sub)).get();
+  const [link] = await db.select().from(googleLinks).where(eq(googleLinks.googleSub, sub));
   if (link) {
     userId = link.userId;
   } else {
-    const existing = await db.select().from(users).where(eq(users.email, email)).get();
+    const [existing] = await db.select().from(users).where(eq(users.email, email));
     if (existing) {
       userId = existing.id;
     } else {
@@ -95,7 +95,7 @@ google.get('/callback', async (c) => {
         passwordHash: null,
         displayName: name,
         role: 'user',
-        emailVerified: 1, // Google already verified it
+        emailVerified: true, // Google already verified it
         createdAt: now(),
         updatedAt: now(),
       });
