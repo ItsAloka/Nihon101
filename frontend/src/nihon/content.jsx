@@ -89,6 +89,13 @@ const postApi = {
   create: (body) => req('/posts', { method: 'POST', auth: true, body }).then((r) => r.post),
   update: (id, body) => req(`/posts/${id}`, { method: 'PUT', auth: true, body }).then((r) => r.post),
   remove: (id) => req(`/posts/${id}`, { method: 'DELETE', auth: true }),
+
+  // Engagement (real posts only — seed posts have no backend row).
+  toggleLike: (id) => req(`/posts/${id}/like`, { method: 'POST', auth: true }), // → {liked, likes}
+  listComments: (id) => req(`/posts/${id}/comments`).then((r) => r.comments),
+  addComment: (id, body, parentId) => req(`/posts/${id}/comments`, { method: 'POST', auth: true, body: { body, parentId: parentId || null } }).then((r) => r.comment),
+  removeComment: (id, cid) => req(`/posts/${id}/comments/${cid}`, { method: 'DELETE', auth: true }),
+  toggleCommentLike: (id, cid) => req(`/posts/${id}/comments/${cid}/like`, { method: 'POST', auth: true }), // → {liked, likes}
 };
 
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.
@@ -112,6 +119,8 @@ function hydrateReal(po) {
     author: po.authorName || 'Unknown', date,
     readMins: Math.max(1, Math.round(words / 200)),
     likes: po.likes || 0,
+    liked: !!po.liked,
+    commentCount: po.comments || 0,
   };
 }
 

@@ -113,7 +113,7 @@ function RealAuthorCard({ p, lang, name }) {
   );
 }
 
-function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, currentUser, onRequireLogin }) {
+function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, onDeleteComment, canModerate, currentUser, onRequireLogin }) {
   const containerRef = React.useRef(null);
 
   const title = lang==='jp'?post.title_jp:post.title_en;
@@ -301,6 +301,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         <div style={{maxWidth:780, margin:'0 auto'}}>
           <CommentSection p={p} lang={lang} slug={post.slug}
             comments={comments||[]} onAdd={onAddComment} onLike={onLikeComment}
+            onDelete={onDeleteComment} canModerate={canModerate}
             currentUser={currentUser} onRequireLogin={onRequireLogin}/>
         </div>
       </div>
@@ -387,10 +388,69 @@ function ArticleLoader(props) {
       .catch(()=>{ if(live) setMissing(true); });
     return ()=>{ live=false; };
   }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
-  const post = seed || real;
-  if (post) return <ArticlePage {...props} post={post}/>;
+  // Seed posts keep the localStorage mock engagement passed down from app.jsx.
+  // Real backend posts get live likes + comments wired straight to the Worker.
+  if (seed) return <ArticlePage {...props} post={seed}/>;
+  if (real) return <RealArticle {...props} post={real}/>;
   if (missing) return <div style={{maxWidth:1320, margin:'0 auto', padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontDisplay)', fontSize:24, color:props.p.inkSoft}}>{props.lang==='jp'?'記事が見つかりません。':'Article not found.'}</div>;
   return <div style={{padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontMono)', fontSize:13, color:props.p.inkFaint}}>…</div>;
+}
+
+// Backend-wired engagement for a real post, adapted onto ArticlePage's existing
+// prop contract (claps map + comment list). Likes are a server-side toggle;
+// comments are flat with per-comment likes. Optimistic, with rollback on error.
+const initials = (name)=> (name||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase() || '?';
+const toCommentView = (c)=> ({
+  id: c.id, parentId: c.parentId || null,
+  author: { slug:c.userId, en:c.authorName||'Reader', jp:c.authorName||'読者', initials:initials(c.authorName), tint:'rose' },
+  text: c.body, ts: c.createdAt, likes: c.likes, liked: c.liked, _real:true, userId:c.userId,
+});
+function RealArticle(props) {
+  const { post, currentUser } = props;
+  const id = post._id;
+  const [liked, setLiked] = React.useState(!!post.liked);
+  const [likeCount, setLikeCount] = React.useState(post.likes || 0);
+  const [comments, setComments] = React.useState([]);
+
+  React.useEffect(()=>{
+    let live = true;
+    window.N101_CONTENT.postApi.listComments(id)
+      .then(rows=>{ if(live) setComments(rows.map(toCommentView)); })
+      .catch(()=>{});
+    return ()=>{ live=false; };
+  }, [id]);
+
+  const onClap = React.useCallback(async ()=>{
+    setLiked(v=>!v); setLikeCount(n=> n + (liked?-1:1));   // optimistic
+    try { const r = await window.N101_CONTENT.postApi.toggleLike(id); setLiked(r.liked); setLikeCount(r.likes); }
+    catch { setLiked(v=>!v); setLikeCount(n=> n + (liked?1:-1)); }   // rollback
+  }, [id, liked]);
+
+  const onAddComment = React.useCallback(async (_slug, text, parentId)=>{
+    try { const c = await window.N101_CONTENT.postApi.addComment(id, text, parentId); setComments(prev=>[...prev, toCommentView(c)]); }
+    catch {}
+  }, [id]);
+
+  const onDeleteComment = React.useCallback(async (cid)=>{
+    setComments(prev=>prev.filter(c=> c.id!==cid && c.parentId!==cid));   // optimistic (drop replies too)
+    try { await window.N101_CONTENT.postApi.removeComment(id, cid); } catch {}
+  }, [id]);
+
+  const onLikeComment = React.useCallback(async (_slug, cid)=>{
+    setComments(prev=>prev.map(c=> c.id===cid ? {...c, liked:!c.liked, likes:c.likes+(c.liked?-1:1)} : c));
+    try { const r = await window.N101_CONTENT.postApi.toggleCommentLike(id, cid); setComments(prev=>prev.map(c=> c.id===cid ? {...c, liked:r.liked, likes:r.likes} : c)); }
+    catch { setComments(prev=>prev.map(c=> c.id===cid ? {...c, liked:!c.liked, likes:c.likes+(c.liked?1:-1)} : c)); }
+  }, [id]);
+
+  // ArticlePage renders `post.likes + claps[slug]`; feed it a base that lands on
+  // the true total once the viewer's own like (0/1) is added back.
+  const postAdj = { ...post, likes: Math.max(0, likeCount - (liked?1:0)) };
+  return (
+    <ArticlePage {...props} post={postAdj}
+      claps={{ [post.slug]: liked ? 1 : 0 }} onClap={onClap}
+      comments={comments} onAddComment={onAddComment} onLikeComment={onLikeComment}
+      onDeleteComment={onDeleteComment} canModerate={currentUser && currentUser.id===post._authorId}/>
+  );
 }
 
 function AuthorCard({p, lang, slug}) {
@@ -433,10 +493,89 @@ function ShareIcon({color='currentColor', size=14}) {
   </svg>);
 }
 
-// ====== COMMENTS ======
-function CommentSection({ p, lang, slug, comments, onAdd, onLike, currentUser, onRequireLogin }) {
+// ====== COMMENTS (level-1 threads: top-level comments + one reply level) ======
+function CommentComposer({ p, lang, currentUser, onSubmit, onCancel, autoFocus, compact, placeholder }) {
   const [text, setText] = React.useState('');
-  const sorted = [...comments].sort((a,b)=> b.ts - a.ts);
+  const submit = ()=>{ if(!text.trim()) return; onSubmit(text.trim()); setText(''); };
+  return (
+    <div style={{display:'flex', gap:compact?10:14, marginBottom:compact?0:36}}>
+      <Avatar user={currentUser} p={p} size={compact?34:44}/>
+      <div style={{flex:1}}>
+        <textarea value={text} autoFocus={autoFocus} onChange={(e)=>setText(e.target.value)}
+          placeholder={placeholder || (lang==='jp'?'感想を書く…':'Add to the conversation…')}
+          style={{
+            width:'100%', minHeight:compact?56:80, resize:'vertical', border:`1px solid ${p.line}`,
+            borderRadius:14, padding:'12px 16px', background:p.surface,
+            fontFamily:'var(--fontBody)', fontSize:compact?14:15, color:p.ink, outline:'none', lineHeight:1.5,
+          }}/>
+        <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
+          {onCancel && <button onClick={onCancel} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'8px 16px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft}}>{lang==='jp'?'キャンセル':'Cancel'}</button>}
+          <button disabled={!text.trim()} onClick={submit}
+            style={{...gradStyle(p), padding:compact?'8px 16px':'10px 20px', fontSize:13, opacity: text.trim()?1:0.5, cursor: text.trim()?'pointer':'default'}}>
+            {compact ? (lang==='jp'?'返信する':'Reply') : (lang==='jp'?'投稿する':'Post comment')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, onDelete, onRequireLogin }) {
+  const [replying, setReplying] = React.useState(false);
+  const mine = currentUser && (c.userId===currentUser.id || c.author?.slug===currentUser.slug);
+  const canDelete = !!onDelete && (mine || onDelete.canModerate);
+  return (
+    <div style={{display:'flex', gap:14}}>
+      <Avatar user={c.author} p={p} size={isReply?34:44}/>
+      <div style={{flex:1, minWidth:0}}>
+        <div style={{display:'flex', alignItems:'baseline', gap:10, marginBottom:4}}>
+          <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>
+            {lang==='jp'?c.author.jp:c.author.en}
+          </span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{relTime(c.ts, lang)}</span>
+        </div>
+        <p style={{fontFamily:'var(--fontBody)', fontSize:15, lineHeight:1.6, color:p.ink, marginBottom:8, textWrap:'pretty'}}>{c.text}</p>
+        <div style={{display:'flex', alignItems:'center', gap:18}}>
+          <button onClick={()=> currentUser ? onLike(slug, c.id) : onRequireLogin()}
+            style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color: c.liked?p.stamp:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
+            <HeartIcon color={c.liked?p.stamp:p.inkFaint} filled={c.liked} size={15}/> {c.likes>0?c.likes:''} {lang==='jp'?'いいね':'Like'}
+          </button>
+          {!isReply && (
+            <button onClick={()=> currentUser ? setReplying(v=>!v) : onRequireLogin()}
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0, fontWeight:600}}>
+              {lang==='jp'?'返信':'Reply'}
+            </button>
+          )}
+          {canDelete && (
+            <button onClick={()=>onDelete(c.id)}
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
+              {lang==='jp'?'削除':'Delete'}
+            </button>
+          )}
+        </div>
+        {replying && (
+          <div style={{marginTop:14}}>
+            <CommentComposer p={p} lang={lang} currentUser={currentUser} compact autoFocus
+              placeholder={lang==='jp'?'返信を書く…':'Write a reply…'}
+              onCancel={()=>setReplying(false)}
+              onSubmit={(text)=>{ onReply(slug, text, c.id); setReplying(false); }}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, canModerate, currentUser, onRequireLogin }) {
+  // Tag onDelete with moderation capability so CommentItem can show Delete for
+  // the post owner on any comment (not just their own).
+  const del = React.useMemo(()=>{ if(!onDelete) return undefined; const f=(id)=>onDelete(id); f.canModerate=!!canModerate; return f; }, [onDelete, canModerate]);
+
+  const topLevel = comments.filter(c=>!c.parentId).sort((a,b)=> b.ts - a.ts);
+  const repliesByParent = {};
+  comments.filter(c=>c.parentId).forEach(c=>{ (repliesByParent[c.parentId] ||= []).push(c); });
+  Object.values(repliesByParent).forEach(arr=>arr.sort((a,b)=> a.ts - b.ts));
+
   return (
     <section style={{marginTop:56, paddingTop:8}}>
       <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:24}}>
@@ -446,27 +585,9 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, currentUser, o
         </h2>
       </div>
 
-      {/* Composer */}
+      {/* Top-level composer */}
       {currentUser ? (
-        <div style={{display:'flex', gap:14, marginBottom:36}}>
-          <Avatar user={currentUser} p={p} size={44}/>
-          <div style={{flex:1}}>
-            <textarea value={text} onChange={(e)=>setText(e.target.value)}
-              placeholder={lang==='jp'?'感想を書く…':'Add to the conversation…'}
-              style={{
-                width:'100%', minHeight:80, resize:'vertical', border:`1px solid ${p.line}`,
-                borderRadius:14, padding:'14px 16px', background:p.surface,
-                fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, outline:'none', lineHeight:1.5,
-              }}/>
-            <div style={{display:'flex', justifyContent:'flex-end', marginTop:10}}>
-              <button disabled={!text.trim()}
-                onClick={()=>{ onAdd(slug, text.trim()); setText(''); }}
-                style={{...gradStyle(p), padding:'10px 20px', fontSize:13, opacity: text.trim()?1:0.5, cursor: text.trim()?'pointer':'default'}}>
-                {lang==='jp'?'投稿する':'Post comment'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <CommentComposer p={p} lang={lang} currentUser={currentUser} onSubmit={(text)=>onAdd(slug, text)}/>
       ) : (
         <div onClick={onRequireLogin} style={{
           display:'flex', alignItems:'center', justifyContent:'space-between', gap:16,
@@ -482,30 +603,29 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, currentUser, o
         </div>
       )}
 
-      {/* List */}
-      <div style={{display:'flex', flexDirection:'column', gap:24}}>
-        {sorted.length===0 ? (
+      {/* Threads */}
+      <div style={{display:'flex', flexDirection:'column', gap:28}}>
+        {topLevel.length===0 ? (
           <div style={{textAlign:'center', padding:'40px 0', color:p.inkFaint, fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:18}}>
             {lang==='jp'?'最初のコメントを書いてみませんか？':'Be the first to comment.'}
           </div>
-        ) : sorted.map((c)=>(
-          <div key={c.id} style={{display:'flex', gap:14}}>
-            <Avatar user={c.author} p={p} size={44}/>
-            <div style={{flex:1}}>
-              <div style={{display:'flex', alignItems:'baseline', gap:10, marginBottom:4}}>
-                <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>
-                  {lang==='jp'?c.author.jp:c.author.en}
-                </span>
-                <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{relTime(c.ts, lang)}</span>
-              </div>
-              <p style={{fontFamily:'var(--fontBody)', fontSize:15, lineHeight:1.6, color:p.ink, marginBottom:8, textWrap:'pretty'}}>{c.text}</p>
-              <button onClick={()=> currentUser ? onLike(slug, c.id) : onRequireLogin()}
-                style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color: c.liked?p.stamp:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
-                <HeartIcon color={c.liked?p.stamp:p.inkFaint} filled={c.liked} size={15}/> {c.likes>0?c.likes:''} {lang==='jp'?'いいね':'Like'}
-              </button>
+        ) : topLevel.map((c)=>{
+          const replies = repliesByParent[c.id] || [];
+          return (
+            <div key={c.id}>
+              <CommentItem p={p} lang={lang} slug={slug} c={c} currentUser={currentUser}
+                onLike={onLike} onReply={onAdd} onDelete={del} onRequireLogin={onRequireLogin}/>
+              {replies.length>0 && (
+                <div style={{marginLeft:32, marginTop:20, paddingLeft:22, borderLeft:`2px solid ${p.line}`, display:'flex', flexDirection:'column', gap:20}}>
+                  {replies.map(r=>(
+                    <CommentItem key={r.id} p={p} lang={lang} slug={slug} c={r} isReply currentUser={currentUser}
+                      onLike={onLike} onReply={onAdd} onDelete={del} onRequireLogin={onRequireLogin}/>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

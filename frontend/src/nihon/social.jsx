@@ -527,8 +527,13 @@ function MyPostCard({ p, lang, post, onChanged }) {
           <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, lineHeight:1.2, color:p.ink, marginBottom:6, textWrap:'pretty'}}>{title}</h3>
           {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft, lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
         </div>
-        <div style={{display:'flex', alignItems:'center', gap:10, paddingTop:8, borderTop:`1px solid ${p.line}`}}>
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>♥ {post.likes||0}</span>
+        <div style={{display:'flex', alignItems:'center', gap:16, paddingTop:10, borderTop:`1px solid ${p.line}`}}>
+          <span style={{display:'inline-flex', alignItems:'center', gap:6, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
+            <HeartIcon color={p.stamp} filled size={14}/> {(post.likes||0).toLocaleString()}
+          </span>
+          <span style={{display:'inline-flex', alignItems:'center', gap:6, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
+            <CommentIcon color={p.inkSoft} size={14}/> {(post.comments||0).toLocaleString()}
+          </span>
         </div>
       </div>
     </div>

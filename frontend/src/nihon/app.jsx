@@ -140,9 +140,9 @@ function App() {
     return ()=>{ live = false; };
   }, []);
 
-  const onAddComment = React.useCallback((slug, text)=>{
+  const onAddComment = React.useCallback((slug, text, parentId=null)=>{
     const u = window.__currentUser; if (!u) return;
-    const c = { id:'c'+Date.now(), author:{slug:u.slug, en:u.en, jp:u.jp, initials:u.initials, tint:u.tint}, text, ts:Date.now(), likes:0, liked:false };
+    const c = { id:'c'+Date.now(), parentId, userId:u.id, author:{slug:u.slug, en:u.en, jp:u.jp, initials:u.initials, tint:u.tint}, text, ts:Date.now(), likes:0, liked:false };
     setComments(prev=>({...prev, [slug]: [...(prev[slug]||[]), c]}));
   }, []);
   const onLikeComment = React.useCallback((slug, id)=>{
