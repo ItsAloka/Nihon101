@@ -80,8 +80,14 @@ export async function getPostById(db: DB, id: string): Promise<PostRow | undefin
 /** Author summary embedded in public post responses (avoids a separate lookup). */
 const authorCols = {
   authorName: users.displayName,
+  authorNameJa: users.displayNameJa,
+  authorHandle: users.handle,
 };
-export type PostWithAuthor = PostRow & { authorName: string | null };
+export type PostWithAuthor = PostRow & {
+  authorName: string | null;
+  authorNameJa: string | null;
+  authorHandle: string | null;
+};
 
 export async function getPostWithAuthor(db: DB, id: string): Promise<PostWithAuthor | undefined> {
   const [row] = await db
@@ -162,6 +168,8 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     id: p.id,
     authorId: p.authorId,
     authorName: a.authorName ?? null,
+    authorNameJa: a.authorNameJa ?? null,
+    authorHandle: a.authorHandle ?? null,
     categoryId: p.categoryId,
     lang: p.lang,
     slug: p.slug,

@@ -20,21 +20,24 @@ const tintFor = (id) => {
   return TINTS[h % TINTS.length];
 };
 
-// Map a backend user -> the rich shape the rest of the SPA expects. Merges over
-// `prev` so local-only profile decoration (city/bio) survives until those move
-// to the backend too.
+// Map a backend user -> the rich shape the rest of the SPA expects.
 function toAppUser(u, prev) {
   const name = u.displayName || (u.email || '').split('@')[0];
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'writer';
+  const fallbackSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'writer';
   return {
     ...(prev || {}),
     id: u.id, email: u.email, role: u.role,
-    en: name, jp: name, slug,
+    en: name, jp: u.displayNameJa || name,
+    name_ja: u.displayNameJa || '',
+    slug: u.handle || fallbackSlug,
     initials: initialsOf(name),
     tint: (prev && prev.tint) || tintFor(u.id),
-    city: (prev && prev.city) || '—',
-    bio_en: (prev && prev.bio_en) || 'New to nihon101.',
-    bio_jp: (prev && prev.bio_jp) || 'nihon101をはじめました。',
+    city: u.location || '—',
+    bio_en: u.bio || 'New to nihon101.',
+    bio_jp: u.bioJa || u.bio || 'nihon101をはじめました。',
+    bio_en_raw: u.bio || '',
+    bio_ja_raw: u.bioJa || '',
+    avatarUrl: u.avatarUrl || null,
     posts: (prev && prev.posts) || 0,
   };
 }
@@ -81,6 +84,26 @@ async function logout() {
 }
 const googleStartUrl = (lang) => `${API_BASE}/auth/google/start?locale=${loc(lang)}`;
 
+// Partial profile update: { displayName?, handle?, bio?, location?, avatarUrl? }.
+async function updateProfile(patch) {
+  const d = await req('/auth/me', { method: 'PATCH', body: JSON.stringify(patch) });
+  return d.user;
+}
+// Upload an avatar blob to R2 via /media; returns its public URL.
+async function uploadAvatar(blob) {
+  const form = new FormData();
+  form.append('file', blob, 'avatar.webp');
+  const res = await fetch(API_BASE + '/media', {
+    method: 'POST',
+    credentials: 'include',
+    headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {},
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), { status: res.status, code: data.error });
+  return data.url;
+}
+
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, refresh, logout, googleStartUrl };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, refresh, logout, googleStartUrl, updateProfile, uploadAvatar };
 }

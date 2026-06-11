@@ -10,13 +10,20 @@ export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull(),
   passwordHash: text('password_hash'),
-  displayName: text('display_name').notNull(),
+  displayName: text('display_name').notNull(),          // EN / romaji name
+  displayNameJa: text('display_name_ja').notNull().default(''), // author-written JA name, '' = fall back to EN
+  handle: text('handle').notNull(),           // public slug, e.g. 'kage-loom' — never translated
+  bio: text('bio').notNull().default(''),                // EN bio
+  bioJa: text('bio_ja').notNull().default(''),           // JA bio (auto-translated at edit time, author-reviewable)
+  location: text('location').notNull().default(''),
+  avatarUrl: text('avatar_url'),              // R2 url via /media, null = initials
   role: text('role').notNull().default('user'),
   emailVerified: boolean('email_verified').notNull().default(false),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
 }, (t) => [
   uniqueIndex('ux_users_email').on(t.email),
+  uniqueIndex('ux_users_handle').on(t.handle),
 ]);
 
 export const refreshTokens = pgTable('refresh_tokens', {

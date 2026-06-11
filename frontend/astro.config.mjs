@@ -27,6 +27,7 @@ export default defineConfig({
         '/posts': 'http://localhost:8787',
         '/categories': 'http://localhost:8787',
         '/media': 'http://localhost:8787',
+        '/users': 'http://localhost:8787',
         '/translate': 'http://localhost:8787',
       },
     },

@@ -11,6 +11,7 @@ import { clearRefreshCookie, readRefreshCookie } from '../lib/cookies';
 import { sendEmail, resetEmailHtml } from '../lib/mail';
 import { requireAuth } from '../middleware/requireAuth';
 import { startSession, revokeFamily } from '../lib/session';
+import { uniqueHandle, handleTaken, HANDLE_RE } from '../db/queries/users';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const auth = new Hono<AppEnv>();
@@ -18,12 +19,21 @@ const auth = new Hono<AppEnv>();
 const db = (c: any) => getDb(c);
 const now = () => Date.now();
 
-type PublicUser = { id: string; email: string; displayName: string; role: string };
+type PublicUser = {
+  id: string; email: string; displayName: string; displayNameJa: string; role: string;
+  handle: string; bio: string; bioJa: string; location: string; avatarUrl: string | null;
+};
 const publicUser = (u: any): PublicUser => ({
   id: u.id,
   email: u.email,
   displayName: u.displayName,
+  displayNameJa: u.displayNameJa,
   role: u.role,
+  handle: u.handle,
+  bio: u.bio,
+  bioJa: u.bioJa,
+  location: u.location,
+  avatarUrl: u.avatarUrl,
 });
 
 // ---------------------------------------------------------------- register
@@ -39,11 +49,13 @@ auth.post('/register', async (c) => {
   if (existing) return c.json({ error: 'email_taken' }, 409);
 
   const userId = id('usr');
+  const display = name || mail.split('@')[0];
   await db(c).insert(users).values({
     id: userId,
     email: mail,
     passwordHash: await bcrypt.hash(password, 10),
-    displayName: name || mail.split('@')[0],
+    displayName: display,
+    handle: await uniqueHandle(db(c), display, userId.slice(-6)),
     role: 'user',
     emailVerified: false,
     createdAt: now(),
@@ -143,11 +155,60 @@ auth.get('/me', requireAuth, async (c) => {
 // -------------------------------------------------------- update profile
 auth.patch('/me', requireAuth, async (c) => {
   const sess = c.get('user')!;
-  const { displayName } = await c.req.json().catch(() => ({}));
-  const name = String(displayName ?? '').trim();
-  if (name.length < 1 || name.length > 50) return c.json({ error: 'invalid_name' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const set: Record<string, unknown> = {};
 
-  await db(c).update(users).set({ displayName: name, updatedAt: now() }).where(eq(users.id, sess.id));
+  if (body.displayName !== undefined) {
+    const name = String(body.displayName ?? '').trim();
+    if (name.length < 1 || name.length > 50) return c.json({ error: 'invalid_name' }, 400);
+    set.displayName = name;
+  }
+  if (body.handle !== undefined) {
+    const handle = String(body.handle ?? '').trim().toLowerCase();
+    if (!HANDLE_RE.test(handle)) return c.json({ error: 'invalid_handle' }, 400);
+    if (await handleTaken(db(c), handle, sess.id)) return c.json({ error: 'handle_taken' }, 409);
+    set.handle = handle;
+  }
+  if (body.displayNameJa !== undefined) {
+    const nameJa = String(body.displayNameJa ?? '').trim();
+    if (nameJa.length > 50) return c.json({ error: 'invalid_name' }, 400);
+    set.displayNameJa = nameJa; // '' = fall back to EN
+  }
+  if (body.bio !== undefined) {
+    const bio = String(body.bio ?? '').trim();
+    if (bio.length > 300) return c.json({ error: 'bio_too_long' }, 400);
+    set.bio = bio;
+  }
+  if (body.bioJa !== undefined) {
+    const bioJa = String(body.bioJa ?? '').trim();
+    if (bioJa.length > 300) return c.json({ error: 'bio_too_long' }, 400);
+    set.bioJa = bioJa;
+  }
+  if (body.location !== undefined) {
+    const location = String(body.location ?? '').trim();
+    if (location.length > 60) return c.json({ error: 'location_too_long' }, 400);
+    set.location = location;
+  }
+  if (body.avatarUrl !== undefined) {
+    const avatarUrl = body.avatarUrl === null ? null : String(body.avatarUrl);
+    // Only our own /media URLs (or clearing) — no hotlinking arbitrary origins.
+    if (avatarUrl !== null && !/^https?:\/\/[^/]+\/media\/[\w-]+\/[\w.-]+$/.test(avatarUrl))
+      return c.json({ error: 'invalid_avatar' }, 400);
+    set.avatarUrl = avatarUrl;
+  }
+  if (Object.keys(set).length === 0) return c.json({ error: 'nothing_to_update' }, 400);
+
+  // Replacing (or clearing) the avatar orphans the old R2 object — delete it.
+  if (body.avatarUrl !== undefined) {
+    const [old] = await db(c).select({ avatarUrl: users.avatarUrl }).from(users).where(eq(users.id, sess.id));
+    if (old?.avatarUrl && old.avatarUrl !== set.avatarUrl) {
+      const key = old.avatarUrl.split('/media/')[1];
+      // Only our own keys, and only this user's folder — never delete on a bad parse.
+      if (key?.startsWith(`${sess.id}/`)) await c.env.MEDIA.delete(key).catch(() => {});
+    }
+  }
+
+  await db(c).update(users).set({ ...set, updatedAt: now() }).where(eq(users.id, sess.id));
   const [u] = await db(c).select().from(users).where(eq(users.id, sess.id));
   return c.json({ user: publicUser(u) });
 });

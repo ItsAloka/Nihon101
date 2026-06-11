@@ -575,7 +575,53 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
   const [tab, setTab] = React.useState('published');
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(user.en);
-  const [bio, setBio] = React.useState(user.bio_en);
+  const [nameJa, setNameJa] = React.useState(user.name_ja || '');
+  const [bio, setBio] = React.useState(lang==='jp' ? (user.bio_ja_raw || '') : (user.bio_en_raw || ''));
+  const [handle, setHandle] = React.useState(user.slug);
+  const [city, setCity] = React.useState(user.city==='—' ? '' : user.city);
+  const [cropFile, setCropFile] = React.useState(null);
+  const [saveErr, setSaveErr] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const fileRef = React.useRef(null);
+
+  const saveProfile = async () => {
+    setSaving(true); setSaveErr('');
+    try {
+      const jpUi = lang==='jp';
+      const patch = { displayName: name, displayNameJa: nameJa.trim(), handle: handle.trim().toLowerCase(), location: city.trim() };
+      // Bio is edited in the site language; the other locale is filled by stored
+      // translation (author can re-edit it from that locale). Names are manual only.
+      const orig = jpUi ? (user.bio_ja_raw || '') : (user.bio_en_raw || '');
+      if (bio.trim() !== orig.trim()) {
+        patch[jpUi ? 'bioJa' : 'bio'] = bio.trim();
+        if (bio.trim()) {
+          try {
+            const f = await window.N101_CONTENT.translate(jpUi ? 'en' : 'ja', { excerpt: bio.trim() });
+            if (f?.excerpt) patch[jpUi ? 'bio' : 'bioJa'] = f.excerpt;
+          } catch (e) { /* translation failing must not block the save */ }
+        } else {
+          patch[jpUi ? 'bio' : 'bioJa'] = '';
+        }
+      }
+      const u = await window.N101_API.updateProfile(patch);
+      onUpdateUser(window.N101_API.toAppUser(u, user));
+      setEditing(false);
+    } catch (e) {
+      setSaveErr(e.code==='handle_taken' ? (lang==='jp'?'このハンドルは使われています。':'That handle is already taken.')
+        : e.code==='invalid_handle' ? (lang==='jp'?'ハンドルは半角英数字とハイフン3〜30文字。':'Handle: 3–30 chars, a–z, 0–9, hyphens.')
+        : (lang==='jp'?'保存できませんでした。':'Could not save.'));
+    } finally { setSaving(false); }
+  };
+  const onAvatarCropped = async (blob) => {
+    setCropFile(null);
+    try {
+      const url = await window.N101_API.uploadAvatar(blob);
+      const u = await window.N101_API.updateProfile({ avatarUrl: url });
+      onUpdateUser(window.N101_API.toAppUser(u, user));
+    } catch (e) {
+      setSaveErr(lang==='jp'?'画像をアップロードできませんでした。':'Could not upload the image.');
+    }
+  };
   const c = window.tintBg(user.tint, p);
   const totalLikes = published.reduce((s,po)=> s + (po.likes||0), 0);
 
@@ -586,7 +632,16 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
     <div>
       <div style={{background:`linear-gradient(135deg, color-mix(in oklab, ${c} 40%, ${p.bg}), ${p.bg})`, borderBottom:`1px solid ${p.line}`}}>
         <div style={{...wrap(), padding:'56px 32px 44px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:28, alignItems:'center'}}>
-          <Avatar user={user} p={p} size={132}/>
+          <div onClick={()=>{ if(editing) fileRef.current?.click(); }} style={{position:'relative', cursor: editing?'pointer':'default'}}>
+            <Avatar user={user} p={p} size={132}/>
+            {editing && (
+              <div style={{position:'absolute', inset:0, borderRadius:'50%', background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600, textAlign:'center'}}>
+                {lang==='jp'?'写真を変更':'Change photo'}
+              </div>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}}
+              onChange={(e)=>{ const f=e.target.files?.[0]; if(f) setCropFile(f); e.target.value=''; }}/>
+          </div>
           <div style={{minWidth:0}}>
             <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkSoft, marginBottom:10}}>
               {user.role}{user.city && user.city!=='—'?` · ${user.city}`:''} · @{user.slug}
@@ -599,18 +654,46 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
             ) : (
               <h1 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(34px,4.5vw,60px)', letterSpacing:'-0.025em', lineHeight:1, color:p.ink}}>
                 {lang==='jp'?user.jp:user.en}
+                {user.name_ja && user.jp!==user.en && (
+                  <span style={{fontSize:'0.42em', color:p.stamp, marginLeft:18, fontWeight:500, letterSpacing:0}}>
+                    {lang==='jp'?user.en:user.name_ja}
+                  </span>
+                )}
               </h1>
             )}
             {editing ? (
-              <textarea value={bio} onChange={(e)=>setBio(e.target.value)} rows={2} style={{
-                marginTop:12, fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:18, color:p.inkSoft,
-                background:p.surface, border:`1px solid ${p.line}`, borderRadius:12, padding:'8px 12px', width:'100%', maxWidth:600, resize:'vertical', outline:'none',
-              }}/>
+              <div style={{maxWidth:600}}>
+                <textarea value={bio} maxLength={300} onChange={(e)=>setBio(e.target.value.slice(0,300))} rows={2} style={{
+                  marginTop:12, fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:18, color:p.inkSoft,
+                  background:p.surface, border:`1px solid ${p.line}`, borderRadius:12, padding:'8px 12px', width:'100%', resize:'vertical', outline:'none',
+                }}/>
+                <CharCount p={p} n={bio.length} max={300}/>
+              </div>
             ) : (
               <p style={{fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:19, color:p.inkSoft, marginTop:12, maxWidth:600, lineHeight:1.5}}>
                 {lang==='jp'?user.bio_jp:user.bio_en}
               </p>
             )}
+            {editing && (
+              <div style={{marginTop:12, display:'flex', gap:10, flexWrap:'wrap', maxWidth:600}}>
+                <label style={{flex:'1 1 100%'}}>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'名前（日本語）':'Name (Japanese)'}</span>
+                  <input value={nameJa} onChange={(e)=>setNameJa(e.target.value)} placeholder={lang==='jp'?'例: 田中 美緒（空欄なら英語名を表示）':'e.g. 田中 美緒 (blank = English name everywhere)'} style={{display:'block', width:'100%', boxSizing:'border-box', background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'8px 10px', marginTop:4, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink, outline:'none'}}/>
+                </label>
+                <label style={{flex:1, minWidth:200}}>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'ハンドル':'Handle'}</span>
+                  <div style={{display:'flex', alignItems:'center', gap:4, background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'7px 10px', marginTop:4}}>
+                    <span style={{fontFamily:'var(--fontMono)', fontSize:13, color:p.inkFaint}}>@</span>
+                    <input value={handle} onChange={(e)=>setHandle(e.target.value)} style={{flex:1, minWidth:0, border:'none', outline:'none', background:'transparent', fontFamily:'var(--fontMono)', fontSize:13, color:p.ink}}/>
+                  </div>
+                </label>
+                <label style={{flex:1, minWidth:200}}>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'場所':'Location'}</span>
+                  <input value={city} onChange={(e)=>setCity(e.target.value)} placeholder={lang==='jp'?'例: Tokyo':'e.g. Tokyo'} style={{display:'block', width:'100%', boxSizing:'border-box', background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'8px 10px', marginTop:4, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink, outline:'none'}}/>
+                </label>
+              </div>
+            )}
+            {saveErr && <div style={{marginTop:10, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{saveErr}</div>}
             <div style={{marginTop:16, display:'flex', gap:18, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkSoft, letterSpacing:'0.06em', textTransform:'uppercase'}}>
               <span><strong style={{color:p.ink}}>{published.length}</strong> {lang==='jp'?'記事':'published'}</span>
               <span>·</span>
@@ -621,11 +704,16 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:10}}>
             {editing ? (
-              <button onClick={()=>{ onUpdateUser({...user, en:name, jp:name, bio_en:bio, bio_jp:bio}); setEditing(false); }} style={{...gradStyle(p), padding:'11px 22px', fontSize:13}}>
-                {lang==='jp'?'保存':'Save profile'}
+              <button disabled={saving} onClick={saveProfile} style={{...gradStyle(p), padding:'11px 22px', fontSize:13, opacity:saving?0.6:1}}>
+                {saving ? (lang==='jp'?'保存中…':'Saving…') : (lang==='jp'?'保存':'Save profile')}
               </button>
             ) : (
               <button onClick={()=>setEditing(true)} style={ghostBtn(p)}><PencilIcon color={p.ink}/> {lang==='jp'?'編集':'Edit profile'}</button>
+            )}
+            {!editing && (
+              <a href={`/${lang==='jp'?'ja':'en'}/u/${user.slug}`} target="_blank" rel="noreferrer" style={{...ghostBtn(p), textDecoration:'none', justifyContent:'center'}}>
+                {lang==='jp'?'公開プロフィール':'Public profile'}
+              </a>
             )}
             <button onClick={()=>window.__nihon_go({name:'compose'})} style={{...gradStyle(p), padding:'11px 22px', fontSize:13, justifyContent:'center'}}>
               <PencilIcon color="#fff"/> {lang==='jp'?'書く':'New story'}
@@ -680,6 +768,71 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
             </div>
           )
         )}
+      </div>
+      {cropFile && <AvatarCropModal p={p} lang={lang} file={cropFile} onCancel={()=>setCropFile(null)} onDone={onAvatarCropped}/>}
+    </div>
+  );
+}
+
+// Square avatar crop: drag to pan, slider to zoom, exports 512×512 webp.
+function AvatarCropModal({ p, lang, file, onCancel, onDone }) {
+  const SIZE = 320, OUT = 512;
+  const [img, setImg] = React.useState(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [off, setOff] = React.useState({x:0, y:0});
+  const drag = React.useRef(null);
+
+  React.useEffect(()=>{
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = ()=>setImg(im);
+    im.src = url;
+    return ()=>URL.revokeObjectURL(url);
+  }, [file]);
+
+  // Cover-fit base scale; zoom multiplies it. Clamp pan so the image always fills the square.
+  const base = img ? Math.max(SIZE/img.width, SIZE/img.height) : 1;
+  const s = base*zoom;
+  const clampWith = (o, sc)=> img ? {
+    x: Math.min(Math.max(o.x, SIZE - img.width*sc), 0),
+    y: Math.min(Math.max(o.y, SIZE - img.height*sc), 0),
+  } : o;
+  const clamp = (o)=>clampWith(o, s);
+
+  const confirm = ()=>{
+    const cv = document.createElement('canvas');
+    cv.width = OUT; cv.height = OUT;
+    const k = OUT/SIZE;
+    cv.getContext('2d').drawImage(img, off.x*k, off.y*k, img.width*s*k, img.height*s*k);
+    cv.toBlob((b)=>{ if(b) onDone(b); }, 'image/webp', 0.9);
+  };
+
+  return (
+    <div onClick={onCancel} style={{position:'fixed', inset:0, zIndex:80, background:'rgba(20,15,12,0.55)', display:'flex', alignItems:'center', justifyContent:'center'}}>
+      <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, border:`1px solid ${p.line}`, borderRadius:20, padding:24, width:SIZE+48}}>
+        <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:20, color:p.ink, marginBottom:16}}>
+          {lang==='jp'?'写真を調整':'Adjust photo'}
+        </div>
+        <div
+          onPointerDown={(e)=>{ e.currentTarget.setPointerCapture(e.pointerId); drag.current={x:e.clientX-off.x, y:e.clientY-off.y}; }}
+          onPointerMove={(e)=>{ if(drag.current) setOff(clamp({x:e.clientX-drag.current.x, y:e.clientY-drag.current.y})); }}
+          onPointerUp={()=>{ drag.current=null; }}
+          style={{width:SIZE, height:SIZE, borderRadius:16, overflow:'hidden', position:'relative', cursor:'grab', background:p.surface2, touchAction:'none'}}>
+          {img && <img src={img.src} alt="" draggable={false} style={{
+            position:'absolute', left:off.x, top:off.y, width:img.width*s, height:img.height*s,
+            maxWidth:'none', userSelect:'none', pointerEvents:'none',
+          }}/>}
+          <div style={{position:'absolute', inset:0, borderRadius:'50%', boxShadow:'0 0 0 999px rgba(0,0,0,0.35)', pointerEvents:'none'}}></div>
+        </div>
+        <input type="range" min="1" max="3" step="0.01" value={zoom}
+          onChange={(e)=>{ const z=Number(e.target.value); setZoom(z); setOff(o=>clampWith(o, base*z)); }}
+          style={{width:'100%', marginTop:16, accentColor:p.stamp}}/>
+        <div style={{display:'flex', gap:10, marginTop:16, justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={ghostBtn(p)}>{lang==='jp'?'キャンセル':'Cancel'}</button>
+          <button disabled={!img} onClick={confirm} style={{...gradStyle(p), padding:'10px 20px', fontSize:13}}>
+            {lang==='jp'?'保存':'Use photo'}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -106,6 +106,12 @@ in Phases 1–3, this phase finishes it.
   connection string; stop opening a connection per request. (See CLAUDE.md.)
 - Provision **Neon**; set `DATABASE_URL` + all secrets via `wrangler secret put`.
 - Rate limiting on auth + write + comment endpoints; basic abuse controls.
+- **Admin: R2 orphan cleanup tab.** An admin tool that scans the R2 bucket and
+  cross-references every object key against the DB (`users.avatar_url`,
+  `posts.cover`, image URLs inside post bodies). Objects no DB row points at are
+  orphans — list them, preview, bulk-delete. (Avatar replace already deletes the
+  old blob inline; this catches everything else: covers/body images of edited or
+  deleted posts, failed uploads, history before inline cleanup existed.)
 - Deploy: backend → `api.nihon101.com`, frontend → `nihon101.com`. Smoke test.
 
 ---
