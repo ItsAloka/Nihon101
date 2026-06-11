@@ -1,0 +1,186 @@
+---
+// Public author profile — the first real SSR reader surface (Phase 1).
+// Pure server-rendered HTML, no islands; both locales render from the same data.
+const { locale, handle } = Astro.params as { locale: string; handle: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+
+const [profileRes, catsRes] = await Promise.all([
+  fetch(`${API}/users/${encodeURIComponent(handle)}`),
+  fetch(`${API}/categories`),
+]);
+if (!profileRes.ok) return new Response(null, { status: 404 });
+const { user, stats, posts } = await profileRes.json();
+const { categories } = catsRes.ok ? await catsRes.json() : { categories: [] };
+const catById = new Map(categories.map((c: any) => [c.id, c]));
+
+// Same tint hash + initials the SPA uses, so the two surfaces agree.
+const TINT_HEX: Record<string, string> = {
+  rose: '#FBC5CC', amber: '#FFD27A', blue: '#A6C7F0', lilac: '#D6B8F0', peach: '#FBB58B',
+  sage: '#B6D58E', clay: '#E89A7E', mauve: '#D89DBE', sky: '#9BC2EE', cream: '#FFE6B5',
+};
+const TINTS = Object.values(TINT_HEX).slice(0, 9);
+let h = 0;
+for (const ch of user.handle) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+const tint = TINTS[h % TINTS.length];
+const initials = (user.displayName.trim().split(/\s+/).map((w: string) => w[0]).join('').slice(0, 3) || '?').toUpperCase();
+
+// Locale-aware name + bio (author-written JA name, stored-translation bio).
+const name = jp ? (user.displayNameJa || user.displayName) : user.displayName;
+const altName = jp ? (user.displayNameJa ? user.displayName : '') : user.displayNameJa;
+const bio = jp ? (user.bioJa || user.bio) : user.bio;
+
+const dateFmt = (ms: number) =>
+  new Date(ms).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+const joined = dateFmt(user.joinedAt);
+const otherLocaleHref = `/${jp ? 'en' : 'ja'}/u/${user.handle}`;
+const spa = (slug: string) => `/${locale}/#/article/${slug}`;
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#D63752" />
+    <title>{`${name} — nihon101`}</title>
+    <meta name="description" content={bio || (jp ? `${name}のnihon101プロフィール` : `${name} on nihon101`)} />
+    <link rel="canonical" href={`https://nihon101.com/${locale}/u/${user.handle}`} />
+    <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style define:vars={{ tint }}>
+      :root {
+        --bg: #fbfaf7; --surface: #fff; --surface2: #f2f0eb;
+        --ink: #1a1817; --inkSoft: #5c544c; --inkFaint: #a39f98;
+        --line: #ece8e0; --stamp: #d63752;
+        --fontDisplay: 'Shippori Mincho B1', 'Times New Roman', serif;
+        --fontBody: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
+        --fontMono: 'JetBrains Mono', monospace;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: var(--bg); color: var(--ink); font-family: var(--fontBody); -webkit-font-smoothing: antialiased; }
+      a { color: inherit; text-decoration: none; }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+      header.site { border-bottom: 1px solid var(--line); background: var(--surface); }
+      header.site .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+      .logo { font-family: var(--fontDisplay); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+      .logo .dot { color: var(--stamp); }
+      .langlink { font-family: var(--fontMono); font-size: 12px; color: var(--inkSoft); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
+      .hero { background: linear-gradient(135deg, color-mix(in oklab, var(--tint) 40%, var(--bg)), var(--bg)); border-bottom: 1px solid var(--line); }
+      .hero .wrap { padding: 64px 32px 52px; display: grid; grid-template-columns: auto 1fr; gap: 32px; align-items: center; }
+      .avatar { width: 148px; height: 148px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line); flex-shrink: 0;
+        background: linear-gradient(135deg, var(--tint), color-mix(in oklab, var(--tint) 50%, var(--surface2)));
+        display: flex; align-items: center; justify-content: center;
+        font-family: var(--fontDisplay); font-weight: 600; font-size: 56px; color: #3a2e28; }
+      .avatar img { width: 100%; height: 100%; object-fit: cover; }
+      .kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--inkSoft); margin-bottom: 12px; }
+      h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(38px, 5vw, 64px); letter-spacing: -0.025em; line-height: 1; }
+      h1 .altname { font-size: 0.42em; color: var(--stamp); margin-left: 18px; font-weight: 500; letter-spacing: 0; }
+      .bio { font-family: var(--fontDisplay); font-style: italic; font-size: 19px; color: var(--inkSoft); margin-top: 14px; max-width: 640px; line-height: 1.5; }
+      .stats { margin-top: 18px; display: flex; gap: 18px; font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.06em; text-transform: uppercase; }
+      .stats strong { color: var(--ink); }
+      .section { padding: 64px 0 80px; }
+      .section-kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--inkFaint); margin-bottom: 12px; }
+      h2 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(30px, 3.6vw, 46px); letter-spacing: -0.02em; margin-bottom: 36px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
+      @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .hero .wrap { grid-template-columns: 1fr; } }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.15s ease; }
+      .card:hover { transform: translateY(-3px); }
+      .cover { height: 180px; position: relative; }
+      .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .photo-tag { position: absolute; left: 12px; bottom: 12px; background: rgba(20, 15, 12, 0.55); color: #fff;
+        font-family: var(--fontMono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+        padding: 5px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+      .photo-tag .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--stamp); }
+      .card-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+      .cat { font-family: var(--fontMono); font-size: 10px; color: var(--stamp); letter-spacing: 0.1em; text-transform: uppercase; }
+      h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 21px; line-height: 1.18; letter-spacing: -0.01em; }
+      .excerpt { font-size: 13.5px; color: var(--inkSoft); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .meta { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: var(--inkFaint); }
+      .empty { padding: 72px 0; text-align: center; font-family: var(--fontDisplay); font-style: italic; font-size: 20px; color: var(--inkSoft); }
+      footer.site { border-top: 1px solid var(--line); padding: 32px 0 48px; }
+      footer.site .wrap { display: flex; justify-content: space-between; font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.08em; }
+    </style>
+  </head>
+  <body>
+    <header class="site">
+      <div class="wrap">
+        <a class="logo" href={`/${locale}/`}>nihon1<span class="dot">●</span>1</a>
+        <a class="langlink" href={otherLocaleHref}>{jp ? 'EN' : '日本語'}</a>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="wrap">
+        <div class="avatar">
+          {user.avatarUrl ? <img src={user.avatarUrl} alt={user.displayName} /> : initials}
+        </div>
+        <div>
+          <div class="kicker">
+            {user.role}{user.location ? ` · ${user.location}` : ''} · @{user.handle}
+          </div>
+          <h1>{name}{altName && <span class="altname">{altName}</span>}</h1>
+          {bio && <p class="bio">{bio}</p>}
+          <div class="stats">
+            <span><strong>{stats.published}</strong> {jp ? '記事' : 'published'}</span>
+            <span>·</span>
+            <span><strong>{stats.likes.toLocaleString()}</strong> {jp ? 'いいね' : 'likes'}</span>
+            <span>·</span>
+            <span>{jp ? `${joined}に参加` : `joined ${joined}`}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="wrap section">
+      <div class="section-kicker">{posts.length} {jp ? '記事' : 'stories'}</div>
+      <h2>{jp ? `${name}の記事` : `Pieces by ${name}`}</h2>
+
+      {posts.length === 0 ? (
+        <div class="empty">{jp ? 'まだ記事がありません。' : 'No stories yet.'}</div>
+      ) : (
+        <div class="grid">
+          {posts.map((po: any) => {
+            const cat = catById.get(po.categoryId);
+            const ctint = (cat && TINT_HEX[cat.tint]) || '#FBC5CC';
+            return (
+              <a class="card" href={spa(po.slug)}>
+                <div class="cover" style={po.cover ? '' : `background: linear-gradient(135deg, ${ctint}, color-mix(in oklab, ${ctint} 45%, #fff));`}>
+                  {po.cover && <img src={po.cover} alt="" loading="lazy" />}
+                  {po.coverLabel && (
+                    <span class="photo-tag"><span class="dot"></span> PHOTO: {po.coverLabel}</span>
+                  )}
+                </div>
+                <div class="card-body">
+                  <div class="cat">{cat ? (jp ? cat.labelJa : cat.labelEn) : po.categoryId}</div>
+                  <h3>{jp ? (po.titleJa || po.titleEn) : (po.titleEn || po.titleJa)}</h3>
+                  <p class="excerpt">{jp ? (po.excerptJa || po.excerptEn) : (po.excerptEn || po.excerptJa)}</p>
+                  <div class="meta">
+                    <span>{dateFmt(po.publishedAt ?? po.createdAt)}</span>
+                    <span>♥ {po.likes.toLocaleString()}</span>
+                    <span>💬 {po.comments.toLocaleString()}</span>
+                  </div>
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </main>
+
+    <footer class="site">
+      <div class="wrap">
+        <span>nihon1●1 — 日本101</span>
+        <span>© {new Date().getFullYear()} nihon101.com</span>
+      </div>
+    </footer>
+  </body>
+</html>

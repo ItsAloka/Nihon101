@@ -7,6 +7,7 @@ import { users, googleLinks } from '../db/schema';
 import { id } from '../lib/ids';
 import { randomToken } from '../lib/crypto';
 import { startSession } from '../lib/session';
+import { uniqueHandle } from '../db/queries/users';
 
 const google = new Hono<AppEnv>();
 const STATE_COOKIE = 'n101_oauth';
@@ -94,6 +95,7 @@ google.get('/callback', async (c) => {
         email,
         passwordHash: null,
         displayName: name,
+        handle: await uniqueHandle(db, name, userId.slice(-6)),
         role: 'user',
         emailVerified: true, // Google already verified it
         createdAt: now(),

@@ -83,8 +83,12 @@ function avatarCircle(p, name, size) {
   );
 }
 // Byline for a real (backend) post: avatar + name + date.
-function RealByline({ p, name, date }) {
-  return (
+// Link to the SSR public profile when the author has a handle.
+const profileHref = (lang, handle) => handle ? `/${lang==='jp'?'ja':'en'}/u/${handle}` : null;
+
+function RealByline({ p, lang, name, date, handle }) {
+  const href = profileHref(lang, handle);
+  const inner = (
     <div style={{display:'flex', alignItems:'center', gap:14}}>
       {avatarCircle(p, name, 48)}
       <div>
@@ -93,10 +97,12 @@ function RealByline({ p, name, date }) {
       </div>
     </div>
   );
+  return href ? <a href={href} style={{textDecoration:'none'}}>{inner}</a> : inner;
 }
 // "Written by" card for a real post — same shape as the seed AuthorCard, but
-// built from the post's author name (real authors have no stored bio yet).
-function RealAuthorCard({ p, lang, name }) {
+// built from the post's author name (full bio lives on the public profile).
+function RealAuthorCard({ p, lang, name, handle }) {
+  const href = profileHref(lang, handle);
   return (
     <div style={{display:'flex', gap:20, padding:24, background:p.surface, border:`1px solid ${p.line}`, borderRadius:18, alignItems:'center'}}>
       {avatarCircle(p, name, 80)}
@@ -109,6 +115,11 @@ function RealAuthorCard({ p, lang, name }) {
           {lang==='jp'?'nihon101の書き手。':'Writer at nihon101.'}
         </div>
       </div>
+      {href && (
+        <a href={href} style={{flexShrink:0, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink, textDecoration:'none', border:`1px solid ${p.line}`, borderRadius:999, padding:'9px 18px'}}>
+          {lang==='jp'?'プロフィール':'View profile'}
+        </a>
+      )}
     </div>
   );
 }
@@ -180,7 +191,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
           </p>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:`1px solid ${p.line}`, borderBottom:`1px solid ${p.line}`, padding:'18px 0', marginBottom:48}}>
             {real
-              ? <RealByline p={p} name={post.author} date={post.date}/>
+              ? <RealByline p={p} lang={lang} name={lang==='jp'?post.author_jp:post.author} date={post.date} handle={post.authorHandle}/>
               : <AuthorChip slug={post.author} p={p} lang={lang} date={post.date} size="lg"/>}
             {isOwner ? ownerActions : (
             <div style={{display:'flex', gap:10}}>
@@ -291,7 +302,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
       <div style={{...maxWrap()}}>
         <div style={{maxWidth:780, margin:'0 auto'}}>
           {real
-            ? <RealAuthorCard p={p} lang={lang} name={post.author}/>
+            ? <RealAuthorCard p={p} lang={lang} name={lang==='jp'?post.author_jp:post.author} handle={post.authorHandle}/>
             : <AuthorCard p={p} lang={lang} slug={post.author}/>}
         </div>
       </div>

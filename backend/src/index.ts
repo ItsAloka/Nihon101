@@ -7,6 +7,7 @@ import google from './routes/google';
 import posts from './routes/posts';
 import categories from './routes/categories';
 import media from './routes/media';
+import usersRoute from './routes/users';
 import translate from './routes/translate';
 
 const app = new Hono<AppEnv>();
@@ -37,6 +38,7 @@ app.route('/auth/google', google);
 app.route('/posts', posts);
 app.route('/categories', categories);
 app.route('/media', media);
+app.route('/users', usersRoute);
 app.route('/translate', translate);
 
 export default {

@@ -702,7 +702,10 @@ function Avatar({ user, p, size=36, ring=false }) {
       fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:size*0.4,
       border: ring ? `2px solid ${p.surface}` : `1px solid ${p.line}`,
       boxShadow: ring ? `0 0 0 2px ${p.accent}` : 'none',
-    }}>{user.initials}</div>
+      overflow:'hidden',
+    }}>{user.avatarUrl
+      ? <img src={user.avatarUrl} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+      : user.initials}</div>
   );
 }
 

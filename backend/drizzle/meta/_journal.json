@@ -15,6 +15,27 @@
       "when": 1781002096514,
       "tag": "0001_chilly_caretaker",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781149070007,
+      "tag": "0002_narrow_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781149144868,
+      "tag": "0003_daily_blink",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781152076258,
+      "tag": "0004_oval_sister_grimm",
+      "breakpoints": true
     }
   ]
 }
