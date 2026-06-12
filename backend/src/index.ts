@@ -9,6 +9,7 @@ import categories from './routes/categories';
 import media from './routes/media';
 import usersRoute from './routes/users';
 import translate from './routes/translate';
+import home from './routes/home';
 
 const app = new Hono<AppEnv>();
 
@@ -40,6 +41,7 @@ app.route('/categories', categories);
 app.route('/media', media);
 app.route('/users', usersRoute);
 app.route('/translate', translate);
+app.route('/home', home);
 
 export default {
   fetch: app.fetch,

@@ -99,6 +99,17 @@ bun run dev                       # :4321
 bun run build                     # full typecheck + build
 ```
 
+## Local test accounts (dev DB only, seeded by `backend/scripts/seed-posts.ts`)
+
+Password for all four: `nihon-test-2026`. ~50 bilingual published posts spread
+across them + kageloom for testing feeds/rankings.
+
+- `yuki.writes@test.local` (@yuki-shirakawa) — language/culture/philosophy
+- `kenta.eats@test.local` (@kenta-hori) — food
+- `mari.travels@test.local` (@mari-aoki) — travel
+- `ren.frames@test.local` (@ren-takeda) — animation/history
+- `kageloom@gmail.com` (@kage-loom) — main dev account, pw `REDACTED`
+
 ## Current state (2026-06-09)
 
 Done: auth (register/login/refresh/logout/forgot/reset), Google OAuth, account
