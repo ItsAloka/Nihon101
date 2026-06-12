@@ -1,4 +1,4 @@
-import { eq, and, desc, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, sql, getTableColumns } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -107,6 +107,27 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
   return row as PostWithAuthor | undefined;
 }
 
+/** Card column set for list surfaces (home feed): everything except the bodies,
+ * plus a server-side character count so readMins never ships body bytes. */
+const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);
+const cardCols = {
+  ...postCardCols,
+  ...authorCols,
+  bodyChars: sql<number>`char_length(coalesce(${posts.bodyEn}, '')) + char_length(coalesce(${posts.bodyJa}, ''))`,
+};
+export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa'> & { bodyChars: number };
+
+/** Newest published posts, card shape (no bodies selected at all). */
+export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {
+  return db
+    .select(cardCols)
+    .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
+    .where(eq(posts.status, 'published'))
+    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+    .limit(limit) as Promise<PostCardRow[]>;
+}
+
 export interface ListPostsFilter {
   categoryId?: string;
   authorId?: string;
@@ -157,6 +178,39 @@ export function setPublishedAt(db: DB, id: string, at: number | null): Promise<u
 
 export function deletePost(db: DB, id: string): Promise<unknown> {
   return db.delete(posts).where(eq(posts.id, id));
+}
+
+/** Client-facing card shape for list surfaces: publicPost minus the bodies,
+ * plus readMins derived from the body character count (~1100 chars/min). */
+export function publicPostCard(p: PostCardRow) {
+  return {
+    id: p.id,
+    authorId: p.authorId,
+    authorName: p.authorName ?? null,
+    authorNameJa: p.authorNameJa ?? null,
+    authorHandle: p.authorHandle ?? null,
+    categoryId: p.categoryId,
+    lang: p.lang,
+    slug: p.slug,
+    titleEn: p.titleEn,
+    titleJa: p.titleJa,
+    excerptEn: p.excerptEn,
+    excerptJa: p.excerptJa,
+    cover: p.cover,
+    coverLabel: p.coverLabel,
+    coverCredit: p.coverCredit,
+    status: p.status,
+    density: p.density,
+    score: p.score,
+    tags: (p.tags ?? []) as string[],
+    likes: p.likes,
+    saves: p.saves,
+    comments: p.comments,
+    readMins: Math.max(1, Math.round(Number(p.bodyChars) / 1100)),
+    publishedAt: p.publishedAt,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
 }
 
 /** Client-facing shape. Parses tags JSON; includes the embedded author summary

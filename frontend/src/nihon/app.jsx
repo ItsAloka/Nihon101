@@ -178,6 +178,14 @@ function App() {
   let screen = null;
   const r = route;
   if (r.name === 'home') {
+    // Home is the SSR page at /{locale}/ now (the SPA lives at /{locale}/app).
+    // Hard-navigate out instead of rendering the mock HomePage. Guarded on
+    // /app so it can never loop (the SSR home mounts no SPA island anyway).
+    if (window.location.pathname.includes('/app')) {
+      const seg = window.location.pathname.split('/')[1];
+      window.location.href = '/' + (seg === 'en' ? 'en' : 'ja') + '/';
+      return null;
+    }
     screen = <HomePage p={p} lang={lang} posts={window.getAllPosts().filter(x=>!x.isDraft)} t={t} savedSet={savedSet} likedMap={claps} onLike={onLike} onSave={onSave}/>;
   } else if (r.name === 'article') {
     screen = <window.ArticleLoader p={p} lang={lang} slug={r.slug} t={t} savedSet={savedSet} claps={claps} onClap={onLike} onSave={onSave}

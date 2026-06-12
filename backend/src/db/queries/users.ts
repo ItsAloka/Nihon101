@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { eq, and, desc, sql, count } from 'drizzle-orm';
 import type { DB } from '../client';
-import { users } from '../schema';
+import { users, posts } from '../schema';
 import { slugify } from './categories';
 
 export const HANDLE_RE = /^[a-z0-9-]{3,30}$/;
@@ -24,4 +24,26 @@ export async function getUserByHandle(db: DB, handle: string) {
 export async function handleTaken(db: DB, handle: string, exceptUserId?: string): Promise<boolean> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle));
   return !!row && row.id !== exceptUserId;
+}
+
+/** Top writers for the home authors grid: ranked by published-post count plus
+ * likes received. Inner join = only authors with at least one published post.
+ * (Phase 6 may fold a real trend score into this.) */
+export function listTopAuthors(db: DB, limit = 15) {
+  const score = sql<number>`count(${posts.id}) + coalesce(sum(${posts.likes}), 0)`;
+  return db
+    .select({
+      handle: users.handle,
+      displayName: users.displayName,
+      displayNameJa: users.displayNameJa,
+      avatarUrl: users.avatarUrl,
+      location: users.location,
+      postCount: count(posts.id),
+      likes: sql<number>`coalesce(sum(${posts.likes}), 0)::int`,
+    })
+    .from(users)
+    .innerJoin(posts, and(eq(posts.authorId, users.id), eq(posts.status, 'published')))
+    .groupBy(users.id)
+    .orderBy(desc(score))
+    .limit(limit);
 }

@@ -1,0 +1,10 @@
+---
+// The SPA island (article reader, composer, profile, settings… via #/ hashes).
+// The SSR home at /{locale}/ links into here; see [locale]/index.astro.
+import SpaLayout from "../../layouts/SpaLayout.astro";
+
+const { locale } = Astro.params;
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+---
+
+<SpaLayout lang={locale} syncLang />

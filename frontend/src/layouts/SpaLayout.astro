@@ -6,8 +6,10 @@ import App from "../nihon/app.jsx";
 
 interface Props {
   lang?: string;
+  /** Sync the SPA's stored language with the page's URL locale before mount. */
+  syncLang?: boolean;
 }
-const { lang = "ja" } = Astro.props;
+const { lang = "ja", syncLang = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -54,6 +56,15 @@ const { lang = "ja" } = Astro.props;
     </style>
   </head>
   <body>
+    {syncLang && (
+      <script is:inline define:vars={{ lang }}>
+        // The SPA reads its language from localStorage ('jp'|'en'); keep it in
+        // sync with the URL locale so /ja/app opens in Japanese.
+        try {
+          localStorage.setItem("nihon.lang", lang === "ja" ? "jp" : "en");
+        } catch (e) {}
+      </script>
+    )}
     <App client:only="react" />
   </body>
 </html>

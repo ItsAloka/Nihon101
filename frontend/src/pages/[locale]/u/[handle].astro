@@ -36,7 +36,7 @@ const dateFmt = (ms: number) =>
   new Date(ms).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 const joined = dateFmt(user.joinedAt);
 const otherLocaleHref = `/${jp ? 'en' : 'ja'}/u/${user.handle}`;
-const spa = (slug: string) => `/${locale}/#/article/${slug}`;
+const spa = (slug: string) => `/${locale}/app#/article/${slug}`;
 ---
 
 <!doctype html>
