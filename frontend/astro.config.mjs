@@ -29,6 +29,7 @@ export default defineConfig({
         '/media': 'http://localhost:8787',
         '/users': 'http://localhost:8787',
         '/translate': 'http://localhost:8787',
+        '/search': 'http://localhost:8787',
       },
     },
   },

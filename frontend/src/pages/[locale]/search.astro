@@ -1,0 +1,107 @@
+---
+// SSR Explore / search page (Phase 3). Canonical discovery surface — replaces the
+// mock-SPA SearchPage. Server-fetches GET /search (?q + ?cat + sort + page) so
+// results are real, sortable, paginated, and SEO-crawlable; the header dropdown
+// handles live autocomplete. Prototype design.
+import Shell from "../../layouts/Shell.astro";
+import Grid from "../../components/Grid.astro";
+import SortBar from "../../components/SortBar.astro";
+import Pager from "../../components/Pager.astro";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const url = new URL(Astro.request.url);
+const q = (url.searchParams.get('q') || '').trim();
+const cat = url.searchParams.get('cat') || '';
+const page = Math.max(0, Number(url.searchParams.get('page')) || 0);
+const SORTS = ['relevance', 'new', 'top'];
+const defaultSort = q ? 'relevance' : 'new';
+let sort = url.searchParams.get('sort') || defaultSort;
+if (!SORTS.includes(sort)) sort = defaultSort;
+const LIMIT = 12;
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const qs = new URLSearchParams({ loc: locale, limit: String(LIMIT), page: String(page), sort });
+if (q) qs.set('q', q);
+if (cat) qs.set('cat', cat);
+const [sRes, cRes] = await Promise.all([
+  fetch(`${API}/search?${qs}`),
+  fetch(`${API}/categories`),
+]);
+if (!sRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+const { posts, total } = await sRes.json();
+const { categories } = await cRes.json();
+const topCats = categories.slice(0, 9);
+const totalPages = Math.ceil(total / LIMIT);
+
+const catHref = (id: string) => {
+  const p = new URLSearchParams();
+  if (q) p.set('q', q);
+  if (id) p.set('cat', id);
+  if (sort !== defaultSort) p.set('sort', sort);
+  const s = p.toString();
+  return `/${locale}/search${s ? `?${s}` : ''}`;
+};
+// Sort links: preserve q/cat, reset page. Pager links: preserve q/cat/sort, set page.
+const baseParams = new URLSearchParams();
+if (q) baseParams.set('q', q);
+if (cat) baseParams.set('cat', cat);
+const sortHrefBase = `/${locale}/search?${baseParams.toString()}${baseParams.toString() ? '&' : ''}sort=`;
+const pagerParams = new URLSearchParams(baseParams);
+pagerParams.set('sort', sort);
+const pageHrefBase = `/${locale}/search?${pagerParams.toString()}&page=`;
+
+const sortOptions = q
+  ? [{ label: jp ? '関連順' : 'Relevant', value: 'relevance' }, { label: jp ? '新着順' : 'Recent', value: 'new' }, { label: jp ? '人気順' : 'Most liked', value: 'top' }]
+  : [{ label: jp ? '新着順' : 'Recent', value: 'new' }, { label: jp ? '人気順' : 'Most liked', value: 'top' }];
+
+const pageTitle = q
+  ? (jp ? `「${q}」の検索結果 — nihon101` : `“${q}” — search · nihon101`)
+  : (jp ? '探す — nihon101' : 'Explore — nihon101');
+const pageDesc = jp ? 'タイトル、書き手、カテゴリーで探せます。' : 'Search by title, writer, or topic.';
+const canonical = `/${locale}/search${q ? `?q=${encodeURIComponent(q)}` : ''}`;
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical}>
+  <div class="wrap section">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? '探す' : 'Explore'}
+    </div>
+    <h1 class="ex">{jp ? 'すべての記事を、ゆっくり。' : 'Everything we’ve published, slowly.'}</h1>
+    <p class="ex-sub">{jp ? 'タイトル、書き手、カテゴリーで探せます。' : 'Search by title, writer, or topic. Or just scroll.'}</p>
+
+    <form class="ex-search" method="get" action={`/${locale}/search`}>
+      <svg width="20" height="20" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+      <input type="text" name="q" value={q} placeholder={jp ? '木漏れ日、喫茶店、雪国…' : 'kissaten, komorebi, snow…'} autocomplete="off" />
+      {cat && <input type="hidden" name="cat" value={cat} />}
+    </form>
+
+    <div class="cat-strip">
+      <a class={`cat-pill${cat ? '' : ' on'}`} href={catHref('')}>{jp ? 'すべて' : 'All'}</a>
+      {topCats.map((c: any) => (
+        <a class={`cat-pill${cat === c.id ? ' on' : ''}`} href={catHref(c.id)}>
+          <span class="kj">{c.kanji}</span>{jp ? c.labelJa : c.labelEn}
+        </a>
+      ))}
+    </div>
+
+    <div class="list-bar">
+      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件' : 'results'}{q && ` · “${q}”`}</div>
+      {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
+    </div>
+
+    {posts.length === 0 ? (
+      <div class="empty">
+        <div class="mu">無</div>
+        <div class="msg">{jp ? '何もみつかりません。違う言葉でどうぞ。' : 'Nothing here. Try another word.'}</div>
+      </div>
+    ) : (
+      <>
+        <Grid posts={posts} categories={categories} locale={locale} />
+        <Pager page={page} totalPages={totalPages} hrefBase={pageHrefBase} jp={jp} />
+      </>
+    )}
+  </div>
+</Shell>

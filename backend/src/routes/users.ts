@@ -17,6 +17,7 @@ app.get('/:handle', async (c) => {
 
   return c.json({
     user: {
+      id: u.id,
       handle: u.handle,
       displayName: u.displayName,
       displayNameJa: u.displayNameJa,

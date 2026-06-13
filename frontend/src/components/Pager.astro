@@ -1,0 +1,40 @@
+---
+// SSR pagination for list pages. `page` is 0-based; `hrefBase` ends with "page="
+// so each link appends the target page number. Renders Prev · windowed numbers ·
+// Next. Renders nothing when there's a single page.
+interface Props {
+  page: number;       // current, 0-based
+  totalPages: number;
+  hrefBase: string;   // e.g. "/en/search?q=tea&sort=top&page="
+  jp?: boolean;
+}
+const { page, totalPages, hrefBase, jp = false } = Astro.props as Props;
+
+// Windowed page numbers around the current page (max 7 shown).
+const win = 2;
+const from = Math.max(0, page - win);
+const to = Math.min(totalPages - 1, page + win);
+const nums: number[] = [];
+for (let i = from; i <= to; i++) nums.push(i);
+---
+{totalPages > 1 && (
+  <nav class="pager" aria-label="Pagination">
+    {page > 0 && <a class="pg-btn" href={`${hrefBase}${page - 1}`}>‹ {jp ? '前へ' : 'Prev'}</a>}
+    {from > 0 && (
+      <>
+        <a class="pg-num" href={`${hrefBase}0`}>1</a>
+        {from > 1 && <span class="pg-gap">…</span>}
+      </>
+    )}
+    {nums.map((n) => (
+      <a class={`pg-num${n === page ? ' on' : ''}`} href={`${hrefBase}${n}`} aria-current={n === page ? 'page' : undefined}>{n + 1}</a>
+    ))}
+    {to < totalPages - 1 && (
+      <>
+        {to < totalPages - 2 && <span class="pg-gap">…</span>}
+        <a class="pg-num" href={`${hrefBase}${totalPages - 1}`}>{totalPages}</a>
+      </>
+    )}
+    {page < totalPages - 1 && <a class="pg-btn" href={`${hrefBase}${page + 1}`}>{jp ? '次へ' : 'Next'} ›</a>}
+  </nav>
+)}

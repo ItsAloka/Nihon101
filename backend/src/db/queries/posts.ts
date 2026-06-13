@@ -110,7 +110,7 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
 /** Card column set for list surfaces (home feed): everything except the bodies,
  * plus a server-side character count so readMins never ships body bytes. */
 const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);
-const cardCols = {
+export const cardCols = {
   ...postCardCols,
   ...authorCols,
   bodyChars: sql<number>`char_length(coalesce(${posts.bodyEn}, '')) + char_length(coalesce(${posts.bodyJa}, ''))`,

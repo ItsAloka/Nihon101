@@ -32,6 +32,17 @@ function serializeHash(r) {
   }
 }
 
+// Reader-discovery routes that have real SSR pages (Phase 3). Returns the SSR href
+// or '' to fall through to the SPA shell. Shared with the SPA navigator (app.jsx).
+export function ssrHref(r, loc) {
+  switch (r.name) {
+    case "search": return `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+    case "category": return `/${loc}/c/${r.slug}`;
+    case "tag": return `/${loc}/t/${r.slug}`;
+    default: return "";
+  }
+}
+
 function readMode() {
   try { return localStorage.getItem("nihon.mode") || "light"; } catch (e) { return "light"; }
 }
@@ -44,7 +55,9 @@ function paletteFor(mode) {
 }
 
 // ------- Header island -------
-export function HomeHeader({ locale }) {
+// `active` is the Nav route name to highlight (home | search | trending | …).
+// SSR discovery pages (explore/category/tag) pass "search" so Explore underlines.
+export function HomeHeader({ locale, active = "home" }) {
   const loc = locale === "ja" ? "ja" : "en";
   const lang = loc === "ja" ? "jp" : "en";
   const [mode, setMode] = React.useState(readMode);
@@ -54,10 +67,13 @@ export function HomeHeader({ locale }) {
   const p = paletteFor(mode);
 
   // Install the home-scoped navigator so the reused Nav/Footer can leave this page.
+  // Reader-discovery surfaces (explore/category/tag) are real SSR pages now, so
+  // route there directly; everything else hard-navigates into the SPA app shell.
   React.useEffect(() => {
     window.__nihon_go = (r) => {
       if (!r || r.name === "home") { window.location.href = `/${loc}/`; return; }
-      window.location.href = `/${loc}/app${serializeHash(r)}`;
+      const ssr = ssrHref(r, loc);
+      window.location.href = ssr || `/${loc}/app${serializeHash(r)}`;
     };
   }, [loc]);
 
@@ -93,7 +109,7 @@ export function HomeHeader({ locale }) {
   return (
     <>
       <Nav
-        p={p} route={{ name: "home" }} lang={lang}
+        p={p} route={{ name: active }} lang={lang}
         onLang={onLang} onSearch={onSearch} savedCount={savedCount}
         mode={mode} onToggleMode={() => setMode((m) => (m === "dark" ? "light" : "dark"))}
         currentUser={currentUser}

@@ -119,6 +119,7 @@ function hydrateReal(po) {
     author: po.authorName || 'Unknown',
     author_jp: po.authorNameJa || po.authorName || 'Unknown',
     authorHandle: po.authorHandle || '',
+    tags: po.tags || [],
     date,
     readMins: Math.max(1, Math.round(words / 200)),
     likes: po.likes || 0,

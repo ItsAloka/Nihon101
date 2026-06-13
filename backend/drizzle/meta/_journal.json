@@ -36,6 +36,20 @@
       "when": 1781152076258,
       "tag": "0004_oval_sister_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781352869985,
+      "tag": "0005_closed_malice",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781352920058,
+      "tag": "0006_search_fts",
+      "breakpoints": true
     }
   ]
 }

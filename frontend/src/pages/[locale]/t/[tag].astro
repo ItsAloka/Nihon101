@@ -1,0 +1,60 @@
+---
+// SSR tag page (Phase 3). Browses GET /search?tag= (sortable + paginated; the
+// filter slug-normalizes stored labels). Same card grid as home/explore.
+import Shell from "../../../layouts/Shell.astro";
+import Grid from "../../../components/Grid.astro";
+import SortBar from "../../../components/SortBar.astro";
+import Pager from "../../../components/Pager.astro";
+
+const { locale, tag } = Astro.params as { locale: string; tag: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const url = new URL(Astro.request.url);
+const page = Math.max(0, Number(url.searchParams.get('page')) || 0);
+const SORTS = ['new', 'top'];
+let sort = url.searchParams.get('sort') || 'new';
+if (!SORTS.includes(sort)) sort = 'new';
+const LIMIT = 12;
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const [sRes, cRes] = await Promise.all([
+  fetch(`${API}/search?tag=${encodeURIComponent(tag)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`),
+  fetch(`${API}/categories`),
+]);
+if (!sRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+const { posts, total } = await sRes.json();
+const { categories } = await cRes.json();
+const totalPages = Math.ceil(total / LIMIT);
+
+const sortHrefBase = `/${locale}/t/${tag}?sort=`;
+const pageHrefBase = `/${locale}/t/${tag}?sort=${sort}&page=`;
+const sortOptions = [{ label: jp ? '新着順' : 'Recent', value: 'new' }, { label: jp ? '人気順' : 'Most liked', value: 'top' }];
+const pageTitle = `#${tag} — nihon101`;
+const blurb = jp ? `「${tag}」のついた記事。` : `Posts tagged “${tag}”.`;
+const canonical = `/${locale}/t/${tag}`;
+---
+<Shell locale={locale} title={pageTitle} description={blurb} canonicalPath={canonical}>
+  <div class="wrap section">
+    <div class="ex-kicker" style="margin-top:48px;">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? 'タグ' : 'Tag'}
+    </div>
+    <h1 class="ex"><span style="color:var(--accent);">#</span>{tag}</h1>
+    <div class="list-bar">
+      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件の記事' : 'pieces'}</div>
+      {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
+    </div>
+    {posts.length === 0 ? (
+      <div class="empty">
+        <div class="mu">無</div>
+        <div class="msg">{jp ? 'このタグの記事はまだありません。' : 'Nothing tagged this yet.'}</div>
+      </div>
+    ) : (
+      <>
+        <Grid posts={posts} categories={categories} locale={locale} />
+        <Pager page={page} totalPages={totalPages} hrefBase={pageHrefBase} jp={jp} />
+      </>
+    )}
+  </div>
+</Shell>

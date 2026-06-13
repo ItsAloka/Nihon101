@@ -200,6 +200,15 @@ function useCategories() {
 }
 Object.assign(window, { useCategories });
 
+// Tag slug — mirrors the backend slugify() so tag links resolve to /t/<slug>
+// (the SSR tag page slug-normalizes stored labels the same way).
+function tagSlug(label) {
+  return String(label || '')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+Object.assign(window, { tagSlug });
+
 // ------- Logo -------
 // The mark IS the wordmark: nihon + "1" + a hinomaru sun-disc (the "0") + "1".
 function Logo({ p, jp, size = 28 }) {
@@ -453,27 +462,195 @@ function iconBtn(p) {
   };
 }
 
+// API origin for the live search fetches: same-origin in dev (Vite proxies
+// /search → :8787), the API host in prod. Mirrors api.jsx's API_BASE.
+const SEARCH_API = (typeof location !== 'undefined' && location.hostname === 'localhost')
+  ? '' : 'https://api.nihon101.com';
+
+// Live search box with a grouped autocomplete dropdown. Debounced
+// /search/autocomplete calls fill four groups, rendered in order: posts →
+// categories → tags → authors. Arrow keys move a highlight across every row,
+// Enter selects (or runs a full search when nothing is highlighted), Escape
+// closes. Styled entirely in the prototype's `p.*` tokens. Shared by the SSR
+// home header island and the SPA, so both get the dropdown.
 function SearchBar({p, onSearch, lang}) {
+  const loc = lang === 'jp' ? 'ja' : 'en';
+  const EMPTY = { posts: [], categories: [], tags: [], authors: [] };
   const [v, setV] = React.useState('');
+  const [data, setData] = React.useState(EMPTY);
+  const [open, setOpen] = React.useState(false);
+  const [hi, setHi] = React.useState(-1);
+  const wrapRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  const title = (o) => (lang==='jp' ? (o.titleJa || o.titleEn) : (o.titleEn || o.titleJa)) || '—';
+  const catLabel = (o) => (lang==='jp' ? (o.labelJa || o.labelEn) : (o.labelEn || o.labelJa)) || o.id;
+  const authorName = (a) => (lang==='jp' ? (a.displayNameJa || a.displayName) : (a.displayName || a.displayNameJa)) || a.handle;
+  const initialsOf = (n) => ((n||'').trim().split(/\s+/).map((w)=>w[0]).join('').slice(0,3) || '?').toUpperCase();
+
+  const go = (href) => { window.location.href = href; };
+  const goSearch = (query) => {
+    const term = (query||'').trim();
+    go(`/${loc}/search${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+  };
+
+  // Debounced autocomplete. Empty query clears the panel.
+  React.useEffect(() => {
+    const term = v.trim();
+    if (!term) { setData(EMPTY); return; }
+    const t = setTimeout(() => {
+      fetch(`${SEARCH_API}/search/autocomplete?q=${encodeURIComponent(term)}&loc=${loc}`)
+        .then((r) => r.json()).then((d) => { setData(d || EMPTY); setHi(-1); }).catch(() => {});
+    }, 160);
+    return () => clearTimeout(t);
+  }, [v, loc]);
+
+  // Close on outside click.
+  React.useEffect(() => {
+    const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  // Flatten the four groups into one ordered list for arrow-key navigation.
+  const rows = React.useMemo(() => {
+    const r = [];
+    for (const o of data.posts || []) r.push({ kind:'post', key:'p'+o.id, label:title(o), go:()=>go(`/${loc}/app#/article/${o.slug}`) });
+    for (const c of data.categories || []) r.push({ kind:'category', key:'c'+c.id, label:catLabel(c), kanji:c.kanji, go:()=>go(`/${loc}/c/${c.id}`) });
+    for (const t of data.tags || []) r.push({ kind:'tag', key:'t'+t.id, label:t.label, count:t.postCount, go:()=>go(`/${loc}/t/${t.id}`) });
+    for (const a of data.authors || []) r.push({ kind:'author', key:'a'+a.handle, label:authorName(a), handle:a.handle, img:a.avatarUrl, go:()=>go(`/${loc}/u/${a.handle}`) });
+    return r;
+  }, [data, loc, lang]);
+
+  const showPanel = open && v.trim().length > 0;
+
+  const onKey = (e) => {
+    if (e.key === 'Escape') { setOpen(false); inputRef.current?.blur(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi((i)=>Math.min(rows.length-1, i+1)); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setHi((i)=>Math.max(-1, i-1)); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (hi >= 0 && rows[hi]) rows[hi].go(); else goSearch(v);
+    }
+  };
+
+  const groupHead = (txt) => (
+    <div style={{fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkFaint, padding:'8px 12px 4px'}}>{txt}</div>
+  );
+  const rowStyle = (idx) => ({
+    display:'flex', alignItems:'center', gap:10, width:'100%', textAlign:'left',
+    padding:'8px 12px', border:'none', borderRadius:10, cursor:'pointer',
+    background: hi===idx ? p.surface2 : 'transparent',
+    fontFamily:'var(--fontBody)', fontSize:13.5, color:p.ink,
+  });
+
+  // Render a group (header + its rows) with the right global offset so the
+  // highlight lines up with the flattened `rows` list.
+  let cursor = 0;
+  const renderGroup = (kind, label, render) => {
+    const items = rows.filter((r) => r.kind === kind);
+    if (!items.length) return null;
+    const start = cursor; cursor += items.length;
+    return (
+      <div style={{borderTop: start>0 ? `1px solid ${p.line}` : 'none'}}>
+        {groupHead(label)}
+        {items.map((row, i) => {
+          const gi = start + i;
+          return (
+            <button key={row.key} type="button" style={rowStyle(gi)}
+              onMouseEnter={()=>setHi(gi)}
+              onMouseDown={(e)=>{e.preventDefault(); row.go();}}>
+              {render(row)}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <form className="nihon-search" onSubmit={(e)=>{e.preventDefault(); onSearch(v);}} style={{
-      display:'flex', alignItems:'center', gap:8,
-      background:p.surface, border:`1px solid ${p.line}`, borderRadius:999,
-      padding:'7px 14px', minWidth:160, flexShrink:1,
-    }}>
-      <SearchIcon color={p.inkFaint}/>
-      <input value={v} onChange={(e)=>setV(e.target.value)}
-        placeholder={lang==='jp'?'記事を探す…':'Search nihon101…'}
-        style={{
-          border:'none', outline:'none', background:'transparent',
-          fontFamily:'var(--fontBody)', fontSize:13, color:p.ink,
-          flex:1, minWidth:0,
-        }}/>
-      <span style={{
-        fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint,
-        border:`1px solid ${p.line}`, padding:'1px 5px', borderRadius:4,
-      }}>⌘ K</span>
-    </form>
+    <div ref={wrapRef} style={{position:'relative', flexShrink:1, minWidth:0}}>
+      <form className="nihon-search" onSubmit={(e)=>{e.preventDefault(); goSearch(v);}} style={{
+        display:'flex', alignItems:'center', gap:8,
+        background:p.surface, border:`1px solid ${showPanel ? p.accent : p.line}`, borderRadius:999,
+        padding:'7px 14px', minWidth:160,
+      }}>
+        <SearchIcon color={p.inkFaint}/>
+        <input ref={inputRef} value={v}
+          onChange={(e)=>{setV(e.target.value); setOpen(true);}}
+          onFocus={()=>setOpen(true)} onKeyDown={onKey}
+          placeholder={lang==='jp'?'記事を探す…':'Search nihon101…'}
+          aria-label="Search"
+          style={{
+            border:'none', outline:'none', background:'transparent',
+            fontFamily:'var(--fontBody)', fontSize:13, color:p.ink,
+            flex:1, minWidth:0,
+          }}/>
+        {v ? (
+          <button type="button" aria-label="Clear"
+            onMouseDown={(e)=>{e.preventDefault(); setV(''); inputRef.current?.focus();}}
+            style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:11, padding:0}}>✕</button>
+        ) : (
+          <span style={{
+            fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint,
+            border:`1px solid ${p.line}`, padding:'1px 5px', borderRadius:4,
+          }}>⌘ K</span>
+        )}
+      </form>
+
+      {showPanel && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 8px)', right:0, width:360, maxWidth:'80vw',
+          background:p.surface, border:`1px solid ${p.line}`, borderRadius:16,
+          boxShadow:`0 24px 48px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
+          zIndex:80, overflow:'hidden',
+        }}>
+          {rows.length ? (
+            <div style={{maxHeight:'62vh', overflowY:'auto', padding:6}}>
+              {renderGroup('post', lang==='jp'?'記事':'Posts', (r)=>(
+                <>
+                  <span style={{color:p.inkFaint, flex:'none', fontSize:12}}>✎</span>
+                  <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.label}</span>
+                </>
+              ))}
+              {renderGroup('category', lang==='jp'?'カテゴリー':'Categories', (r)=>(
+                <>
+                  <span style={{fontFamily:'var(--fontDisplay)', color:p.stamp, flex:'none', width:16, textAlign:'center'}}>{r.kanji||'·'}</span>
+                  <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.label}</span>
+                </>
+              ))}
+              {renderGroup('tag', lang==='jp'?'タグ':'Tags', (r)=>(
+                <>
+                  <span style={{color:p.accent, fontWeight:800, width:16, textAlign:'center', flex:'none'}}>#</span>
+                  <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.label}</span>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, flex:'none'}}>{r.count}</span>
+                </>
+              ))}
+              {renderGroup('author', lang==='jp'?'書き手':'Authors', (r)=>(
+                <>
+                  <span style={{width:22, height:22, borderRadius:'50%', flex:'none', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--fontDisplay)', fontSize:10, color:'#3a2e28', background:`linear-gradient(135deg, ${p.accent}, ${p.surface2})`}}>
+                    {r.img ? <img src={r.img} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/> : initialsOf(r.label)}
+                  </span>
+                  <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    <b>{r.label}</b> <span style={{color:p.inkFaint}}>@{r.handle}</span>
+                  </span>
+                </>
+              ))}
+            </div>
+          ) : (
+            <div style={{padding:'22px 16px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13}}>
+              {lang==='jp'?`「${v.trim()}」に一致なし`:`No matches for “${v.trim()}”`}
+            </div>
+          )}
+          <div style={{padding:10, borderTop:`1px solid ${p.line}`, background:p.surface2, display:'flex', justifyContent:'flex-end'}}>
+            <button type="button" onMouseDown={(e)=>{e.preventDefault(); goSearch(v);}}
+              style={{appearance:'none', border:'none', cursor:'pointer', borderRadius:999, padding:'8px 16px', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:'#fff', background:`linear-gradient(135deg, ${p.accent}, ${p.accentDeep})`}}>
+              {lang==='jp'?'すべて検索':'Search all'} →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

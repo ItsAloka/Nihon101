@@ -1,0 +1,70 @@
+---
+// SSR category page (Phase 3). Browses GET /search?cat= (sortable + paginated).
+// Prototype banner (hanko kanji + bilingual label + blurb) + the shared card grid.
+import Shell from "../../../layouts/Shell.astro";
+import Grid from "../../../components/Grid.astro";
+import SortBar from "../../../components/SortBar.astro";
+import Pager from "../../../components/Pager.astro";
+
+const { locale, cat } = Astro.params as { locale: string; cat: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const url = new URL(Astro.request.url);
+const page = Math.max(0, Number(url.searchParams.get('page')) || 0);
+const SORTS = ['new', 'top'];
+let sort = url.searchParams.get('sort') || 'new';
+if (!SORTS.includes(sort)) sort = 'new';
+const LIMIT = 12;
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const [sRes, cRes] = await Promise.all([
+  fetch(`${API}/search?cat=${encodeURIComponent(cat)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`),
+  fetch(`${API}/categories`),
+]);
+if (!sRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+const { posts, total } = await sRes.json();
+const { categories } = await cRes.json();
+const category = categories.find((c: any) => c.id === cat);
+if (!category) return new Response(null, { status: 404 });
+const totalPages = Math.ceil(total / LIMIT);
+
+const label = jp ? category.labelJa : category.labelEn;
+const alt = jp ? category.labelEn : category.labelJa;
+const blurb = jp
+  ? `${category.labelJa}についての記事を、ゆっくりと。`
+  : `Slow reading on ${String(category.labelEn).toLowerCase()}, from every writer.`;
+const sortHrefBase = `/${locale}/c/${cat}?sort=`;
+const pageHrefBase = `/${locale}/c/${cat}?sort=${sort}&page=`;
+const sortOptions = [{ label: jp ? '新着順' : 'Recent', value: 'new' }, { label: jp ? '人気順' : 'Most liked', value: 'top' }];
+const pageTitle = `${label} — nihon101`;
+const canonical = `/${locale}/c/${cat}`;
+---
+<Shell locale={locale} title={pageTitle} description={blurb} canonicalPath={canonical}>
+  <div class="banner">
+    <div class="wrap">
+      <div class="hanko">{category.kanji || '日'}</div>
+      <div>
+        <h1>{label}<span class="alt">{alt}</span></h1>
+        <p class="blurb">{blurb}</p>
+      </div>
+    </div>
+  </div>
+  <div class="wrap section">
+    <div class="list-bar">
+      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件の記事' : 'pieces'}</div>
+      {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
+    </div>
+    {posts.length === 0 ? (
+      <div class="empty">
+        <div class="mu">無</div>
+        <div class="msg">{jp ? 'まだ記事がありません。' : 'Nothing published here yet.'}</div>
+      </div>
+    ) : (
+      <>
+        <Grid posts={posts} categories={categories} locale={locale} />
+        <Pager page={page} totalPages={totalPages} hrefBase={pageHrefBase} jp={jp} />
+      </>
+    )}
+  </div>
+</Shell>

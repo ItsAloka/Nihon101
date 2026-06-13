@@ -90,6 +90,11 @@ function App() {
   window.__follows = follows;
 
   const go = React.useCallback((r)=>{
+    // Reader-discovery surfaces are real SSR pages now (Phase 3) — leave the SPA.
+    const loc = (typeof location !== 'undefined' && location.pathname.startsWith('/ja')) ? 'ja' : 'en';
+    if (r.name==='search') { window.location.href = `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}`; return; }
+    if (r.name==='category') { window.location.href = `/${loc}/c/${r.slug}`; return; }
+    if (r.name==='tag') { window.location.href = `/${loc}/t/${r.slug}`; return; }
     // auth-guarded routes
     if ((r.name==='compose' || r.name==='profile') && !window.__currentUser) { setLoginOpen(true); return; }
     if (r.name==='write') r = {name:'compose'};
