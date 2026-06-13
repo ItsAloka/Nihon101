@@ -80,6 +80,18 @@ export const categories = pgTable('categories', {
   index('categories_count_idx').on(t.postCount),
 ]);
 
+// Tag counters: posts keep their jsonb `tags` as the source of truth; this table
+// is a denormalized per-label published-post counter (free-form, not translated —
+// stored as written). Feeds the search "top tags" chips + tag-autocomplete counts.
+export const tags = pgTable('tags', {
+  id: text('id').primaryKey(),            // slug of the label
+  label: text('label').notNull(),         // display label, as first written
+  postCount: integer('post_count').notNull().default(0),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('tags_count_idx').on(t.postCount),
+]);
+
 export const posts = pgTable('posts', {
   id: text('id').primaryKey(),
   authorId: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -153,5 +165,6 @@ export const commentLikes = pgTable('comment_likes', {
 
 export type User = typeof users.$inferSelect;
 export type Category = typeof categories.$inferSelect;
+export type Tag = typeof tags.$inferSelect;
 export type Post = typeof posts.$inferSelect;
 export type PostComment = typeof postComments.$inferSelect;

@@ -261,6 +261,18 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
             {lang==='jp'?'もし、いつかこの店に行くことがあれば、長い時間そこに座って、何もしないでください。':'If you ever go, please sit a long time and do nothing.'}
           </p>}
 
+          {/* Tags — clickable hashtags that open the SSR tag page (/{loc}/t/<slug>). */}
+          {(post.tags && post.tags.length > 0) && (
+            <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:44}}>
+              {post.tags.map((tg, i)=>(
+                <a key={i} href={`/${lang==='jp'?'ja':'en'}/t/${window.tagSlug(tg)}`}
+                  style={{display:'inline-flex', alignItems:'center', gap:2, padding:'6px 13px', borderRadius:999, border:`1px solid ${p.line}`, background:p.surface, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:500, color:p.inkSoft, textDecoration:'none'}}>
+                  <span style={{color:p.accent, fontWeight:800}}>#</span>{tg}
+                </a>
+              ))}
+            </div>
+          )}
+
           {/* End-of-article reader actions — hidden for the post's owner */}
           {!isOwner && <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', padding:'24px 0', borderTop:`1px solid ${p.line}`, borderBottom:`1px solid ${p.line}`, marginBottom:48, flexWrap:'wrap', gap:16}}>
             <div style={{display:'flex', gap:10}}>

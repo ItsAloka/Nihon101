@@ -1,0 +1,15 @@
+---
+// Sort toggle for list pages (explore / category / tag / profile). Each option is
+// a link that sets ?sort= and resets paging. `hrefBase` ends with "sort=".
+interface Props {
+  current: string;
+  options: { label: string; value: string }[];
+  hrefBase: string; // e.g. "/en/c/food?page=0&sort="
+}
+const { current, options, hrefBase } = Astro.props as Props;
+---
+<div class="sortbar">
+  {options.map((o) => (
+    <a class={`sort-pill${current === o.value ? ' on' : ''}`} href={`${hrefBase}${o.value}`}>{o.label}</a>
+  ))}
+</div>

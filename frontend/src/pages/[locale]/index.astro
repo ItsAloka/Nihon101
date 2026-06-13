@@ -35,6 +35,8 @@ const TINT_HEX: Record<string, string> = {
 };
 
 const app = (hash: string) => `/${locale}/app${hash}`;
+const catHref = (id: string) => `/${locale}/c/${id}`;       // SSR category page (Phase 3)
+const searchHref = `/${locale}/search`;                      // SSR explore page (Phase 3)
 const title = (p: any) => (jp ? (p.titleJa || p.titleEn) : (p.titleEn || p.titleJa));
 const excerpt = (p: any) => (jp ? (p.excerptJa || p.excerptEn) : (p.excerptEn || p.excerptJa));
 const authorName = (p: any) => (jp ? (p.authorNameJa || p.authorName) : (p.authorName || p.authorNameJa)) || '—';
@@ -233,8 +235,12 @@ const pageDesc = jp
       .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
       .post-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; text-wrap: pretty; }
       .post-card .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
-      .post-card .likes { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); }
+      .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; gap: 12px; }
+      .post-card .stats { display: flex; align-items: center; gap: 14px; flex: none; }
+      .post-card .stat { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fontMono); font-size: 12.5px; font-weight: 600; color: var(--inkSoft); }
+      .post-card .stat svg { width: 15px; height: 15px; }
+      .post-card .stat.heart svg { fill: var(--stamp); }
+      .post-card .stat.chat svg { fill: none; stroke: var(--inkFaint); stroke-width: 2; stroke-linejoin: round; }
 
       /* authors */
       .author-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; }
@@ -288,7 +294,7 @@ const pageDesc = jp
             <div class="hero-grid">
               <div>
                 <div class="hero-meta">
-                  <a class="chip" href={app(`#/category/${po.categoryId}`)}>
+                  <a class="chip" href={catHref(po.categoryId)}>
                     <span class="kanji">{catKanji(po.categoryId)}</span>
                     {catLabel(po.categoryId)}
                   </a>
@@ -358,7 +364,7 @@ const pageDesc = jp
             </a>
             <div class="body">
               <div class="cmeta">
-                <a class="chip" href={app(`#/category/${feature.categoryId}`)}>
+                <a class="chip" href={catHref(feature.categoryId)}>
                   <span class="kanji">{catKanji(feature.categoryId)}</span>
                   {catLabel(feature.categoryId)}
                 </a>
@@ -382,7 +388,7 @@ const pageDesc = jp
           <ul>
             {topCats.map((c: any) => (
               <li>
-                <a class="cat" href={app(`#/category/${c.id}`)}>
+                <a class="cat" href={catHref(c.id)}>
                   <span><span class="kj">{c.kanji}</span>{jp ? c.labelJa : c.labelEn}</span>
                   <span class="ct">{String(c.postCount).padStart(2, '0')}</span>
                 </a>
@@ -433,7 +439,7 @@ const pageDesc = jp
           <div class="sec-kicker">〜 {jp ? 'すべての書き手から' : 'all writers · all topics'}</div>
           <h2 class="sec">{jp ? 'あたらしい記事' : 'Recently published'}<span class="alt">{jp ? 'Recently published' : 'あたらしい記事'}</span></h2>
         </div>
-        <a class="see-all" href={app('#/search')}>{jp ? 'すべて見る' : 'See all'} →</a>
+        <a class="see-all" href={searchHref}>{jp ? 'すべて見る' : 'See all'} →</a>
       </div>
       <div class="recent-grid">
         {recent.map((po: any) => (
@@ -444,7 +450,7 @@ const pageDesc = jp
               {po.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {po.coverLabel}</span>}
             </a>
             <div class="cmeta">
-              <a class="chip" href={app(`#/category/${po.categoryId}`)}>
+              <a class="chip" href={catHref(po.categoryId)}>
                 <span class="kanji">{catKanji(po.categoryId)}</span>
                 {catLabel(po.categoryId)}
               </a>
@@ -460,7 +466,10 @@ const pageDesc = jp
                   <span class="dt">{dateFmt(po.publishedAt ?? po.createdAt)}</span>
                 </span>
               </a>
-              <span class="likes">♥ {po.likes.toLocaleString()}</span>
+              <div class="stats">
+                <span class="stat heart"><svg viewBox="0 0 24 24"><path d="M12 21l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.18L12 21z"></path></svg>{po.likes.toLocaleString()}</span>
+                <span class="stat chat"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>{(po.comments ?? 0).toLocaleString()}</span>
+              </div>
             </div>
           </article>
         ))}

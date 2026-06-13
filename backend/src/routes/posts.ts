@@ -4,6 +4,7 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { verifyAccess } from '../lib/tokens';
 import { getCategoryById, bumpCategoryCount } from '../db/queries/categories';
+import { bumpTagCounts, diffTags } from '../db/queries/tags';
 import {
   createPost,
   getPostById,
@@ -187,7 +188,10 @@ app.post('/', requireAuth, async (c) => {
     tags: parseTags(body?.tags),
   });
 
-  if (status === 'published') await bumpCategoryCount(d, categoryId, 1);
+  if (status === 'published') {
+    await bumpCategoryCount(d, categoryId, 1);
+    await bumpTagCounts(d, post.tags, 1);
+  }
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
   if (body?.translate === true) scheduleTranslation(c, post);
@@ -231,14 +235,24 @@ app.put('/:id', requireAuth, async (c) => {
   // Reconcile published counts across status and category transitions.
   const wasPub = existing.status === 'published';
   const isPub = nextStatus === 'published';
+  const oldTags = (existing.tags ?? []) as string[];
+  const newTags = (patch.tags ?? oldTags) as string[];
   if (!wasPub && isPub) {
     await bumpCategoryCount(d, nextCategoryId, 1);
+    await bumpTagCounts(d, newTags, 1);
     if (!existing.publishedAt) await setPublishedAt(d, existing.id, Date.now());
   } else if (wasPub && !isPub) {
     await bumpCategoryCount(d, existing.categoryId, -1);
-  } else if (wasPub && isPub && nextCategoryId !== existing.categoryId) {
-    await bumpCategoryCount(d, existing.categoryId, -1);
-    await bumpCategoryCount(d, nextCategoryId, 1);
+    await bumpTagCounts(d, oldTags, -1);
+  } else if (wasPub && isPub) {
+    if (nextCategoryId !== existing.categoryId) {
+      await bumpCategoryCount(d, existing.categoryId, -1);
+      await bumpCategoryCount(d, nextCategoryId, 1);
+    }
+    // Tag set may have changed while staying published — diff the counters.
+    const [added, removed] = diffTags(oldTags, newTags);
+    if (added.length) await bumpTagCounts(d, added, 1);
+    if (removed.length) await bumpTagCounts(d, removed, -1);
   }
 
   // Explicit manual save (draft or publish), not autosave → refill the other
@@ -256,7 +270,10 @@ app.delete('/:id', requireAuth, async (c) => {
   if (existing.authorId !== c.var.user!.id) return c.json({ error: 'forbidden' }, 403);
 
   await deletePost(d, existing.id);
-  if (existing.status === 'published') await bumpCategoryCount(d, existing.categoryId, -1);
+  if (existing.status === 'published') {
+    await bumpCategoryCount(d, existing.categoryId, -1);
+    await bumpTagCounts(d, (existing.tags ?? []) as string[], -1);
+  }
   return c.json({ ok: true });
 });
 

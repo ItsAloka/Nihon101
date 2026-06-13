@@ -18,6 +18,20 @@ export function listCategories(db: DB): Promise<CategoryRow[]> {
   return db.select().from(categories).orderBy(desc(categories.postCount));
 }
 
+/** Categories whose EN or JA label contains the query — drives the autocomplete's
+ * "Categories" group. Busiest first. */
+export function searchCategories(db: DB, q: string, limit = 4): Promise<CategoryRow[]> {
+  const needle = q.trim().slice(0, 50);
+  if (!needle) return Promise.resolve([]);
+  const like = '%' + needle + '%';
+  return db
+    .select()
+    .from(categories)
+    .where(sql`("categories"."label_en" ILIKE ${like} OR "categories"."label_ja" ILIKE ${like})`)
+    .orderBy(desc(categories.postCount))
+    .limit(limit);
+}
+
 export async function getCategoryById(db: DB, id: string): Promise<CategoryRow | undefined> {
   const [row] = await db.select().from(categories).where(eq(categories.id, id));
   return row;
