@@ -3,6 +3,7 @@ import React from "react";
 import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
+import FollowStats from "./FollowStats.jsx";
 const { Photo, Avatar, CategoryChip, AuthorChip, gradStyle, Hanko,
         ArrowRight, ArrowLeft, HeartIcon, CommentIcon, PencilIcon,
         BookmarkIcon, TrendIcon, BellIcon } = window;
@@ -709,7 +710,7 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
               <span>·</span>
               <span><strong style={{color:p.ink}}>{totalLikes.toLocaleString()}</strong> {lang==='jp'?'いいね':'likes'}</span>
               <span>·</span>
-              <span><strong style={{color:p.ink}}>{(published.length*128+42).toLocaleString()}</strong> {lang==='jp'?'読者':'readers'}</span>
+              {user.slug && <FollowStats handle={user.slug} locale={lang==='jp'?'ja':'en'} />}
             </div>
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:10}}>

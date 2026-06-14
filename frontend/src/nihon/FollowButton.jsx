@@ -6,7 +6,7 @@ import React from "react";
 import "./api.jsx";       // window.N101_API
 import "./content.jsx";   // window.N101_CONTENT (followApi)
 
-export default function FollowButton({ userId, handle, locale = "ja", followers = 0, showCount = true }) {
+export default function FollowButton({ userId, handle, locale = "ja", followers = 0, showCount = true, variant = "pink", size = "md" }) {
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [state, setState] = React.useState("loading"); // loading|guest|self|following|not
@@ -51,13 +51,44 @@ export default function FollowButton({ userId, handle, locale = "ja", followers 
 
   const following = state === "following";
   const label = state === "loading"
-    ? (jp ? "…" : "…")
+    ? "…"
     : following ? (jp ? "フォロー中" : "Following") : (jp ? "フォロー" : "Follow");
 
+  // Self-contained styling (the island can't see the page's scoped CSS) using
+  // the site's theme vars, which Shell sets on every page. Two looks: a rose
+  // gradient pill for cards/lists, a solid dark pill for the profile hero.
+  const pad = size === "sm" ? "7px 16px" : "10px 22px";
+  const fs = size === "sm" ? 13 : 14;
+  const base = {
+    appearance: "none", cursor: busy || state === "loading" ? "default" : "pointer",
+    display: "inline-flex", alignItems: "center", gap: 7, padding: pad,
+    borderRadius: 999, fontFamily: "var(--fontBody)", fontSize: fs, fontWeight: 600,
+    lineHeight: 1, transition: "transform .12s ease, opacity .12s ease",
+    opacity: busy || state === "loading" ? 0.65 : 1,
+  };
+  const look = following
+    ? { background: "transparent", color: "var(--ink)", border: "1px solid var(--line)" }
+    : variant === "dark"
+      ? { background: "var(--ink)", color: "var(--bg)", border: "1px solid var(--ink)" }
+      : { background: "linear-gradient(135deg, color-mix(in oklab, var(--stamp) 78%, #fff), var(--stamp))",
+          color: "#fff", border: "1px solid transparent",
+          boxShadow: "0 10px 24px -12px var(--stamp)" };
+
   return (
-    <button className="pf-follow" data-following={following ? "1" : "0"} onClick={toggle} disabled={busy || state === "loading"}>
-      {!following && state !== "loading" && <span className="plus">+</span>}{label}
-      {showCount && <span className="pf-followers">{count.toLocaleString()}</span>}
+    <button
+      onClick={toggle}
+      disabled={busy || state === "loading"}
+      style={{ ...base, ...look }}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+    >
+      {!following && state !== "loading" && <span style={{ fontWeight: 700 }}>+</span>}{label}
+      {showCount && following === false && state !== "loading" && (
+        <span style={{ fontFamily: "var(--fontMono)", fontSize: 11, opacity: 0.85, paddingLeft: 6,
+          borderLeft: "1px solid color-mix(in oklab, currentColor 35%, transparent)" }}>
+          {count.toLocaleString()}
+        </span>
+      )}
     </button>
   );
 }

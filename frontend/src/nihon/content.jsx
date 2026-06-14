@@ -117,6 +117,10 @@ const followApi = {
   following: () => req('/users/me/following', { auth: true }).then((r) => r.following),
   follow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'POST', auth: true }), // → {following, followers}
   unfollow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'DELETE', auth: true }),
+  // Readers (followers) / Writers (following) lists for the profile modal —
+  // newest-follow-first, each row with the viewer's follow-state.
+  followers: (handle, page = 0) => req(`/users/${handle}/followers?page=${page}`).then((r) => r.users),
+  followingOf: (handle, page = 0) => req(`/users/${handle}/following?page=${page}`).then((r) => r.users),
 };
 
 // Relative "2h"/"3d" style stamp from an epoch-ms value.

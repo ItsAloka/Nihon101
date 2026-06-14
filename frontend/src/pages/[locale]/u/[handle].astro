@@ -8,6 +8,7 @@ import SortBar from "../../../components/SortBar.astro";
 import Pager from "../../../components/Pager.astro";
 import { TINT_HEX } from "../../../lib/cards";
 import FollowButton from "../../../nihon/FollowButton.jsx";
+import FollowStats from "../../../nihon/FollowStats.jsx";
 
 const { locale, handle } = Astro.params as { locale: string; handle: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -69,10 +70,12 @@ const canonical = `/${locale}/u/${user.handle}`;
           <span>·</span>
           <span><strong>{stats.likes.toLocaleString()}</strong> {jp ? 'いいね' : 'likes'}</span>
           <span>·</span>
+          <FollowStats client:only="react" handle={user.handle} locale={locale} followers={stats.followers ?? 0} following={stats.following ?? 0} />
+          <span>·</span>
           <span>{jp ? `${joined}に参加` : `joined ${joined}`}</span>
         </div>
         <div class="pf-actions">
-          <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} followers={stats.followers ?? 0} />
+          <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} variant="dark" showCount={false} />
         </div>
       </div>
     </div>
