@@ -21,6 +21,11 @@ export async function getUserByHandle(db: DB, handle: string) {
   return u;
 }
 
+export async function getUserById(db: DB, id: string) {
+  const [u] = await db.select().from(users).where(eq(users.id, id));
+  return u;
+}
+
 export async function handleTaken(db: DB, handle: string, exceptUserId?: string): Promise<boolean> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle));
   return !!row && row.id !== exceptUserId;
@@ -33,6 +38,7 @@ export function listTopAuthors(db: DB, limit = 15) {
   const score = sql<number>`count(${posts.id}) + coalesce(sum(${posts.likes}), 0)`;
   return db
     .select({
+      id: users.id,
       handle: users.handle,
       displayName: users.displayName,
       displayNameJa: users.displayNameJa,

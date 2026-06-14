@@ -98,6 +98,65 @@ const postApi = {
   toggleCommentLike: (id, cid) => req(`/posts/${id}/comments/${cid}/like`, { method: 'POST', auth: true }), // → {liked, likes}
 };
 
+// ---- For You feed + follow graph + notifications (Phase 4) ----------------
+
+const feedApi = {
+  // The ranked For You feed. Personalized when a token is present (followed
+  // authors boosted + category affinity), else trending+fresh. Returns the raw
+  // backend cards + paging cursor; callers map via hydrateReal.
+  forYou: ({ limit = 24, offset = 0 } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    return req(`/feed?${q}`).then((r) => r); // { feed, nextOffset, personalized }
+  },
+  // Record that the viewer read a post — the affinity signal. Fire-and-forget.
+  recordRead: (postId) => req(`/feed/read/${postId}`, { method: 'POST', auth: true }).catch(() => {}),
+};
+
+const followApi = {
+  // Handles the viewer follows: { id, handle }[].
+  following: () => req('/users/me/following', { auth: true }).then((r) => r.following),
+  follow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'POST', auth: true }), // → {following, followers}
+  unfollow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'DELETE', auth: true }),
+};
+
+// Relative "2h"/"3d" style stamp from an epoch-ms value.
+function relTime(ms) {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return 'now';
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d`;
+  return `${Math.floor(d / 7)}w`;
+}
+
+// Backend notification → the prototype NotifPanel shape ({kind, who, text_*,
+// when, read, route}). Both locales' text computed up front so the panel can
+// switch language without a refetch.
+function mapNotif(n) {
+  const title = (n.postTitleEn || '').slice(0, 32);
+  const titleJa = (n.postTitleJa || n.postTitleEn || '').slice(0, 24);
+  const artRoute = n.postSlug ? { name: 'article', slug: n.postSlug } : { name: 'home' };
+  const byType = {
+    like:    { kind: 'like',    en: `liked your story “${title}…”`, jp: 'があなたの記事にいいねしました', route: artRoute },
+    comment: { kind: 'comment', en: `commented on “${title}…”`,     jp: 'があなたの記事にコメントしました', route: artRoute },
+    reply:   { kind: 'comment', en: `replied to your comment`,       jp: 'があなたに返信しました',         route: artRoute },
+    follow:  { kind: 'follow',  en: `started following you`,         jp: 'があなたをフォローしました',     route: n.actorHandle ? { name: 'author', slug: n.actorHandle } : { name: 'home' } },
+    post:    { kind: 'system',  en: `published “${title}…”`,         jp: '新しい記事を公開しました',       route: artRoute },
+  };
+  const m = byType[n.type] || byType.post;
+  return {
+    id: n.id, kind: m.kind,
+    who: n.actorName || 'Someone', who_jp: n.actorNameJa || n.actorName || 'だれか',
+    text_en: m.en, text_jp: (n.type === 'post' ? '' : '') + m.jp,
+    when: relTime(n.createdAt), read: !!n.readAt, route: m.route,
+  };
+}
+
+const notifApi = {
+  list: () => req('/notifications', { auth: true }).then((r) => ({ notifications: r.notifications.map(mapNotif), unread: r.unread })),
+  markRead: () => req('/notifications/read', { method: 'POST', auth: true }).catch(() => {}),
+};
+
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.
 const translate = (to, fields) =>
   req('/translate', { method: 'POST', auth: true, body: { to, fields } }).then((r) => r.fields);
@@ -129,6 +188,6 @@ function hydrateReal(po) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_CONTENT = { categoryApi, postApi, uploadImage, translate, hydrateReal };
+  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, uploadImage, translate, hydrateReal };
   window.N101_CATS = catStore;
 }

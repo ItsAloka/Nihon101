@@ -240,7 +240,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
               currentUser, onLogin, onLogout, notifs, onReadNotifs }) {
   const items = [
     { label: lang==='jp' ? '今日のこと' : 'Today',     route: {name:'home'} },
-    { label: lang==='jp' ? 'フォロー中' : 'Following',  route: {name:'feed'} },
+    { label: lang==='jp' ? 'おすすめ' : 'For You',  route: {name:'feed'} },
     { label: lang==='jp' ? '探す' : 'Explore',         route: {name:'search'} },
     { label: lang==='jp' ? '人気' : 'Trending',        route: {name:'trending'} },
     { label: lang==='jp' ? '書く人' : 'Writers',        route: {name:'authors'} },
@@ -397,7 +397,7 @@ function NotifPanel({ p, lang, notifs, onClose }) {
               </div>
               <div style={{flex:1}}>
                 <div style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.ink, lineHeight:1.4}}>
-                  <strong style={{fontWeight:600}}>{n.who}</strong> {lang==='jp'?n.text_jp:n.text_en}
+                  <strong style={{fontWeight:600}}>{lang==='jp'?(n.who_jp||n.who):n.who}</strong> {lang==='jp'?n.text_jp:n.text_en}
                 </div>
                 <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, marginTop:3}}>{n.when}</div>
               </div>

@@ -64,6 +64,7 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     likes: 0,
     saves: 0,
     comments: 0,
+    trendScore: null,
     publishedAt: input.status === 'published' ? now : null,
     createdAt: now,
     updatedAt: now,

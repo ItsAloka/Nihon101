@@ -58,3 +58,21 @@
 10. ~~XSS on home~~ — audited 2026-06-12, none found: all interpolation
     Astro-escaped, style strings internal-only, carousel script reads nothing
     user-controlled. Listed so we don't re-audit.
+
+## Perf / scale — added 2026-06-14 (Phase 4 social graph)
+
+11. **Synchronous follower fan-out on publish** (`backend/src/routes/posts.ts`,
+    `notifyFollowersOfPost`). Publishing a post inserts one notification row per
+    follower inside the request. At 50k users a popular author (tens of
+    thousands of followers) = one giant INSERT blocking the publish response.
+    Fix: move the fan-out to `waitUntil` + `standaloneDb` (background, like
+    translation already does), and batch the insert.
+
+12. **For You feed recomputed per request, no cache** (`backend/src/routes/feed.ts`).
+    Two candidate queries + affinity (cached 1h) + ranking on every `/feed` hit.
+    Fine now; at scale add short-TTL caching for the logged-out (trending+fresh)
+    variant — it's identical for every anonymous viewer.
+
+13. **`recordRead` writes on every article open** (`backend/src/routes/feed.ts`).
+    One upsert per read — fine, but high-write. If it gets hot, debounce client-
+    side or batch. Indexed by `(post_id,user_id)` unique so no row blow-up.

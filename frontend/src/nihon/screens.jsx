@@ -443,6 +443,9 @@ function RealArticle(props) {
     return ()=>{ live=false; };
   }, [id]);
 
+  // Record the read — the For You affinity signal (no-op when logged out).
+  React.useEffect(()=>{ if (currentUser) window.N101_CONTENT.feedApi.recordRead(id); }, [id, currentUser]);
+
   const onClap = React.useCallback(async ()=>{
     setLiked(v=>!v); setLikeCount(n=> n + (liked?-1:1));   // optimistic
     try { const r = await window.N101_CONTENT.postApi.toggleLike(id); setLiked(r.liked); setLikeCount(r.likes); }

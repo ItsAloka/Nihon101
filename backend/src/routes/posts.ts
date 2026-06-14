@@ -20,6 +20,8 @@ import {
   type PostDensity,
 } from '../db/queries/posts';
 import { translateFields, type Locale } from '../lib/openai';
+import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
+import { followerIds } from '../db/queries/follows';
 import {
   togglePostLike,
   hasLikedPost,
@@ -191,6 +193,7 @@ app.post('/', requireAuth, async (c) => {
   if (status === 'published') {
     await bumpCategoryCount(d, categoryId, 1);
     await bumpTagCounts(d, post.tags, 1);
+    await notifyFollowersOfPost(d, await followerIds(d, post.authorId), post.authorId, post.id);
   }
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
@@ -241,6 +244,8 @@ app.put('/:id', requireAuth, async (c) => {
     await bumpCategoryCount(d, nextCategoryId, 1);
     await bumpTagCounts(d, newTags, 1);
     if (!existing.publishedAt) await setPublishedAt(d, existing.id, Date.now());
+    // First time this post goes public → notify the author's followers.
+    await notifyFollowersOfPost(d, await followerIds(d, existing.authorId), existing.authorId, existing.id);
   } else if (wasPub && !isPub) {
     await bumpCategoryCount(d, existing.categoryId, -1);
     await bumpTagCounts(d, oldTags, -1);
@@ -285,6 +290,12 @@ app.post('/:id/like', requireAuth, async (c) => {
   const post = await getPostById(d, c.req.param('id'));
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
   const res = await togglePostLike(d, post.id, c.var.user!.id);
+  // Notify the author on a fresh like (not on unlike, not on self-like).
+  if (res.liked) {
+    await createNotification(d, {
+      userId: post.authorId, type: 'like', actorId: c.var.user!.id, postId: post.id,
+    });
+  }
   return c.json(res);
 });
 
@@ -318,6 +329,16 @@ app.post('/:id/comments', requireAuth, async (c) => {
     parentId = parent.parentId ?? parent.id;
   }
   const row = await createComment(d, post.id, c.var.user!.id, text, parentId);
+  // Notify the post author of a new comment; if this is a reply, also notify the
+  // parent comment's author (skip dupes + self-notifications).
+  const me = c.var.user!.id;
+  await createNotification(d, { userId: post.authorId, type: 'comment', actorId: me, postId: post.id, commentId: row.id });
+  if (parentId) {
+    const parent = await getComment(d, parentId);
+    if (parent && parent.userId !== post.authorId) {
+      await createNotification(d, { userId: parent.userId, type: 'reply', actorId: me, postId: post.id, commentId: row.id });
+    }
+  }
   return c.json({ comment: publicComment({ ...row, authorName: c.var.user!.username, liked: false }) }, 201);
 });
 
