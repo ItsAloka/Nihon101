@@ -1,6 +1,6 @@
 /* Follow graph: follow / unfollow, membership test, follower & following counts.
  * Unique (follower_id, followee_id) keeps follows idempotent. */
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import type { DB } from '../client';
 import { follows, users } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -60,3 +60,54 @@ export async function listFollowing(db: DB, userId: string): Promise<{ id: strin
     .innerJoin(users, eq(users.id, follows.followeeId))
     .where(eq(follows.followerId, userId));
 }
+
+export interface FollowUser {
+  id: string;
+  handle: string;
+  displayName: string;
+  displayNameJa: string | null;
+  avatarUrl: string | null;
+  role: string;
+  followedAt: number;
+  viewerFollows: boolean; // does the requesting viewer follow this row?
+}
+
+/** Rich follower/following rows for the Readers/Writers modal — newest follow
+ *  first (the "recently followed" view), with each row's follow-state from the
+ *  viewer's perspective so the modal can show Follow / Following per row.
+ *  dir 'followers' = people who follow userId; 'following' = people userId follows. */
+async function listFollowDir(
+  db: DB,
+  dir: 'followers' | 'following',
+  userId: string,
+  { viewerId, limit = 30, offset = 0 }: { viewerId?: string | null; limit?: number; offset?: number },
+): Promise<FollowUser[]> {
+  const isFollowers = dir === 'followers';
+  const matchCol = isFollowers ? follows.followeeId : follows.followerId;   // fixed side = profile owner
+  const joinCol = isFollowers ? follows.followerId : follows.followeeId;     // the listed user
+  const viewerFollows = viewerId
+    ? sql<boolean>`EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = ${viewerId} AND vf.followee_id = ${users.id})`
+    : sql<boolean>`false`;
+  return (await db
+    .select({
+      id: users.id,
+      handle: users.handle,
+      displayName: users.displayName,
+      displayNameJa: users.displayNameJa,
+      avatarUrl: users.avatarUrl,
+      role: users.role,
+      followedAt: follows.createdAt,
+      viewerFollows,
+    })
+    .from(follows)
+    .innerJoin(users, eq(users.id, joinCol))
+    .where(eq(matchCol, userId))
+    .orderBy(desc(follows.createdAt))
+    .limit(limit)
+    .offset(offset)) as FollowUser[];
+}
+
+export const listFollowers = (db: DB, userId: string, opts: { viewerId?: string | null; limit?: number; offset?: number } = {}) =>
+  listFollowDir(db, 'followers', userId, opts);
+export const listFollowingUsers = (db: DB, userId: string, opts: { viewerId?: string | null; limit?: number; offset?: number } = {}) =>
+  listFollowDir(db, 'following', userId, opts);

@@ -8,7 +8,7 @@ import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { getUserByHandle, getUserById, listAuthors, countAuthors } from '../db/queries/users';
 import { listPosts, publicPost } from '../db/queries/posts';
-import { follow, unfollow, isFollowing, followCounts, listFollowing } from '../db/queries/follows';
+import { follow, unfollow, isFollowing, followCounts, listFollowing, listFollowers, listFollowingUsers } from '../db/queries/follows';
 import { createNotification } from '../db/queries/notifications';
 
 const app = new Hono<AppEnv>();
@@ -50,6 +50,31 @@ app.get('/me/following', requireAuth, async (c) => {
   const db = getDb(c);
   const following = await listFollowing(db, c.var.user!.id);
   return c.json({ following });
+});
+
+// Readers (followers) + Writers (following) lists for the profile modal —
+// newest-follow-first, each row carrying the viewer's follow-state. Public, but
+// reads the viewer's token to fill per-row follow buttons. Declared before /:handle.
+app.get('/:handle/followers', async (c) => {
+  const db = getDb(c);
+  const u = await resolveUser(db, c.req.param('handle'));
+  if (!u) return c.json({ error: 'not_found' }, 404);
+  const viewerId = await optionalUserId(c);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30));
+  const page = Math.max(0, Number(c.req.query('page')) || 0);
+  const users = await listFollowers(db, u.id, { viewerId, limit, offset: page * limit });
+  return c.json({ users });
+});
+
+app.get('/:handle/following', async (c) => {
+  const db = getDb(c);
+  const u = await resolveUser(db, c.req.param('handle'));
+  if (!u) return c.json({ error: 'not_found' }, 404);
+  const viewerId = await optionalUserId(c);
+  const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30));
+  const page = Math.max(0, Number(c.req.query('page')) || 0);
+  const users = await listFollowingUsers(db, u.id, { viewerId, limit, offset: page * limit });
+  return c.json({ users });
 });
 
 app.get('/:handle', async (c) => {
