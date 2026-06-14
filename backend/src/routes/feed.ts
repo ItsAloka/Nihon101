@@ -13,6 +13,7 @@ import {
   recordRead,
 } from '../db/queries/feed';
 import { userAffinityFor, type Affinity } from '../db/queries/affinity';
+import { ensureUserEmbedding } from '../db/queries/embeddings';
 
 const app = new Hono<AppEnv>();
 
@@ -44,11 +45,15 @@ app.get('/', async (c) => {
 
   const uid = await optionalUserId(c);
 
+  // Refresh the reader's taste vector (cached, hourly TTL) so the candidate
+  // queries can score semantic similarity against it.
+  if (uid) await ensureUserEmbedding(db, uid).catch(() => {});
+
   // Followed authors first, so we can pull their recent posts into the pool.
   const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
   const [global, followed] = await Promise.all([
-    feedCandidates(db),
-    following.size ? followedCandidates(db, [...following]) : Promise.resolve([]),
+    feedCandidates(db, { userId: uid ?? undefined }),
+    following.size ? followedCandidates(db, [...following], { userId: uid ?? undefined }) : Promise.resolve([]),
   ]);
 
   // Candidate pool = global recent ∪ followed authors' recent posts (deduped).

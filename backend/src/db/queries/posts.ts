@@ -65,6 +65,7 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     saves: 0,
     comments: 0,
     trendScore: null,
+    embedding: null,
     publishedAt: input.status === 'published' ? now : null,
     createdAt: now,
     updatedAt: now,
@@ -108,15 +109,16 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
   return row as PostWithAuthor | undefined;
 }
 
-/** Card column set for list surfaces (home feed): everything except the bodies,
- * plus a server-side character count so readMins never ships body bytes. */
-const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);
+/** Card column set for list surfaces (home feed): everything except the bodies
+ * and the 1536-float embedding (never shipped to clients), plus a server-side
+ * character count so readMins never ships body bytes. */
+const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, embedding: _cardEmbedding, ...postCardCols } = getTableColumns(posts);
 export const cardCols = {
   ...postCardCols,
   ...authorCols,
   bodyChars: sql<number>`char_length(coalesce(${posts.bodyEn}, '')) + char_length(coalesce(${posts.bodyJa}, ''))`,
 };
-export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa'> & { bodyChars: number };
+export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa' | 'embedding'> & { bodyChars: number };
 
 /** Newest published posts, card shape (no bodies selected at all). */
 export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {

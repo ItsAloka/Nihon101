@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, boolean, real, jsonb, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, bigint, boolean, real, jsonb, vector, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 // Postgres-native schema. IDs are text `<prefix>_<nanoid21>`. Timestamps are
 // epoch-ms stored as bigint (native, numeric — keeps Date.now() math and the
@@ -119,6 +119,10 @@ export const posts = pgTable('posts', {
   // Engagement-decayed trending score, recomputed hourly by the scheduled() cron
   // (Phase 6 / Step 2). Null until first computed. Powers the Trending page.
   trendScore: real('trend_score'),
+  // Semantic embedding of the post (OpenAI text-embedding-3-small, 1536-dim),
+  // filled on publish + backfilled. Powers content-similarity in the For You
+  // feed (cosine distance to the reader's taste vector). Null until embedded.
+  embedding: vector('embedding', { dimensions: 1536 }),
   publishedAt: ms('published_at'),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
@@ -128,6 +132,8 @@ export const posts = pgTable('posts', {
   index('posts_category_idx').on(t.categoryId),
   index('posts_status_idx').on(t.status),
   index('posts_trend_idx').on(t.trendScore),
+  // Approximate-nearest-neighbour index for cosine similarity search.
+  index('posts_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
 ]);
 
 // ---- Engagement: per-user likes + flat comments ----
@@ -206,6 +212,16 @@ export const userAffinity = pgTable('user_affinity', {
 }, (t) => [
   index('user_affinity_user_idx').on(t.userId),
 ]);
+
+// Cached per-user taste vector: the centroid of the embeddings of posts the user
+// has read/liked/commented (recent window). Recomputed on a TTL like user_affinity
+// and compared (cosine) against post embeddings to add semantic similarity to the
+// For You ranking. One row per user; null embedding = not enough signal yet.
+export const userEmbedding = pgTable('user_embedding', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  embedding: vector('embedding', { dimensions: 1536 }),
+  updatedAt: ms('updated_at').notNull(),
+});
 
 // In-app notification. type ∈ like | comment | reply | follow | post. actor is
 // who triggered it; post/comment are the target (nullable for follow). read_at
