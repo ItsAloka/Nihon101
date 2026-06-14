@@ -237,7 +237,7 @@ function Logo({ p, jp, size = 28 }) {
 
 // ------- Top nav -------
 function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
-              currentUser, onLogin, onLogout, notifs, onReadNotifs }) {
+              currentUser, onLogin, onLogout, notifs, onReadNotifs, onClearNotifs }) {
   const items = [
     { label: lang==='jp' ? '今日のこと' : 'Today',     route: {name:'home'} },
     { label: lang==='jp' ? 'おすすめ' : 'For You',  route: {name:'feed'} },
@@ -301,12 +301,12 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
         {/* Notifications (logged in only) */}
         {currentUser && (
           <div style={{position:'relative', flexShrink:0}}>
-            <button onClick={()=>{ setNotifOpen(v=>!v); setMenuOpen(false); if(!notifOpen) onReadNotifs && onReadNotifs(); }}
+            <button onClick={()=>{ setNotifOpen(v=>!v); setMenuOpen(false); }}
               title="Notifications" style={iconBtn(p)}>
               <BellIcon color={p.ink}/>
               {unread>0 && <span style={badgeStyle(p)}>{unread}</span>}
             </button>
-            {notifOpen && <NotifPanel p={p} lang={lang} notifs={notifs} onClose={()=>setNotifOpen(false)}/>}
+            {notifOpen && <NotifPanel p={p} lang={lang} notifs={notifs} onReadAll={onReadNotifs} onClearAll={onClearNotifs} onClose={()=>setNotifOpen(false)}/>}
           </div>
         )}
 
@@ -360,8 +360,16 @@ function badgeStyle(p) {
 }
 
 // ------- Notifications dropdown -------
-function NotifPanel({ p, lang, notifs, onClose }) {
+function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
   const list = notifs || [];
+  const hasUnread = list.some(n=>!n.read);
+  const actionBtn = (label, fn, danger) => (
+    <button onClick={(e)=>{ e.stopPropagation(); fn && fn(); }} style={{
+      appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:'2px 0',
+      fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600,
+      color: danger ? p.stamp : p.accentDeep,
+    }}>{label}</button>
+  );
   return (
     <>
       <div onClick={onClose} style={{position:'fixed', inset:0, zIndex:40}}></div>
@@ -371,11 +379,19 @@ function NotifPanel({ p, lang, notifs, onClose }) {
         boxShadow:`0 30px 60px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
         overflow:'hidden',
       }}>
-        <div style={{padding:'16px 18px', borderBottom:`1px solid ${p.line}`, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-          <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:17, color:p.ink}}>
-            {lang==='jp'?'お知らせ':'Notifications'}
-          </span>
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{list.length}</span>
+        <div style={{padding:'16px 18px 12px', borderBottom:`1px solid ${p.line}`}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:17, color:p.ink}}>
+              {lang==='jp'?'お知らせ':'Notifications'}
+            </span>
+            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{list.length}</span>
+          </div>
+          {list.length>0 && (
+            <div style={{display:'flex', gap:16, marginTop:8}}>
+              {hasUnread && actionBtn(lang==='jp'?'すべて既読にする':'Mark all read', onReadAll)}
+              {actionBtn(lang==='jp'?'すべて削除':'Clear all', onClearAll, true)}
+            </div>
+          )}
         </div>
         <div style={{maxHeight:380, overflowY:'auto'}}>
           {list.length===0 ? (
@@ -703,7 +719,7 @@ function WavyBG({p, opacity=0.5}) {
 Object.assign(window, { gradStyle, WavyBG });
 
 // ------- Photo placeholder (saturated, with kanji subject) -------
-function Photo({ hue, label, p, h='100%', aspect, radius=14, accent, subject }) {
+function Photo({ hue, label, p, h='100%', aspect, radius=14, accent, subject, src }) {
   const [c1, c2] = tintGradient(hue);
   const glyph = subject || subjectGlyph(hue);
   return (
@@ -713,16 +729,14 @@ function Photo({ hue, label, p, h='100%', aspect, radius=14, accent, subject }) 
       background:`linear-gradient(135deg, ${c1} 0%, ${c2} 100%)`,
       boxShadow:`0 30px 60px -40px color-mix(in oklab, ${c2} 70%, ${p.ink} 30%)`,
     }}>
+      {/* real cover image when the post has one — else the gradient + kanji below */}
+      {src ? (
+        <img src={src} alt={label || ''} loading="lazy" style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover' }}/>
+      ) : (<>
       {/* soft light blob */}
       <div style={{
         position:'absolute', right:'-12%', top:'-18%', width:'70%', aspectRatio:1, borderRadius:'50%',
         background:`radial-gradient(circle, color-mix(in oklab, ${p.surface} 60%, transparent) 0%, transparent 70%)`,
-      }}></div>
-      {/* bottom vignette */}
-      <div style={{
-        position:'absolute', inset:0,
-        background:`linear-gradient(180deg, transparent 55%, color-mix(in oklab, ${c2} 65%, #000 35%) 115%)`,
-        opacity:0.22, pointerEvents:'none',
       }}></div>
       {/* subject kanji */}
       <div style={{
@@ -733,6 +747,13 @@ function Photo({ hue, label, p, h='100%', aspect, radius=14, accent, subject }) 
         lineHeight:1, userSelect:'none', pointerEvents:'none',
         letterSpacing:'-0.04em',
       }}>{glyph}</div>
+      </>)}
+      {/* bottom vignette */}
+      <div style={{
+        position:'absolute', inset:0,
+        background:`linear-gradient(180deg, transparent 55%, color-mix(in oklab, ${c2} 65%, #000 35%) 115%)`,
+        opacity:0.22, pointerEvents:'none',
+      }}></div>
       {/* caption */}
       <div style={{
         position:'absolute', left:14, bottom:12, display:'flex', alignItems:'center', gap:8,
@@ -797,14 +818,14 @@ function CategoryChip({ slug, p, lang, size='md' }) {
 const CHIP_TINTS = ['rose','amber','blue','lilac','peach','sage','clay','mauve','sky'];
 function chipTint(s){ let h=0; for(const c of String(s||'')) h=(h*31+c.charCodeAt(0))>>>0; return CHIP_TINTS[h%CHIP_TINTS.length]; }
 function chipInitials(n){ return (String(n||'').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,3) || '?').toUpperCase(); }
-function AuthorChip({ slug, name, nameJp, handle, city, p, lang, size='md', date }) {
-  let dispEn, dispJp, h, tint, initials, place;
+function AuthorChip({ slug, name, nameJp, handle, city, avatarUrl, p, lang, size='md', date }) {
+  let dispEn, dispJp, h, tint, initials, place, avatar;
   if (name || handle) {                 // real author from a post card
     dispEn = name || handle; dispJp = nameJp || name || handle;
-    h = handle || ''; tint = chipTint(h || name); initials = chipInitials(name || handle); place = city || '';
+    h = handle || ''; tint = chipTint(h || name); initials = chipInitials(name || handle); place = city || ''; avatar = avatarUrl || null;
   } else {                              // legacy mock author (seed screens)
     const a = getAuthor(slug); if (!a) return null;
-    dispEn = a.en; dispJp = a.jp; h = a.slug; tint = a.tint; initials = a.initials; place = a.city;
+    dispEn = a.en; dispJp = a.jp; h = a.slug; tint = a.tint; initials = a.initials; place = a.city; avatar = a.avatarUrl || null;
   }
   const c = tintBg(tint, p);
   const dim = size==='lg' ? 44 : (size==='sm' ? 26 : 32);
@@ -812,13 +833,13 @@ function AuthorChip({ slug, name, nameJp, handle, city, p, lang, size='md', date
     <a href={`/${lang==='jp'?'ja':'en'}/u/${h}`} onClick={(e)=>{ if(!h) return; e.preventDefault(); window.__nihon_go({name:'author', slug:h}); }}
        style={{ display:'inline-flex', alignItems:'center', gap:10, textDecoration:'none' }}>
       <div style={{
-        width:dim, height:dim, borderRadius:'50%',
+        width:dim, height:dim, borderRadius:'50%', overflow:'hidden',
         background:`linear-gradient(135deg, ${c}, color-mix(in oklab, ${c} 50%, ${p.surface2}))`,
         color: p.ink, display:'flex', alignItems:'center', justifyContent:'center',
         fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize: dim*0.42,
         border:`1px solid ${p.line}`,
       }}>
-        {initials}
+        {avatar ? <img src={avatar} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/> : initials}
       </div>
       <div style={{display:'flex', flexDirection:'column'}}>
         <span style={{fontFamily:'var(--fontBody)', fontSize: size==='lg'?14:13, color:p.ink, fontWeight:600}}>

@@ -8,24 +8,27 @@ import { bumpTagCounts, diffTags } from '../db/queries/tags';
 import {
   createPost,
   getPostById,
+  getPostBySlug,
   getPostWithAuthor,
   getPostWithAuthorBySlug,
   listPosts,
+  listCardsByIds,
   updatePost,
   setPublishedAt,
   deletePost,
   publicPost,
+  publicPostCard,
   type PostRow,
   type PostStatus,
   type PostDensity,
 } from '../db/queries/posts';
 import { translateFields, type Locale } from '../lib/openai';
 import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
-import { followerIds } from '../db/queries/follows';
-import { embedPost, postEmbedText } from '../db/queries/embeddings';
 import {
   togglePostLike,
   hasLikedPost,
+  togglePostSave,
+  savedPostIds,
   listComments,
   createComment,
   getComment,
@@ -80,22 +83,6 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
       if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = out.body;
       if (Object.keys(patch).length) await updatePost(bgDb, post.id, patch);
     } catch { /* leave the other locale empty; next publish retries */ }
-    finally { try { await pool.end(); } catch { /* noop */ } }
-  })();
-  c.executionCtx.waitUntil(job);
-}
-
-/** Fire-and-forget: compute + store the post's semantic embedding (Step 3) after
- * publish. Background (waitUntil) so Publish stays instant; powers For You
- * content similarity. */
-function scheduleEmbedding(c: Context<AppEnv>, post: PostRow) {
-  if (!c.env.OPENAI_API_KEY) return;
-  const text = postEmbedText(post);
-  if (!text.trim()) return;
-  const job = (async () => {
-    const { db: bgDb, pool } = standaloneDb(c.env);
-    try { await embedPost(bgDb, c.env.OPENAI_API_KEY, post.id, text); }
-    catch { /* leave null; backfill / next publish retries */ }
     finally { try { await pool.end(); } catch { /* noop */ } }
   })();
   c.executionCtx.waitUntil(job);
@@ -163,6 +150,15 @@ app.get('/slug/:slug', async (c) => {
   return c.json({ post: { ...publicPost(post), liked } });
 });
 
+// The requester's saved posts, card shape, newest-saved-first. Registered before
+// the `/:id` catch-all so "saved" isn't read as a post id.
+app.get('/saved', requireAuth, async (c) => {
+  const d = db(c);
+  const ids = await savedPostIds(d, c.var.user!.id);
+  const cards = await listCardsByIds(d, ids);
+  return c.json({ posts: cards.map(publicPostCard) });
+});
+
 // Single post. Drafts visible only to their author.
 app.get('/:id', async (c) => {
   const post = await getPostWithAuthor(db(c), c.req.param('id'));
@@ -210,8 +206,7 @@ app.post('/', requireAuth, async (c) => {
   if (status === 'published') {
     await bumpCategoryCount(d, categoryId, 1);
     await bumpTagCounts(d, post.tags, 1);
-    await notifyFollowersOfPost(d, await followerIds(d, post.authorId), post.authorId, post.id);
-    scheduleEmbedding(c, post);
+    await notifyFollowersOfPost(d, post.authorId, post.id);
   }
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
@@ -263,7 +258,7 @@ app.put('/:id', requireAuth, async (c) => {
     await bumpTagCounts(d, newTags, 1);
     if (!existing.publishedAt) await setPublishedAt(d, existing.id, Date.now());
     // First time this post goes public → notify the author's followers.
-    await notifyFollowersOfPost(d, await followerIds(d, existing.authorId), existing.authorId, existing.id);
+    await notifyFollowersOfPost(d, existing.authorId, existing.id);
   } else if (wasPub && !isPub) {
     await bumpCategoryCount(d, existing.categoryId, -1);
     await bumpTagCounts(d, oldTags, -1);
@@ -281,9 +276,6 @@ app.put('/:id', requireAuth, async (c) => {
   // Explicit manual save (draft or publish), not autosave → refill the other
   // language in the background.
   if (body?.translate === true && post) scheduleTranslation(c, post);
-  // Re-embed when a published post's content changed (or it just went public),
-  // so the For You similarity stays accurate. Skip pure draft saves.
-  if (post && isPub) scheduleEmbedding(c, post);
 
   return c.json({ post: publicPost(post!) });
 });
@@ -317,6 +309,16 @@ app.post('/:id/like', requireAuth, async (c) => {
       userId: post.authorId, type: 'like', actorId: c.var.user!.id, postId: post.id,
     });
   }
+  return c.json(res);
+});
+
+// Toggle the requester's save (bookmark) on a post, keyed by slug (the client
+// works in slugs; the slug is unique). Returns the new state + the post's count.
+app.post('/slug/:slug/save', requireAuth, async (c) => {
+  const d = db(c);
+  const post = await getPostBySlug(d, c.req.param('slug'));
+  if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
+  const res = await togglePostSave(d, post.id, c.var.user!.id);
   return c.json(res);
 });
 

@@ -573,7 +573,7 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
     if (!slugs.length) { setSaved([]); return; }
     const { postApi, hydrateReal } = window.N101_CONTENT;
     Promise.all(slugs.map(s=>postApi.getBySlug(s).then(hydrateReal).catch(()=>null)))
-      .then(rows=>{ if(live) setSaved(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '' } }))); });
+      .then(rows=>{ if(live) setSaved(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '', src: po._cover || null } }))); });
     return ()=>{ live=false; };
   }, [savedKey]);
   const [myPosts, setMyPosts] = React.useState([]);
@@ -1003,7 +1003,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   // so decorate them to the SPA's gradient-card shape (consistent with the rest
   // of the SPA, which has always rendered gradient placeholders).
   const tintByCat = React.useMemo(()=>{ const m={}; cats.forEach(c=>{ m[c.id]=c.tint; }); return m; }, [cats]);
-  const deco = React.useCallback((po)=>({ ...po, cover: { hue: tintByCat[po.category] || 'cream', label: po._coverLabel || '' } }), [tintByCat]);
+  const deco = React.useCallback((po)=>({ ...po, cover: { hue: tintByCat[po.category] || 'cream', label: po._coverLabel || '', src: po._cover || null } }), [tintByCat]);
 
   const all = (posts || []).map(deco);
   const loading = posts === null;

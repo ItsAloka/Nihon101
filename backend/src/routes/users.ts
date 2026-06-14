@@ -62,7 +62,8 @@ app.get('/:handle/followers', async (c) => {
   const viewerId = await optionalUserId(c);
   const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30));
   const page = Math.max(0, Number(c.req.query('page')) || 0);
-  const users = await listFollowers(db, u.id, { viewerId, limit, offset: page * limit });
+  const q = c.req.query('q') || undefined;
+  const users = await listFollowers(db, u.id, { viewerId, q, limit, offset: page * limit });
   return c.json({ users });
 });
 
@@ -73,7 +74,8 @@ app.get('/:handle/following', async (c) => {
   const viewerId = await optionalUserId(c);
   const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30));
   const page = Math.max(0, Number(c.req.query('page')) || 0);
-  const users = await listFollowingUsers(db, u.id, { viewerId, limit, offset: page * limit });
+  const q = c.req.query('q') || undefined;
+  const users = await listFollowingUsers(db, u.id, { viewerId, q, limit, offset: page * limit });
   return c.json({ users });
 });
 

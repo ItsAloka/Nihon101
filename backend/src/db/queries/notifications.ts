@@ -30,21 +30,20 @@ export async function createNotification(db: DB, n: NewNotif): Promise<void> {
   });
 }
 
-/** Fan out one "new post" notification to each follower. */
-export async function notifyFollowersOfPost(
-  db: DB,
-  followerIds: string[],
-  actorId: string,
-  postId: string,
-): Promise<void> {
-  if (!followerIds.length) return;
-  const now = Date.now();
-  await db.insert(notifications).values(
-    followerIds.map((uid) => ({
-      id: newId('ntf'), userId: uid, type: 'post' as const, actorId,
-      postId, commentId: null, readAt: null, createdAt: now,
-    })),
-  );
+/** Fan out a "new post" notification to every follower of the author. One
+ *  INSERT…SELECT — scales without pulling the follower list into JS. Best-effort:
+ *  a fan-out failure must never break publishing. */
+export async function notifyFollowersOfPost(db: DB, actorId: string, postId: string): Promise<void> {
+  try {
+    await db.execute(sql`
+      INSERT INTO notifications (id, user_id, type, actor_id, post_id, comment_id, read_at, created_at)
+      SELECT ${'ntf_'} || substr(md5(random()::text || follower_id), 1, 21),
+             follower_id, 'post', ${actorId}, ${postId}, NULL, NULL, ${Date.now()}
+      FROM follows WHERE followee_id = ${actorId}
+    `);
+  } catch (err) {
+    console.error('notifyFollowersOfPost failed', err);
+  }
 }
 
 export interface NotifRow {
@@ -104,4 +103,14 @@ export async function markAllRead(db: DB, userId: string): Promise<void> {
     .update(notifications)
     .set({ readAt: Date.now() })
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+}
+
+/** Delete all of a user's notifications. Scoped to the owner so a caller can
+ *  never clear someone else's. Returns how many rows were removed. */
+export async function deleteAllNotifications(db: DB, userId: string): Promise<number> {
+  const removed = await db
+    .delete(notifications)
+    .where(eq(notifications.userId, userId))
+    .returning({ id: notifications.id });
+  return removed.length;
 }

@@ -80,7 +80,7 @@ async function listFollowDir(
   db: DB,
   dir: 'followers' | 'following',
   userId: string,
-  { viewerId, limit = 30, offset = 0 }: { viewerId?: string | null; limit?: number; offset?: number },
+  { viewerId, q, limit = 30, offset = 0 }: { viewerId?: string | null; q?: string; limit?: number; offset?: number },
 ): Promise<FollowUser[]> {
   const isFollowers = dir === 'followers';
   const matchCol = isFollowers ? follows.followeeId : follows.followerId;   // fixed side = profile owner
@@ -88,6 +88,10 @@ async function listFollowDir(
   const viewerFollows = viewerId
     ? sql<boolean>`EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = ${viewerId} AND vf.followee_id = ${users.id})`
     : sql<boolean>`false`;
+  // Optional name/handle filter (matches the display name, JA name, or handle).
+  const search = q?.trim()
+    ? sql`AND (${users.displayName} ILIKE ${'%' + q.trim() + '%'} OR ${users.displayNameJa} ILIKE ${'%' + q.trim() + '%'} OR ${users.handle} ILIKE ${'%' + q.trim() + '%'})`
+    : sql``;
   return (await db
     .select({
       id: users.id,
@@ -101,13 +105,13 @@ async function listFollowDir(
     })
     .from(follows)
     .innerJoin(users, eq(users.id, joinCol))
-    .where(eq(matchCol, userId))
+    .where(sql`${eq(matchCol, userId)} ${search}`)
     .orderBy(desc(follows.createdAt))
     .limit(limit)
     .offset(offset)) as FollowUser[];
 }
 
-export const listFollowers = (db: DB, userId: string, opts: { viewerId?: string | null; limit?: number; offset?: number } = {}) =>
+export const listFollowers = (db: DB, userId: string, opts: { viewerId?: string | null; q?: string; limit?: number; offset?: number } = {}) =>
   listFollowDir(db, 'followers', userId, opts);
-export const listFollowingUsers = (db: DB, userId: string, opts: { viewerId?: string | null; limit?: number; offset?: number } = {}) =>
+export const listFollowingUsers = (db: DB, userId: string, opts: { viewerId?: string | null; q?: string; limit?: number; offset?: number } = {}) =>
   listFollowDir(db, 'following', userId, opts);

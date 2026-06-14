@@ -71,6 +71,13 @@
       "when": 1781422043113,
       "tag": "0009_yellow_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781458055878,
+      "tag": "0010_useful_barracuda",
+      "breakpoints": true
     }
   ]
 }

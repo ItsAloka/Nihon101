@@ -92,6 +92,8 @@ const postApi = {
 
   // Engagement (real posts only — seed posts have no backend row).
   toggleLike: (id) => req(`/posts/${id}/like`, { method: 'POST', auth: true }), // → {liked, likes}
+  toggleSave: (slug) => req(`/posts/slug/${slug}/save`, { method: 'POST', auth: true }), // → {saved, saves}
+  listSaved: () => req('/posts/saved', { auth: true }).then((r) => r.posts), // viewer's saved cards, newest first
   listComments: (id) => req(`/posts/${id}/comments`).then((r) => r.comments),
   addComment: (id, body, parentId) => req(`/posts/${id}/comments`, { method: 'POST', auth: true, body: { body, parentId: parentId || null } }).then((r) => r.comment),
   removeComment: (id, cid) => req(`/posts/${id}/comments/${cid}`, { method: 'DELETE', auth: true }),
@@ -119,8 +121,9 @@ const followApi = {
   unfollow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'DELETE', auth: true }),
   // Readers (followers) / Writers (following) lists for the profile modal —
   // newest-follow-first, each row with the viewer's follow-state.
-  followers: (handle, page = 0) => req(`/users/${handle}/followers?page=${page}`).then((r) => r.users),
-  followingOf: (handle, page = 0) => req(`/users/${handle}/following?page=${page}`).then((r) => r.users),
+  // Optional `q` filters the list by name/handle (server-side ILIKE).
+  followers: (handle, { page = 0, q = '' } = {}) => req(`/users/${handle}/followers?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ''}`).then((r) => r.users),
+  followingOf: (handle, { page = 0, q = '' } = {}) => req(`/users/${handle}/following?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ''}`).then((r) => r.users),
 };
 
 // Relative "2h"/"3d" style stamp from an epoch-ms value.
@@ -159,6 +162,7 @@ function mapNotif(n) {
 const notifApi = {
   list: () => req('/notifications', { auth: true }).then((r) => ({ notifications: r.notifications.map(mapNotif), unread: r.unread })),
   markRead: () => req('/notifications/read', { method: 'POST', auth: true }).catch(() => {}),
+  clearAll: () => req('/notifications', { method: 'DELETE', auth: true }).catch(() => {}),
 };
 
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.
@@ -172,7 +176,8 @@ function hydrateReal(po) {
   const date = new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const words = String(po.bodyEn || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
   return {
-    _real: true, _id: po.id, _authorId: po.authorId, _bodyEn: po.bodyEn, _bodyJa: po.bodyJa, _cover: po.cover,
+    _real: true, _id: po.id, _authorId: po.authorId, _bodyEn: po.bodyEn, _bodyJa: po.bodyJa,
+    _cover: (po.cover && /^https?:\/\//.test(po.cover)) ? po.cover : null,
     _coverLabel: po.coverLabel || '', _coverCredit: po.coverCredit || '',
     _density: po.density || 'compact',
     slug: po.slug, category: po.categoryId, status: po.status,
@@ -182,6 +187,7 @@ function hydrateReal(po) {
     author: po.authorName || 'Unknown',
     author_jp: po.authorNameJa || po.authorName || 'Unknown',
     authorHandle: po.authorHandle || '',
+    authorAvatarUrl: po.authorAvatarUrl || null,
     tags: po.tags || [],
     date,
     readMins: Math.max(1, Math.round(words / 200)),
