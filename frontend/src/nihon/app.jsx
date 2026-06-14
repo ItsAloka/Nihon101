@@ -70,6 +70,8 @@ function App() {
     if (r.name==='author') { window.location.href = `/${loc}/u/${r.slug}`; return; }
     if (r.name==='trending') { window.location.href = `/${loc}/trending`; return; }
     if (r.name==='authors') { window.location.href = `/${loc}/writers`; return; }
+    if (r.name==='feed') { window.location.href = `/${loc}/for-you`; return; }
+    if (r.name==='about') { window.location.href = `/${loc}/about`; return; }
     // auth-guarded routes
     if ((r.name==='compose' || r.name==='profile') && !window.__currentUser) { setLoginOpen(true); return; }
     if (r.name==='write') r = {name:'compose'};
@@ -185,6 +187,8 @@ function App() {
       r.name === 'author' && r.slug ? `/${loc}/u/${r.slug}` :
       r.name === 'trending' ? `/${loc}/trending` :
       r.name === 'authors' ? `/${loc}/writers` :
+      r.name === 'feed' ? `/${loc}/for-you` :
+      r.name === 'about' ? `/${loc}/about` :
       r.name === 'search' ? `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}` :
       ''
     );
