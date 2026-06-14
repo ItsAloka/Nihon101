@@ -304,7 +304,7 @@ const pageDesc = jp
                 <p class="hero-excerpt">{excerpt(po)}</p>
                 <div class="hero-cta">
                   <a class="achip" href={`/${locale}/u/${po.authorHandle}`}>
-                    <span class="ava" style={`width:44px;height:44px;font-size:18px;background:linear-gradient(135deg, ${tintOf(po.authorHandle)}, #f2f0eb);`}>{initialsOf(po.authorName || '?')}</span>
+                    <span class="ava" style={`width:44px;height:44px;font-size:18px;background:linear-gradient(135deg, ${tintOf(po.authorHandle)}, #f2f0eb);`}>{po.authorAvatarUrl ? <img src={po.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(po.authorName || '?')}</span>
                     <span>
                       <span class="nm">{authorName(po)}</span><br />
                       <span class="dt">{dateFmt(po.publishedAt ?? po.createdAt)}</span>
@@ -373,7 +373,7 @@ const pageDesc = jp
               <a href={app(`#/article/${feature.slug}`)}><h3>{title(feature)}</h3></a>
               <p>{excerpt(feature)}</p>
               <a class="achip" href={`/${locale}/u/${feature.authorHandle}`}>
-                <span class="ava" style={`width:32px;height:32px;font-size:13px;background:linear-gradient(135deg, ${tintOf(feature.authorHandle)}, #f2f0eb);`}>{initialsOf(feature.authorName || '?')}</span>
+                <span class="ava" style={`width:32px;height:32px;font-size:13px;background:linear-gradient(135deg, ${tintOf(feature.authorHandle)}, #f2f0eb);`}>{feature.authorAvatarUrl ? <img src={feature.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(feature.authorName || '?')}</span>
                 <span>
                   <span class="nm">{authorName(feature)}</span><br />
                   <span class="dt">{dateFmt(feature.publishedAt ?? feature.createdAt)}</span>
@@ -423,7 +423,7 @@ const pageDesc = jp
                   <a href={app(`#/article/${pk.slug}`)}><h3>{title(pk)}</h3></a>
                   <p class="ex">{(excerpt(pk) || '').slice(0, 120)}…</p>
                   <a class="achip" href={`/${locale}/u/${pk.authorHandle}`}>
-                    <span class="ava" style={`width:26px;height:26px;font-size:11px;background:linear-gradient(135deg, ${tintOf(pk.authorHandle)}, #f2f0eb);`}>{initialsOf(pk.authorName || '?')}</span>
+                    <span class="ava" style={`width:26px;height:26px;font-size:11px;overflow:hidden;background:linear-gradient(135deg, ${tintOf(pk.authorHandle)}, #f2f0eb);`}>{pk.authorAvatarUrl ? <img src={pk.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(pk.authorName || '?')}</span>
                     <span class="nm" style="font-size:12.5px;">{authorName(pk)}</span>
                   </a>
                 </div>
@@ -460,7 +460,7 @@ const pageDesc = jp
             <p class="ex">{excerpt(po)}</p>
             <div class="foot">
               <a class="achip" href={po.authorHandle ? `/${locale}/u/${po.authorHandle}` : app(`#/article/${po.slug}`)}>
-                <span class="ava" style={`width:26px;height:26px;font-size:11px;background:linear-gradient(135deg, ${tintOf(po.authorHandle)}, #f2f0eb);`}>{initialsOf(po.authorName || '?')}</span>
+                <span class="ava" style={`width:26px;height:26px;font-size:11px;overflow:hidden;background:linear-gradient(135deg, ${tintOf(po.authorHandle)}, #f2f0eb);`}>{po.authorAvatarUrl ? <img src={po.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(po.authorName || '?')}</span>
                 <span>
                   <span class="nm" style="font-size:12.5px;">{authorName(po)}</span><br />
                   <span class="dt">{dateFmt(po.publishedAt ?? po.createdAt)}</span>

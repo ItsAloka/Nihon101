@@ -1206,7 +1206,7 @@ function useResolvedPosts(slugs) {
     if (!list.length) { setPosts([]); return; }
     const { postApi, hydrateReal } = window.N101_CONTENT;
     Promise.all(list.map(s=>postApi.getBySlug(s).then(hydrateReal).catch(()=>null)))
-      .then(rows=>{ if(live) setPosts(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '' } }))); });
+      .then(rows=>{ if(live) setPosts(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '', src: po._cover || null } }))); });
     return ()=>{ live=false; };
   }, [key]);
   return posts; // null = loading

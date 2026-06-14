@@ -74,12 +74,15 @@ const canonical = `/${locale}/u/${user.handle}`;
           <span>·</span>
           <span>{jp ? `${joined}に参加` : `joined ${joined}`}</span>
         </div>
-        <div class="pf-actions">
-          <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} variant="dark" showCount={false} />
-        </div>
       </div>
     </div>
   </section>
+
+  {/* Follow button — pinned to the right edge, vertically centered, so it stays
+      reachable while reading the author's stories. Renders nothing for the owner. */}
+  <div class="pf-follow-fixed">
+    <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} variant="pink" showCount={true} />
+  </div>
 
   <main class="wrap section">
     <div class="list-bar">
@@ -110,7 +113,11 @@ const canonical = `/${locale}/u/${user.handle}`;
     .pf-bio { font-family: var(--fontDisplay); font-style: italic; font-size: 19px; color: var(--inkSoft); margin-top: 14px; max-width: 640px; line-height: 1.5; }
     .pf-stats { margin-top: 18px; display: flex; gap: 18px; font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.06em; text-transform: uppercase; }
     .pf-stats strong { color: var(--ink); }
-    .pf-actions { margin-top: 20px; }
+    .pf-follow-fixed { position: fixed; right: 28px; top: 50%; transform: translateY(-50%); z-index: 50; }
+    @media (max-width: 900px) {
+      /* On narrow screens, drop it to the bottom-right so it never overlaps text. */
+      .pf-follow-fixed { right: 18px; top: auto; bottom: 22px; transform: none; }
+    }
     .pf-follow { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
       padding: 10px 22px; border-radius: 999px; font-family: var(--fontBody); font-size: 14px; font-weight: 600;
       border: 1px solid var(--stamp); background: var(--stamp); color: #fff; transition: background .15s, color .15s; }

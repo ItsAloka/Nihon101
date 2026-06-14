@@ -392,7 +392,7 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
     onMouseLeave={(e)=>e.currentTarget.style.transform='translateY(0)'}>
       <a href={`#/article/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
         style={{textDecoration:'none', color:'inherit'}}>
-        <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={compact?200:240} radius={12}/>
+        <Photo p={p} hue={post.cover.hue} label={post.cover.label} src={post.cover.src} h={compact?200:240} radius={12}/>
       </a>
       <div style={{display:'flex', alignItems:'center', gap:10}}>
         <CategoryChip slug={post.category} p={p} lang={lang} size="sm"/>
@@ -410,7 +410,7 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
         {excerpt?.slice(0,110)}…
       </p>}
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:4}}>
-        <AuthorChip name={post.author} nameJp={post.author_jp} handle={post.authorHandle} p={p} lang={lang} size="sm" date={post.date}/>
+        <AuthorChip name={post.author} nameJp={post.author_jp} handle={post.authorHandle} avatarUrl={post.authorAvatarUrl} p={p} lang={lang} size="sm" date={post.date}/>
         <button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); onSave(post.slug);}}
           style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:saved?p.stamp:p.inkFaint, padding:4}}>
           <BookmarkIcon color={saved?p.stamp:p.inkFaint} filled={saved}/>

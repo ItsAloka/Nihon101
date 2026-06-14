@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, boolean, real, jsonb, vector, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, bigint, boolean, real, jsonb, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 // Postgres-native schema. IDs are text `<prefix>_<nanoid21>`. Timestamps are
 // epoch-ms stored as bigint (native, numeric — keeps Date.now() math and the
@@ -119,10 +119,6 @@ export const posts = pgTable('posts', {
   // Engagement-decayed trending score, recomputed hourly by the scheduled() cron
   // (Phase 6 / Step 2). Null until first computed. Powers the Trending page.
   trendScore: real('trend_score'),
-  // Semantic embedding of the post (OpenAI text-embedding-3-small, 1536-dim),
-  // filled on publish + backfilled. Powers content-similarity in the For You
-  // feed (cosine distance to the reader's taste vector). Null until embedded.
-  embedding: vector('embedding', { dimensions: 1536 }),
   publishedAt: ms('published_at'),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
@@ -132,8 +128,6 @@ export const posts = pgTable('posts', {
   index('posts_category_idx').on(t.categoryId),
   index('posts_status_idx').on(t.status),
   index('posts_trend_idx').on(t.trendScore),
-  // Approximate-nearest-neighbour index for cosine similarity search.
-  index('posts_embedding_idx').using('hnsw', t.embedding.op('vector_cosine_ops')),
 ]);
 
 // ---- Engagement: per-user likes + flat comments ----
@@ -173,6 +167,18 @@ export const commentLikes = pgTable('comment_likes', {
   index('comment_likes_user_idx').on(t.userId),
 ]);
 
+// One row per (post, user) save (bookmark). Unique pair keeps it idempotent.
+// Backs the profile "Saved" tab and the save×2 For You affinity signal.
+export const postSaves = pgTable('post_saves', {
+  id: text('id').primaryKey(),
+  postId: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('post_saves_post_user_idx').on(t.postId, t.userId),
+  index('post_saves_user_idx').on(t.userId, t.createdAt),
+]);
+
 // ---- Social graph: follows, reads, affinity, notifications (Phase 4) ----
 
 // Directed follow edge. follower follows followee. Unique pair; indexed both
@@ -199,29 +205,20 @@ export const postReads = pgTable('post_reads', {
   index('post_reads_user_idx').on(t.userId, t.createdAt),
 ]);
 
-// Cached per-user category affinity snapshot (normalized 0–1), recomputed at
-// most once per TTL instead of running the engagement UNION every feed request.
-// dimension is 'cat' (room to grow); key='' weight=0 is a no-engagement sentinel.
+// Cached per-user taste snapshot (normalized 0–1 within each dimension),
+// recomputed at most once per TTL instead of running the engagement UNION every
+// feed request. dimension ∈ 'cat' | 'tag'; key='' weight=0 is a no-engagement
+// sentinel so we don't recompute on every request for a user with no signal.
 export const userAffinity = pgTable('user_affinity', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  dimension: text('dimension').notNull(), // 'cat'
-  key: text('key').notNull(),             // category id ('' = sentinel)
+  dimension: text('dimension').notNull(), // 'cat' | 'tag'
+  key: text('key').notNull(),             // category id / tag slug ('' = sentinel)
   weight: real('weight').notNull().default(0),
   updatedAt: ms('updated_at').notNull(),
 }, (t) => [
   index('user_affinity_user_idx').on(t.userId),
 ]);
-
-// Cached per-user taste vector: the centroid of the embeddings of posts the user
-// has read/liked/commented (recent window). Recomputed on a TTL like user_affinity
-// and compared (cosine) against post embeddings to add semantic similarity to the
-// For You ranking. One row per user; null embedding = not enough signal yet.
-export const userEmbedding = pgTable('user_embedding', {
-  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  embedding: vector('embedding', { dimensions: 1536 }),
-  updatedAt: ms('updated_at').notNull(),
-});
 
 // In-app notification. type ∈ like | comment | reply | follow | post. actor is
 // who triggered it; post/comment are the target (nullable for follow). read_at

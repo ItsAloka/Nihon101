@@ -105,7 +105,16 @@ function App() {
   };
 
   const onLike = React.useCallback((slug)=>{ setClaps(c=>({...c, [slug]: (c[slug]||0)+1})); }, []);
-  const onSave = React.useCallback((slug)=>{ setSavedSet(s=>{ const ns=new Set(s); ns.has(slug)?ns.delete(slug):ns.add(slug); return ns; }); }, []);
+  // Save/unsave a post by slug. Must be logged in; optimistic, with the real
+  // call to the backend (post_saves) and a rollback if it fails.
+  const onSave = React.useCallback((slug)=>{
+    if (!window.__currentUser) { setLoginOpen(true); return; }
+    let wasSaved = false;
+    setSavedSet(s=>{ const ns=new Set(s); if(ns.has(slug)){ns.delete(slug); wasSaved=true;} else {ns.add(slug);} return ns; });
+    window.N101_CONTENT.postApi.toggleSave(slug).catch(()=>{ // rollback on failure
+      setSavedSet(s=>{ const ns=new Set(s); wasSaved?ns.add(slug):ns.delete(slug); return ns; });
+    });
+  }, []);
   // Follow/unfollow a writer by handle. Must be logged in; optimistic, with the
   // real call to the backend and a rollback if it fails.
   const onToggleFollow = React.useCallback((handle)=>{
@@ -123,13 +132,14 @@ function App() {
   // Load the real follow set + notifications for a signed-in user (replacing any
   // stale local cache — the backend is the truth).
   const hydrateSocial = React.useCallback(()=>{
-    const { followApi, notifApi } = window.N101_CONTENT;
+    const { followApi, notifApi, postApi } = window.N101_CONTENT;
     followApi.following().then(list=>setFollows(new Set(list.map(f=>f.handle)))).catch(()=>{});
     notifApi.list().then(({notifications})=>setNotifs(notifications)).catch(()=>{});
+    postApi.listSaved().then(rows=>setSavedSet(new Set(rows.map(po=>po.slug)))).catch(()=>{});
   }, []);
 
   const onLogin = React.useCallback((user)=>{ setCurrentUser(user); setLoginOpen(false); hydrateSocial(); }, [hydrateSocial]);
-  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); setFollows(new Set()); setNotifs([]); go({name:'home'}); }, [go]);
+  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); setFollows(new Set()); setNotifs([]); setSavedSet(new Set()); go({name:'home'}); }, [go]);
 
   // Restore the session from the HttpOnly refresh cookie on load. If there's no
   // valid backend session, clear any stale local user (real auth is the truth now).
@@ -164,6 +174,14 @@ function App() {
     document.body.style.background = p.bg;
     document.body.style.color = p.ink;
     document.documentElement.style.colorScheme = mode==='dark' ? 'dark' : 'light';
+    // Expose the active palette as CSS custom properties on :root so components
+    // that portal to <body> (e.g. the Readers/Writers modal in FollowStats) —
+    // which escape the app wrapper's scope — still resolve var(--surface) etc.
+    // instead of falling back to transparent.
+    const r = document.documentElement.style;
+    for (const k of ['bg','surface','surface2','ink','inkSoft','inkFaint','line','accent','accentDeep','stamp','tint']) {
+      if (p[k]) r.setProperty(`--${k}`, p[k]);
+    }
   }, [p, mode]);
 
   // keyboard ⌘K → search
@@ -238,7 +256,9 @@ function App() {
       <Nav p={p} route={route} lang={lang} onLang={setLang} onSearch={onSearch} savedCount={savedSet.size}
            mode={mode} onToggleMode={()=>setMode(m=>m==='dark'?'light':'dark')}
            currentUser={currentUser} onLogin={()=>setLoginOpen(true)} onLogout={onLogout}
-           notifs={notifs} onReadNotifs={()=>{ window.N101_CONTENT.notifApi.markRead(); setNotifs(prev=>prev.map(n=>({...n, read:true}))); }}/>
+           notifs={notifs}
+           onReadNotifs={()=>{ window.N101_CONTENT.notifApi.markRead(); setNotifs(prev=>prev.map(n=>({...n, read:true}))); }}
+           onClearNotifs={()=>{ window.N101_CONTENT.notifApi.clearAll(); setNotifs([]); }}/>
       <main>{screen}</main>
       <Footer p={p} lang={lang}/>
       {loginOpen && <LoginModal p={p} lang={lang} onLogin={onLogin} onClose={()=>setLoginOpen(false)}/>}

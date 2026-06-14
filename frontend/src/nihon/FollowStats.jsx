@@ -61,18 +61,25 @@ function FollowListModal({ handle, locale, tab, onTab, onClose }) {
   const jp = loc === "ja";
   const [rows, setRows] = React.useState(null);
   const [viewerId, setViewerId] = React.useState(null);
+  const [q, setQ] = React.useState("");
 
   React.useEffect(() => {
     window.N101_API.refresh().then((me) => setViewerId(me ? me.id : null)).catch(() => setViewerId(null));
   }, []);
 
+  // Reset the search box when switching tabs.
+  React.useEffect(() => { setQ(""); }, [tab]);
+
+  // Fetch the list, refetching (debounced) as the search query changes.
   React.useEffect(() => {
     let live = true;
     setRows(null);
     const fetcher = tab === "readers" ? window.N101_CONTENT.followApi.followers : window.N101_CONTENT.followApi.followingOf;
-    fetcher(handle).then((r) => { if (live) setRows(r); }).catch(() => { if (live) setRows([]); });
-    return () => { live = false; };
-  }, [tab, handle]);
+    const t = setTimeout(() => {
+      fetcher(handle, { q }).then((r) => { if (live) setRows(r); }).catch(() => { if (live) setRows([]); });
+    }, q ? 220 : 0);
+    return () => { live = false; clearTimeout(t); };
+  }, [tab, handle, q]);
 
   React.useEffect(() => {
     const onEsc = (e) => { if (e.key === "Escape") onClose(); };
@@ -106,15 +113,30 @@ function FollowListModal({ handle, locale, tab, onTab, onClose }) {
           </div>
           <button onClick={onClose} aria-label="Close" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "var(--inkFaint)", padding: 8 }}>×</button>
         </div>
-        <div style={{ padding: "8px 18px 4px", fontFamily: "var(--fontMono)", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--inkFaint)" }}>
-          {jp ? "最近の順" : "Most recent first"}
+        <div style={{ padding: "12px 16px 8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: 999, padding: "8px 14px" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--inkFaint)" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={jp ? "名前またはハンドルで検索" : "Search by name or handle"}
+              style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent",
+                fontFamily: "var(--fontBody)", fontSize: 13.5, color: "var(--ink)" }}
+            />
+            {q && (
+              <button onClick={() => setQ("")} aria-label="Clear" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", color: "var(--inkFaint)", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+            )}
+          </div>
         </div>
         <div style={{ overflowY: "auto", padding: "4px 0 10px" }}>
           {rows === null ? (
             <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkFaint)" }}>{jp ? "読み込み中…" : "Loading…"}</div>
           ) : rows.length === 0 ? (
             <div style={{ padding: "48px 24px", textAlign: "center", fontFamily: "var(--fontDisplay)", fontStyle: "italic", fontSize: 18, color: "var(--inkSoft)" }}>
-              {tab === "readers" ? (jp ? "まだ読者がいません。" : "No readers yet.") : (jp ? "まだ誰もフォローしていません。" : "Not following anyone yet.")}
+              {q ? (jp ? "見つかりませんでした。" : "No matches.")
+                 : tab === "readers" ? (jp ? "まだ読者がいません。" : "No readers yet.") : (jp ? "まだ誰もフォローしていません。" : "Not following anyone yet.")}
             </div>
           ) : rows.map((u) => <Row key={u.id} u={u} loc={loc} viewerId={viewerId} jp={jp} />)}
         </div>

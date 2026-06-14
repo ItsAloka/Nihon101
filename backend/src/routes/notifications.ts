@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
-import { listNotifications, unreadCount, markAllRead } from '../db/queries/notifications';
+import { listNotifications, unreadCount, markAllRead, deleteAllNotifications } from '../db/queries/notifications';
 
 const app = new Hono<AppEnv>();
 
@@ -23,6 +23,13 @@ app.post('/read', requireAuth, async (c) => {
   const db = getDb(c);
   await markAllRead(db, c.var.user!.id);
   return c.json({ ok: true });
+});
+
+// Clear all of the viewer's notifications.
+app.delete('/', requireAuth, async (c) => {
+  const db = getDb(c);
+  const removed = await deleteAllNotifications(db, c.var.user!.id);
+  return c.json({ ok: true, removed });
 });
 
 export default app;

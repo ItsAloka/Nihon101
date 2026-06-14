@@ -62,25 +62,3 @@ export async function translateFields(
   const parsed = JSON.parse(content) as TranslateFields;
   return parsed;
 }
-
-// ---- Embeddings (semantic similarity for the For You feed) -----------------
-
-const EMBED_URL = 'https://api.openai.com/v1/embeddings';
-// 1536-dim, cheap + strong for short multilingual text. Must match the
-// vector(1536) columns in schema.ts.
-const EMBED_MODEL = 'text-embedding-3-small';
-
-/** Embed a chunk of text → a 1536-float vector. Throws on a missing key/API error. */
-export async function embed(apiKey: string, input: string): Promise<number[]> {
-  if (!apiKey) throw new Error('no_api_key');
-  const res = await fetch(EMBED_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: EMBED_MODEL, input: input.slice(0, 8000) }),
-  });
-  if (!res.ok) throw new Error(`openai_embed_${res.status}`);
-  const data = (await res.json()) as { data?: { embedding?: number[] }[] };
-  const v = data.data?.[0]?.embedding;
-  if (!Array.isArray(v)) throw new Error('openai_embed_empty');
-  return v;
-}

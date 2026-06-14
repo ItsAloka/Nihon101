@@ -1,6 +1,6 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, postLikes, postComments, commentLikes, users } from '../schema';
+import { posts, postLikes, postComments, commentLikes, postSaves, users } from '../schema';
 import { id as newId } from '../../lib/ids';
 
 // ---- Post likes (toggle) -------------------------------------------------
@@ -39,6 +39,55 @@ export async function hasLikedPost(db: DB, postId: string, userId: string | null
     .from(postLikes)
     .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
   return !!row;
+}
+
+// ---- Post saves (toggle) -------------------------------------------------
+
+/** Toggle a user's save (bookmark) on a post. Returns the new state + the post's
+ * count. The UNIQUE (post_id, user_id) index makes the save idempotent. */
+export async function togglePostSave(db: DB, postId: string, userId: string) {
+  const [existing] = await db
+    .select({ id: postSaves.id })
+    .from(postSaves)
+    .where(and(eq(postSaves.postId, postId), eq(postSaves.userId, userId)));
+
+  if (existing) {
+    await db.delete(postSaves).where(eq(postSaves.id, existing.id));
+    await db.update(posts)
+      .set({ saves: sql`GREATEST(${posts.saves} - 1, 0)` })
+      .where(eq(posts.id, postId));
+  } else {
+    await db.insert(postSaves).values({
+      id: newId('psave'), postId, userId, createdAt: Date.now(),
+    });
+    await db.update(posts)
+      .set({ saves: sql`${posts.saves} + 1` })
+      .where(eq(posts.id, postId));
+  }
+
+  const [row] = await db.select({ saves: posts.saves }).from(posts).where(eq(posts.id, postId));
+  return { saved: !existing, saves: row?.saves ?? 0 };
+}
+
+/** Whether a user has saved a post (null user → false). */
+export async function hasSavedPost(db: DB, postId: string, userId: string | null): Promise<boolean> {
+  if (!userId) return false;
+  const [row] = await db
+    .select({ id: postSaves.id })
+    .from(postSaves)
+    .where(and(eq(postSaves.postId, postId), eq(postSaves.userId, userId)));
+  return !!row;
+}
+
+/** The ids of posts a user has saved, newest-saved first (drives the Saved tab
+ *  and the saved-state on cards). */
+export async function savedPostIds(db: DB, userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: postSaves.postId })
+    .from(postSaves)
+    .where(eq(postSaves.userId, userId))
+    .orderBy(desc(postSaves.createdAt));
+  return rows.map((r) => r.id);
 }
 
 // ---- Comments ------------------------------------------------------------

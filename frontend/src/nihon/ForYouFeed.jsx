@@ -27,14 +27,17 @@ export default function ForYouFeed({ locale }) {
     return () => window.removeEventListener("nihon:mode", h);
   }, []);
 
-  // Restore session + load the real follow set (drives the feed split).
+  // Restore session + load the real follow set (drives the feed split) and the
+  // real saved set (post_saves is the truth for a signed-in reader).
   React.useEffect(() => {
     let live = true;
     window.N101_API.refresh()
       .then((u) => {
         if (!live) return;
         setCurrentUser(window.N101_API.toAppUser(u, null));
-        window.N101_CONTENT.followApi.following().then((list) => { if (live) setFollows(new Set(list.map((f) => f.handle))); }).catch(() => {});
+        const { followApi, postApi } = window.N101_CONTENT;
+        followApi.following().then((list) => { if (live) setFollows(new Set(list.map((f) => f.handle))); }).catch(() => {});
+        postApi.listSaved().then((rows) => { if (live) setSavedSet(new Set(rows.map((po) => po.slug))); }).catch(() => {});
       })
       .catch(() => { if (live) setCurrentUser(null); });
     return () => { live = false; };
@@ -50,9 +53,16 @@ export default function ForYouFeed({ locale }) {
     });
   }, [currentUser, loc]);
 
+  // Save/unsave by slug. Must be logged in; optimistic with backend persistence
+  // (post_saves) and a rollback if the call fails.
   const onSave = React.useCallback((slug) => {
-    setSavedSet((s) => { const ns = new Set(s); ns.has(slug) ? ns.delete(slug) : ns.add(slug); try { localStorage.setItem("nihon.saved", JSON.stringify([...ns])); } catch (e) {} window.dispatchEvent(new CustomEvent("nihon:saved")); return ns; });
-  }, []);
+    if (!currentUser) { window.location.href = `/${loc}/app`; return; }
+    let wasSaved = false;
+    setSavedSet((s) => { const ns = new Set(s); if (ns.has(slug)) { ns.delete(slug); wasSaved = true; } else { ns.add(slug); } return ns; });
+    window.N101_CONTENT.postApi.toggleSave(slug).catch(() => {
+      setSavedSet((s) => { const ns = new Set(s); wasSaved ? ns.add(slug) : ns.delete(slug); return ns; });
+    });
+  }, [currentUser, loc]);
 
   const FeedPage = window.FeedPage;
   if (!FeedPage) return null;

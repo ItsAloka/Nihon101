@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, getTableColumns } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, getTableColumns } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -65,7 +65,6 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     saves: 0,
     comments: 0,
     trendScore: null,
-    embedding: null,
     publishedAt: input.status === 'published' ? now : null,
     createdAt: now,
     updatedAt: now,
@@ -79,15 +78,22 @@ export async function getPostById(db: DB, id: string): Promise<PostRow | undefin
   return row;
 }
 
+export async function getPostBySlug(db: DB, slug: string): Promise<PostRow | undefined> {
+  const [row] = await db.select().from(posts).where(eq(posts.slug, slug));
+  return row;
+}
+
 /** Author summary embedded in public post responses (avoids a separate lookup). */
 const authorCols = {
   authorName: users.displayName,
   authorNameJa: users.displayNameJa,
   authorHandle: users.handle,
+  authorAvatarUrl: users.avatarUrl,
 };
 export type PostWithAuthor = PostRow & {
   authorName: string | null;
   authorNameJa: string | null;
+  authorAvatarUrl: string | null;
   authorHandle: string | null;
 };
 
@@ -110,15 +116,14 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
 }
 
 /** Card column set for list surfaces (home feed): everything except the bodies
- * and the 1536-float embedding (never shipped to clients), plus a server-side
- * character count so readMins never ships body bytes. */
-const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, embedding: _cardEmbedding, ...postCardCols } = getTableColumns(posts);
+ * plus a server-side character count so readMins never ships body bytes. */
+const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);
 export const cardCols = {
   ...postCardCols,
   ...authorCols,
   bodyChars: sql<number>`char_length(coalesce(${posts.bodyEn}, '')) + char_length(coalesce(${posts.bodyJa}, ''))`,
 };
-export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa' | 'embedding'> & { bodyChars: number };
+export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa'> & { bodyChars: number };
 
 /** Newest published posts, card shape (no bodies selected at all). */
 export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {
@@ -129,6 +134,19 @@ export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {
     .where(eq(posts.status, 'published'))
     .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
     .limit(limit) as Promise<PostCardRow[]>;
+}
+
+/** Published posts (card shape) for the given ids, returned in the order the ids
+ *  were passed (callers like the Saved tab want newest-saved-first, not DB order). */
+export async function listCardsByIds(db: DB, ids: string[]): Promise<PostCardRow[]> {
+  if (!ids.length) return [];
+  const rows = (await db
+    .select(cardCols)
+    .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
+    .where(and(inArray(posts.id, ids), eq(posts.status, 'published')))) as PostCardRow[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.map((id) => byId.get(id)).filter((r): r is PostCardRow => !!r);
 }
 
 export interface ListPostsFilter {
@@ -192,6 +210,7 @@ export function publicPostCard(p: PostCardRow) {
     authorName: p.authorName ?? null,
     authorNameJa: p.authorNameJa ?? null,
     authorHandle: p.authorHandle ?? null,
+    authorAvatarUrl: p.authorAvatarUrl ?? null,
     categoryId: p.categoryId,
     lang: p.lang,
     slug: p.slug,
@@ -227,6 +246,7 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     authorName: a.authorName ?? null,
     authorNameJa: a.authorNameJa ?? null,
     authorHandle: a.authorHandle ?? null,
+    authorAvatarUrl: a.authorAvatarUrl ?? null,
     categoryId: p.categoryId,
     lang: p.lang,
     slug: p.slug,
