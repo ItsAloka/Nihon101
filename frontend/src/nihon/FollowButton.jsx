@@ -6,7 +6,7 @@ import React from "react";
 import "./api.jsx";       // window.N101_API
 import "./content.jsx";   // window.N101_CONTENT (followApi)
 
-export default function FollowButton({ userId, handle, locale = "ja", followers = 0 }) {
+export default function FollowButton({ userId, handle, locale = "ja", followers = 0, showCount = true }) {
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [state, setState] = React.useState("loading"); // loading|guest|self|following|not
@@ -55,9 +55,9 @@ export default function FollowButton({ userId, handle, locale = "ja", followers 
     : following ? (jp ? "フォロー中" : "Following") : (jp ? "フォロー" : "Follow");
 
   return (
-    <button class="pf-follow" data-following={following ? "1" : "0"} onClick={toggle} disabled={busy || state === "loading"}>
-      {!following && state !== "loading" && <span class="plus">+</span>}{label}
-      <span class="pf-followers">{count.toLocaleString()}</span>
+    <button className="pf-follow" data-following={following ? "1" : "0"} onClick={toggle} disabled={busy || state === "loading"}>
+      {!following && state !== "loading" && <span className="plus">+</span>}{label}
+      {showCount && <span className="pf-followers">{count.toLocaleString()}</span>}
     </button>
   );
 }

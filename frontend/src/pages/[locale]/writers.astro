@@ -1,0 +1,84 @@
+---
+// SSR Writers directory (replaces the mock-SPA AuthorsPage). Every author with a
+// published post, from GET /users (?sort=top|new). Each card links to the real
+// SSR profile and carries a Follow button island. Prototype design tokens.
+import Shell from "../../layouts/Shell.astro";
+import Pager from "../../components/Pager.astro";
+import SortBar from "../../components/SortBar.astro";
+import { TINT_HEX } from "../../lib/cards";
+import FollowButton from "../../nihon/FollowButton.jsx";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const url = new URL(Astro.request.url);
+const page = Math.max(0, Number(url.searchParams.get('page')) || 0);
+const SORTS = ['top', 'new'];
+let sort = url.searchParams.get('sort') || 'top';
+if (!SORTS.includes(sort)) sort = 'top';
+const LIMIT = 24;
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const res = await fetch(`${API}/users?sort=${sort}&limit=${LIMIT}&page=${page}`);
+if (!res.ok) return new Response(null, { status: 502 });
+const { authors, total } = await res.json();
+const totalPages = Math.ceil(total / LIMIT);
+
+const TINTS = Object.values(TINT_HEX).slice(0, 9);
+const tintOf = (h: string) => { let n = 0; for (const c of h) n = (n * 31 + c.charCodeAt(0)) >>> 0; return TINTS[n % TINTS.length]; };
+const initialsOf = (name: string) => (name.trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 3) || '?').toUpperCase();
+
+const sortHrefBase = `/${locale}/writers?sort=`;
+const pageHrefBase = `/${locale}/writers?sort=${sort}&page=`;
+const sortOptions = [{ label: jp ? '人気順' : 'Most read', value: 'top' }, { label: jp ? '新着順' : 'Newest', value: 'new' }];
+const pageTitle = jp ? '書く人 — nihon101' : 'Writers — nihon101';
+const pageDesc = jp ? 'nihon101に書いている人たち。' : 'The people writing on nihon101.';
+const canonical = `/${locale}/writers`;
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active="authors">
+  <div class="wrap section">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? '書く人' : 'Writers'}
+    </div>
+    <h1 class="ex">{jp ? '書いている人たち。' : 'The people behind the stories.'}</h1>
+    <p class="ex-sub">{jp ? 'フォローすると、新しい記事がフィードに届きます。' : 'Follow a few — their new stories land in your For You feed.'}</p>
+
+    <div class="list-bar">
+      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '人' : 'writers'}</div>
+      {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
+    </div>
+
+    <div class="wr-grid">
+      {authors.map((a: any) => (
+        <article class="wr-card" style={`--wtint:${tintOf(a.handle)};`}>
+          <a class="wr-ava" href={`/${locale}/u/${a.handle}`}>
+            {a.avatarUrl ? <img src={a.avatarUrl} alt={a.displayName} /> : initialsOf(a.displayName)}
+          </a>
+          <a class="wr-name" href={`/${locale}/u/${a.handle}`}>{jp ? (a.displayNameJa || a.displayName) : a.displayName}</a>
+          <div class="wr-role">{a.role}{a.location ? ` · ${a.location}` : ''}</div>
+          <div class="wr-stats">{a.postCount} {jp ? '記事' : 'stories'} · {a.likes.toLocaleString()} {jp ? 'いいね' : 'likes'}</div>
+          <FollowButton client:only="react" userId={a.id} handle={a.handle} locale={locale} showCount={false} />
+        </article>
+      ))}
+    </div>
+
+    <Pager page={page} totalPages={totalPages} hrefBase={pageHrefBase} jp={jp} />
+  </div>
+
+  <style is:global>
+    .wr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 8px; }
+    .wr-card { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+      padding: 24px 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .wr-ava { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, var(--wtint), color-mix(in oklab, var(--wtint) 50%, var(--surface2)));
+      color: #3a2e28; font-family: var(--fontDisplay); font-weight: 600; font-size: 26px; border: 1px solid var(--line); margin-bottom: 4px; }
+    .wr-ava img { width: 100%; height: 100%; object-fit: cover; }
+    .wr-name { font-family: var(--fontDisplay); font-weight: 600; font-size: 18px; color: var(--ink); letter-spacing: -0.01em; }
+    .wr-role { font-family: var(--fontBody); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; text-transform: uppercase; }
+    .wr-stats { font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); margin-bottom: 6px; }
+    @media (max-width: 1000px) { .wr-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .wr-grid { grid-template-columns: 1fr; } }
+  </style>
+</Shell>

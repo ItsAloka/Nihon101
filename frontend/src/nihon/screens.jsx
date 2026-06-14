@@ -1194,9 +1194,27 @@ function Manifesto({p, lang, num, en, jp, body_en, body_jp}) {
   );
 }
 
+// Resolve a set/array of saved slugs → real, card-ready posts (hydrated + the
+// gradient cover the prototype card expects). Skips slugs that 404 (e.g. a post
+// that was deleted). Shared by Saved + the profile's saved tab.
+function useResolvedPosts(slugs) {
+  const key = [...slugs].sort().join(',');
+  const [posts, setPosts] = React.useState(null);
+  React.useEffect(()=>{
+    let live = true;
+    const list = key ? key.split(',') : [];
+    if (!list.length) { setPosts([]); return; }
+    const { postApi, hydrateReal } = window.N101_CONTENT;
+    Promise.all(list.map(s=>postApi.getBySlug(s).then(hydrateReal).catch(()=>null)))
+      .then(rows=>{ if(live) setPosts(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '' } }))); });
+    return ()=>{ live=false; };
+  }, [key]);
+  return posts; // null = loading
+}
+
 // ====== SAVED ======
 function SavedPage({p, lang, savedSet, t, onSave}) {
-  const posts = window.getAllPosts().filter(po=>savedSet.has(po.slug));
+  const posts = useResolvedPosts(savedSet) || [];
   return (
     <div style={{...maxWrap(), paddingTop:48}}>
       <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14}}>

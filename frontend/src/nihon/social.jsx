@@ -563,8 +563,18 @@ function MyPostCard({ p, lang, post, onChanged }) {
 }
 
 function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, comments }) {
-  const all = window.getAllPosts();
-  const saved = all.filter(po=>savedSet.has(po.slug));
+  // Saved posts (slugs in localStorage) resolved to real, card-ready posts.
+  const [saved, setSaved] = React.useState([]);
+  const savedKey = [...savedSet].sort().join(',');
+  React.useEffect(()=>{
+    let live = true;
+    const slugs = savedKey ? savedKey.split(',') : [];
+    if (!slugs.length) { setSaved([]); return; }
+    const { postApi, hydrateReal } = window.N101_CONTENT;
+    Promise.all(slugs.map(s=>postApi.getBySlug(s).then(hydrateReal).catch(()=>null)))
+      .then(rows=>{ if(live) setSaved(rows.filter(Boolean).map(po=>({ ...po, cover: { hue: (window.N101_CATS?.byId(po.category)?.tint) || 'cream', label: po._coverLabel || '' } }))); });
+    return ()=>{ live=false; };
+  }, [savedKey]);
   const [myPosts, setMyPosts] = React.useState([]);
   const refreshMine = React.useCallback(()=>{
     window.N101_CONTENT.postApi.list({status:'mine'}).then(setMyPosts).catch(()=>{});

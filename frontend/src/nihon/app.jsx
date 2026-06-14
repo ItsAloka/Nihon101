@@ -27,24 +27,6 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   showTategaki: true
 }/*EDITMODE-END*/;
 
-// Seed comments so threads + trending feel alive
-function seedComments() {
-  const A = window.NIHON_DATA.AUTHORS;
-  const a = (slug)=>{ const x=A.find(z=>z.slug===slug); return {slug:x.slug, en:x.en, jp:x.jp, initials:x.initials, tint:x.tint}; };
-  return {
-    'quiet-geometry-of-a-kissaten': [
-      { id:'s1', author:a('kenji-wada'), text:'You’ve described the exact reason I can’t work from cafés anymore — a kissaten asks nothing of you. This made my morning.', ts:Date.now()-1000*60*60*5, likes:24, liked:false },
-      { id:'s2', author:a('aiko-hayashi'), text:'The line about the newspaper rack being full of yesterday’s news on purpose — perfect.', ts:Date.now()-1000*60*60*2, likes:11, liked:false },
-    ],
-    'untranslatable-komorebi': [
-      { id:'s3', author:a('daniel-reeves'), text:'As a translator this one hurt (in the good way). We really did just decide not to have the word.', ts:Date.now()-1000*60*60*26, likes:38, liked:false },
-    ],
-    'tamago-sando-manifesto': [
-      { id:'s4', author:a('sora-nakamura'), text:'A two-year writing ban feels generous, honestly.', ts:Date.now()-1000*60*60*9, likes:52, liked:false },
-      { id:'s5', author:a('mio-tanaka'), text:'The 7-Eleven egg salad is a national treasure and I will not be debating this.', ts:Date.now()-1000*60*30, likes:7, liked:false },
-    ],
-  };
-}
 
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -60,7 +42,7 @@ function App() {
   const [claps, setClaps] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.claps') || '{}'); } catch(e){ return {}; } });
   const [currentUser, setCurrentUser] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.user') || 'null'); } catch(e){ return null; } });
   const [userPosts, setUserPosts] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.posts') || '[]'); } catch(e){ return []; } });
-  const [comments, setComments] = React.useState(()=>{ try { const s = localStorage.getItem('nihon.comments'); return s ? JSON.parse(s) : seedComments(); } catch(e){ return {}; } });
+  const [comments, setComments] = React.useState(()=>{ try { const s = localStorage.getItem('nihon.comments'); return s ? JSON.parse(s) : {}; } catch(e){ return {}; } });
   const [notifs, setNotifs] = React.useState([]); // real, loaded from the backend on session restore
   const [loginOpen, setLoginOpen] = React.useState(false);
 
@@ -87,6 +69,7 @@ function App() {
     if (r.name==='tag') { window.location.href = `/${loc}/t/${r.slug}`; return; }
     if (r.name==='author') { window.location.href = `/${loc}/u/${r.slug}`; return; }
     if (r.name==='trending') { window.location.href = `/${loc}/trending`; return; }
+    if (r.name==='authors') { window.location.href = `/${loc}/writers`; return; }
     // auth-guarded routes
     if ((r.name==='compose' || r.name==='profile') && !window.__currentUser) { setLoginOpen(true); return; }
     if (r.name==='write') r = {name:'compose'};
@@ -189,16 +172,26 @@ function App() {
 
   let screen = null;
   const r = route;
+  // Reader surfaces are real SSR pages now — a direct deep-link into the SPA
+  // shell (e.g. #/trending) must hard-navigate out to the SSR page instead of
+  // rendering the retired mock screen. (go() already does this on navigation;
+  // this covers first-load deep links.) Guarded on /app so it never loops.
+  if (window.location.pathname.includes('/app')) {
+    const loc = window.location.pathname.split('/')[1] === 'en' ? 'en' : 'ja';
+    const ssr = (
+      r.name === 'home' ? `/${loc}/` :
+      r.name === 'category' && r.slug ? `/${loc}/c/${r.slug}` :
+      r.name === 'tag' && r.slug ? `/${loc}/t/${r.slug}` :
+      r.name === 'author' && r.slug ? `/${loc}/u/${r.slug}` :
+      r.name === 'trending' ? `/${loc}/trending` :
+      r.name === 'authors' ? `/${loc}/writers` :
+      r.name === 'search' ? `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}` :
+      ''
+    );
+    if (ssr) { window.location.href = ssr; return null; }
+  }
   if (r.name === 'home') {
-    // Home is the SSR page at /{locale}/ now (the SPA lives at /{locale}/app).
-    // Hard-navigate out instead of rendering the mock HomePage. Guarded on
-    // /app so it can never loop (the SSR home mounts no SPA island anyway).
-    if (window.location.pathname.includes('/app')) {
-      const seg = window.location.pathname.split('/')[1];
-      window.location.href = '/' + (seg === 'en' ? 'en' : 'ja') + '/';
-      return null;
-    }
-    screen = <HomePage p={p} lang={lang} posts={window.getAllPosts().filter(x=>!x.isDraft)} t={t} savedSet={savedSet} likedMap={claps} onLike={onLike} onSave={onSave}/>;
+    return null; // handled by the SSR guard above
   } else if (r.name === 'article') {
     screen = <window.ArticleLoader p={p} lang={lang} slug={r.slug} t={t} savedSet={savedSet} claps={claps} onClap={onLike} onSave={onSave}
           comments={comments[r.slug]||[]} onAddComment={onAddComment} onLikeComment={onLikeComment}
