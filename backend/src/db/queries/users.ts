@@ -53,3 +53,41 @@ export function listTopAuthors(db: DB, limit = 15) {
     .orderBy(desc(score))
     .limit(limit);
 }
+
+/** Full writers directory: every author with at least one published post, with
+ *  bio/role + post and like counts. sort 'top' (engagement) | 'new' (joined).
+ *  Paginated for the SSR Writers page. */
+export function listAuthors(db: DB, { sort = 'top', limit = 24, offset = 0 }: { sort?: 'top' | 'new'; limit?: number; offset?: number }) {
+  const score = sql<number>`count(${posts.id}) + coalesce(sum(${posts.likes}), 0)`;
+  const order = sort === 'new' ? desc(users.createdAt) : desc(score);
+  return db
+    .select({
+      id: users.id,
+      handle: users.handle,
+      displayName: users.displayName,
+      displayNameJa: users.displayNameJa,
+      avatarUrl: users.avatarUrl,
+      location: users.location,
+      bio: users.bio,
+      bioJa: users.bioJa,
+      role: users.role,
+      joinedAt: users.createdAt,
+      postCount: count(posts.id),
+      likes: sql<number>`coalesce(sum(${posts.likes}), 0)::int`,
+    })
+    .from(users)
+    .innerJoin(posts, and(eq(posts.authorId, users.id), eq(posts.status, 'published')))
+    .groupBy(users.id)
+    .orderBy(order)
+    .limit(limit)
+    .offset(offset);
+}
+
+/** Count of authors with at least one published post (for Writers pagination). */
+export async function countAuthors(db: DB): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(distinct ${posts.authorId})::int` })
+    .from(posts)
+    .where(eq(posts.status, 'published'));
+  return row?.n ?? 0;
+}

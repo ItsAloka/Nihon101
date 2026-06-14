@@ -793,16 +793,24 @@ function CategoryChip({ slug, p, lang, size='md' }) {
 }
 
 // ------- Author chip -------
-function AuthorChip({ slug, p, lang, size='md', date }) {
-  const a = getAuthor(slug);
-  if (!a) return null;
-  const c = tintBg(a.tint, p);
+// Real authors pass name/handle (+optional nameJp) straight from the post card.
+const CHIP_TINTS = ['rose','amber','blue','lilac','peach','sage','clay','mauve','sky'];
+function chipTint(s){ let h=0; for(const c of String(s||'')) h=(h*31+c.charCodeAt(0))>>>0; return CHIP_TINTS[h%CHIP_TINTS.length]; }
+function chipInitials(n){ return (String(n||'').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,3) || '?').toUpperCase(); }
+function AuthorChip({ slug, name, nameJp, handle, city, p, lang, size='md', date }) {
+  let dispEn, dispJp, h, tint, initials, place;
+  if (name || handle) {                 // real author from a post card
+    dispEn = name || handle; dispJp = nameJp || name || handle;
+    h = handle || ''; tint = chipTint(h || name); initials = chipInitials(name || handle); place = city || '';
+  } else {                              // legacy mock author (seed screens)
+    const a = getAuthor(slug); if (!a) return null;
+    dispEn = a.en; dispJp = a.jp; h = a.slug; tint = a.tint; initials = a.initials; place = a.city;
+  }
+  const c = tintBg(tint, p);
   const dim = size==='lg' ? 44 : (size==='sm' ? 26 : 32);
   return (
-    <a href={`#/author/${slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'author', slug});}}
-       style={{
-        display:'inline-flex', alignItems:'center', gap:10, textDecoration:'none',
-      }}>
+    <a href={`/${lang==='jp'?'ja':'en'}/u/${h}`} onClick={(e)=>{ if(!h) return; e.preventDefault(); window.__nihon_go({name:'author', slug:h}); }}
+       style={{ display:'inline-flex', alignItems:'center', gap:10, textDecoration:'none' }}>
       <div style={{
         width:dim, height:dim, borderRadius:'50%',
         background:`linear-gradient(135deg, ${c}, color-mix(in oklab, ${c} 50%, ${p.surface2}))`,
@@ -810,13 +818,13 @@ function AuthorChip({ slug, p, lang, size='md', date }) {
         fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize: dim*0.42,
         border:`1px solid ${p.line}`,
       }}>
-        {a.initials}
+        {initials}
       </div>
       <div style={{display:'flex', flexDirection:'column'}}>
         <span style={{fontFamily:'var(--fontBody)', fontSize: size==='lg'?14:13, color:p.ink, fontWeight:600}}>
-          {lang==='jp' ? a.jp : a.en}
+          {lang==='jp' ? dispJp : dispEn}
         </span>
-        {date ? <span style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint}}>{date} · {a.city}</span> : null}
+        {date ? <span style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint}}>{date}{place ? ` · ${place}` : ''}</span> : null}
       </div>
     </a>
   );
