@@ -7,6 +7,7 @@ import Grid from "../../../components/Grid.astro";
 import SortBar from "../../../components/SortBar.astro";
 import Pager from "../../../components/Pager.astro";
 import { TINT_HEX } from "../../../lib/cards";
+import FollowButton from "../../../nihon/FollowButton.jsx";
 
 const { locale, handle } = Astro.params as { locale: string; handle: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -70,6 +71,9 @@ const canonical = `/${locale}/u/${user.handle}`;
           <span>·</span>
           <span>{jp ? `${joined}に参加` : `joined ${joined}`}</span>
         </div>
+        <div class="pf-actions">
+          <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} followers={stats.followers ?? 0} />
+        </div>
       </div>
     </div>
   </section>
@@ -103,6 +107,14 @@ const canonical = `/${locale}/u/${user.handle}`;
     .pf-bio { font-family: var(--fontDisplay); font-style: italic; font-size: 19px; color: var(--inkSoft); margin-top: 14px; max-width: 640px; line-height: 1.5; }
     .pf-stats { margin-top: 18px; display: flex; gap: 18px; font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.06em; text-transform: uppercase; }
     .pf-stats strong { color: var(--ink); }
+    .pf-actions { margin-top: 20px; }
+    .pf-follow { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 22px; border-radius: 999px; font-family: var(--fontBody); font-size: 14px; font-weight: 600;
+      border: 1px solid var(--stamp); background: var(--stamp); color: #fff; transition: background .15s, color .15s; }
+    .pf-follow .plus { font-weight: 700; }
+    .pf-follow[data-following="1"] { background: transparent; color: var(--ink); border-color: var(--line); }
+    .pf-follow:disabled { opacity: .6; cursor: default; }
+    .pf-followers { font-family: var(--fontMono); font-size: 11px; opacity: .85; padding-left: 8px; border-left: 1px solid color-mix(in oklab, currentColor 30%, transparent); }
     @media (max-width: 900px) { .pf-hero .wrap { grid-template-columns: 1fr; } }
   </style>
 </Shell>

@@ -39,6 +39,8 @@ export function ssrHref(r, loc) {
     case "search": return `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
     case "category": return `/${loc}/c/${r.slug}`;
     case "tag": return `/${loc}/t/${r.slug}`;
+    case "author": return `/${loc}/u/${r.slug}`;
+    case "trending": return `/${loc}/trending`;
     default: return "";
   }
 }

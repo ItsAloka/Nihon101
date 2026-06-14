@@ -939,56 +939,82 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
 
 Object.assign(window, { LoginModal, ComposerPage, ProfilePage, TrendingPage, FeedPage, DEMO_USERS });
 
-// ====== FOLLOWING / FOR-YOU FEED ======
-function feedAffinity({savedSet, claps, follows}) {
-  const aff = {};
-  const bump = (cat, n)=>{ if(cat) aff[cat] = (aff[cat]||0) + n; };
-  window.getAllPosts().forEach(po=>{ if(savedSet && savedSet.has(po.slug)) bump(po.category, 3); });
-  Object.keys(claps||{}).forEach(slug=>{ const po = window.getPost(slug); if(po) bump(po.category, 2); });
-  (follows ? [...follows] : []).forEach(slug=>{ const b = window.authorBeat({slug}); bump(b, 2); });
-  return aff;
+// ====== FOR YOU FEED (real backend /feed — ranked: follows + trending + fresh,
+// tilted by category affinity. We only split + label it here.) ======
+
+// Tint + initials for a real author (who-to-follow cards), mirroring api.jsx.
+const FEED_TINTS = ['rose','amber','blue','lilac','peach','sage','clay','mauve','sky'];
+function tintForKey(s){ let h=0; for(const c of String(s)) h=(h*31+c.charCodeAt(0))>>>0; return FEED_TINTS[h%FEED_TINTS.length]; }
+function initialsOfName(n){ return (String(n||'').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,3) || '?').toUpperCase(); }
+function toAuthorCard(a){
+  return { slug:a.handle, en:a.displayName, jp:a.displayNameJa||a.displayName, role:'Writer',
+           avatarUrl:a.avatarUrl, initials:initialsOfName(a.displayName), tint:tintForKey(a.handle) };
 }
-function feedReason(po, aff, follows, lang) {
-  if (follows && follows.has(po.author)) {
-    const a = window.getAuthor(po.author);
-    return { icon:'follow', text: (lang==='jp'?'フォロー中・':'From ') + (a ? (lang==='jp'?a.jp:a.en) : '') };
-  }
-  if (aff[po.category]) {
-    const cat = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===po.category);
-    return { icon:'like', text: (lang==='jp'?`好み・${cat.jp}`:`Because you like ${cat.en}`) };
+
+function feedReason(po, follows, lang) {
+  if (follows && po.authorHandle && follows.has(po.authorHandle)) {
+    return { icon:'follow', text: (lang==='jp'?'フォロー中・':'From ') + (lang==='jp'? po.author_jp : po.author) };
   }
   return { icon:'trend', text: lang==='jp'?'人気の記事':'Popular now' };
 }
 
 function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow, currentUser, onRequireLogin }) {
   follows = follows || new Set();
-  const all = window.getAllPosts().filter(po=>!po.isDraft);
-  const aff = feedAffinity({savedSet, claps, follows});
-  const hasAff = Object.keys(aff).length>0;
+  const { feedApi, categoryApi, hydrateReal } = window.N101_CONTENT;
+  const loc = lang==='jp' ? 'ja' : 'en';
 
-  // posts from followed writers (newest-ish: user posts carry ts, seeds keep order)
-  const followed = all.filter(po=>follows.has(po.author))
-    .sort((a,b)=>(b.ts||0)-(a.ts||0));
+  // The ranked feed (mapped to the prototype card shape), who-to-follow authors,
+  // and topic chips — all real. Refetch when sign-in or the follow set changes so
+  // freshly-followed writers' posts get pulled into the server-side pool.
+  const [posts, setPosts] = React.useState(null);   // po[] | null=loading
+  const [personalized, setPersonalized] = React.useState(false);
+  const [authors, setAuthors] = React.useState([]);  // who-to-follow candidates
+  const [cats, setCats] = React.useState([]);
 
-  // recommended (exclude followed + saved), scored by affinity + popularity
+  React.useEffect(()=>{
+    let live = true;
+    feedApi.forYou({ limit: 30 })
+      .then(r=>{ if(live){ setPosts(r.feed.map(hydrateReal)); setPersonalized(!!r.personalized); } })
+      .catch(()=>{ if(live){ setPosts([]); } });
+    return ()=>{ live = false; };
+  }, [currentUser, follows.size]);
+
+  React.useEffect(()=>{
+    let live = true;
+    fetch(window.N101_API.API_BASE + '/home').then(r=>r.json())
+      .then(d=>{ if(live){ setAuthors((d.topAuthors||[]).map(toAuthorCard)); } }).catch(()=>{});
+    categoryApi.list().then(list=>{ if(live) setCats(list); }).catch(()=>{});
+    return ()=>{ live = false; };
+  }, []);
+
+  // ArticleCard (the prototype card) expects a gradient cover `{hue, label}`
+  // keyed on the category's palette tint — real posts carry a cover URL instead,
+  // so decorate them to the SPA's gradient-card shape (consistent with the rest
+  // of the SPA, which has always rendered gradient placeholders).
+  const tintByCat = React.useMemo(()=>{ const m={}; cats.forEach(c=>{ m[c.id]=c.tint; }); return m; }, [cats]);
+  const deco = React.useCallback((po)=>({ ...po, cover: { hue: tintByCat[po.category] || 'cream', label: po._coverLabel || '' } }), [tintByCat]);
+
+  const all = (posts || []).map(deco);
+  const loading = posts === null;
+  const hasAff = personalized;
+
+  // posts from followed writers
+  const followed = all.filter(po=>po.authorHandle && follows.has(po.authorHandle));
+
+  // recommended (exclude followed + saved); backend already ranked the list.
   const exclude = new Set([...followed.map(po=>po.slug), ...(savedSet?[...savedSet]:[])]);
-  const score = (po)=> (aff[po.category]||0)*50 + (po.likes||0)/40 + (claps[po.slug]||0) + (follows.has(po.author)?80:0);
-  const recommended = all.filter(po=>!exclude.has(po.slug)).sort((a,b)=>score(b)-score(a)).slice(0,6);
+  const recommended = all.filter(po=>!exclude.has(po.slug)).slice(0,9);
 
-  // topic affinity chips
-  const cats = window.NIHON_DATA.CATEGORIES;
-  const topicChips = (hasAff ? cats.filter(c=>aff[c.slug]).sort((a,b)=>aff[b.slug]-aff[a.slug])
-    : cats).slice(0,6);
+  // topic chips — top real categories
+  const topicChips = cats.slice(0,6).map(c=>({ slug:c.id, kanji:c.kanji, en:c.labelEn, jp:c.labelJa }));
 
-  // who to follow (unfollowed, ranked)
-  const suggestions = window.NIHON_DATA.AUTHORS
+  // who to follow (unfollowed, not me)
+  const suggestions = authors
     .filter(a=>!follows.has(a.slug) && a.slug!==(currentUser&&currentUser.slug))
-    .map(a=>({...a, _s: window.writerStats(a, all, claps)}))
-    .sort((x,y)=>(y._s.pieces*1000+y._s.likes)-(x._s.pieces*1000+x._s.likes))
     .slice(0,4);
 
   const RecCard = ({po})=>{
-    const r = feedReason(po, aff, follows, lang);
+    const r = feedReason(po, follows, lang);
     return (
       <div>
         <div style={{display:'inline-flex', alignItems:'center', gap:6, marginBottom:10, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:p.inkFaint}}>
@@ -1052,7 +1078,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
           <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16}}>
             {suggestions.map(a=>(
               <div key={a.slug} style={{padding:20, borderRadius:16, background:p.surface, border:`1px solid ${p.line}`, display:'flex', flexDirection:'column', alignItems:'center', textAlign:'center', gap:10}}>
-                <div onClick={()=>window.__nihon_go({name:'author', slug:a.slug})} style={{cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:10}}>
+                <div onClick={()=>{ window.location.href = `/${loc}/u/${a.slug}`; }} style={{cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:10}}>
                   <Avatar user={a} p={p} size={60}/>
                   <div>
                     <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:16, color:p.ink}}>{lang==='jp'?a.jp:a.en}</div>
@@ -1069,9 +1095,13 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
       {/* Recommended */}
       <section style={{marginBottom:48}}>
         <FeedHeading p={p} lang={lang} en="Picked for you" jp="あなたへのおすすめ" kicker_en={hasAff?'based on what you read':'popular this week'} kicker_jp={hasAff?'読んだ記事から':'今週の人気'}/>
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
-          {recommended.map(po=>(<RecCard key={po.slug} po={po}/>))}
-        </div>
+        {loading ? (
+          <div style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkFaint, padding:'8px 0'}}>{lang==='jp'?'読み込み中…':'Loading…'}</div>
+        ) : (
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+            {recommended.map(po=>(<RecCard key={po.slug} po={po}/>))}
+          </div>
+        )}
       </section>
 
       {/* Topics */}

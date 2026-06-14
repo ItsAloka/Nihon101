@@ -46,15 +46,6 @@ function seedComments() {
   };
 }
 
-function seedNotifs() {
-  return [
-    { kind:'like', who:'Aiko Hayashi', text_en:'and 23 others liked a story you saved', text_jp:'があなたの保存した記事にいいねしました', when:'2h', read:false, route:{name:'saved'} },
-    { kind:'comment', who:'Daniel Reeves', text_en:'replied in “The untranslatable: 木漏れ日”', text_jp:'が「訳せない言葉」にコメントしました', when:'1d', read:false, route:{name:'article', slug:'untranslatable-komorebi'} },
-    { kind:'follow', who:'Kenji Wada', text_en:'started following you', text_jp:'があなたをフォローしました', when:'3d', read:true, route:{name:'authors'} },
-    { kind:'system', who:'nihon101', text_en:'— your weekly letter is ready to read', text_jp:'今週のおたよりが届きました', when:'4d', read:true, route:{name:'home'} },
-  ];
-}
-
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [route, setRoute] = React.useState(()=>{
@@ -65,24 +56,23 @@ function App() {
   const [lang, setLang] = React.useState(()=>{ try { return localStorage.getItem('nihon.lang') || 'en'; } catch(e){ return 'en'; } });
   const [mode, setMode] = React.useState(()=>{ try { return localStorage.getItem('nihon.mode') || 'light'; } catch(e){ return 'light'; } });
   const [savedSet, setSavedSet] = React.useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem('nihon.saved') || '[]')); } catch(e){ return new Set(); } });
-  const [follows, setFollows] = React.useState(()=>{ try { return new Set(JSON.parse(localStorage.getItem('nihon.follows') || '[]')); } catch(e){ return new Set(); } });
+  const [follows, setFollows] = React.useState(new Set()); // real, loaded from the backend on session restore
   const [claps, setClaps] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.claps') || '{}'); } catch(e){ return {}; } });
   const [currentUser, setCurrentUser] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.user') || 'null'); } catch(e){ return null; } });
   const [userPosts, setUserPosts] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.posts') || '[]'); } catch(e){ return []; } });
   const [comments, setComments] = React.useState(()=>{ try { const s = localStorage.getItem('nihon.comments'); return s ? JSON.parse(s) : seedComments(); } catch(e){ return {}; } });
-  const [notifs, setNotifs] = React.useState(()=>{ try { const s = localStorage.getItem('nihon.notifs'); return s ? JSON.parse(s) : seedNotifs(); } catch(e){ return []; } });
+  const [notifs, setNotifs] = React.useState([]); // real, loaded from the backend on session restore
   const [loginOpen, setLoginOpen] = React.useState(false);
 
   // Persist + expose globals used by helper lookups
   React.useEffect(()=>{ try{ localStorage.setItem('nihon.lang', lang);}catch(e){} }, [lang]);
   React.useEffect(()=>{ try{ localStorage.setItem('nihon.mode', mode);}catch(e){} }, [mode]);
   React.useEffect(()=>{ try{ localStorage.setItem('nihon.saved', JSON.stringify([...savedSet]));}catch(e){} }, [savedSet]);
-  React.useEffect(()=>{ window.__follows = follows; try{ localStorage.setItem('nihon.follows', JSON.stringify([...follows]));}catch(e){} }, [follows]);
+  React.useEffect(()=>{ window.__follows = follows; }, [follows]);
   React.useEffect(()=>{ try{ localStorage.setItem('nihon.claps', JSON.stringify(claps));}catch(e){} }, [claps]);
   React.useEffect(()=>{ window.__currentUser = currentUser; try{ localStorage.setItem('nihon.user', JSON.stringify(currentUser));}catch(e){} }, [currentUser]);
   React.useEffect(()=>{ window.__userPosts = userPosts; try{ localStorage.setItem('nihon.posts', JSON.stringify(userPosts));}catch(e){} }, [userPosts]);
   React.useEffect(()=>{ try{ localStorage.setItem('nihon.comments', JSON.stringify(comments));}catch(e){} }, [comments]);
-  React.useEffect(()=>{ try{ localStorage.setItem('nihon.notifs', JSON.stringify(notifs));}catch(e){} }, [notifs]);
 
   // keep globals fresh on first render too
   window.__currentUser = currentUser;
@@ -95,6 +85,8 @@ function App() {
     if (r.name==='search') { window.location.href = `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}`; return; }
     if (r.name==='category') { window.location.href = `/${loc}/c/${r.slug}`; return; }
     if (r.name==='tag') { window.location.href = `/${loc}/t/${r.slug}`; return; }
+    if (r.name==='author') { window.location.href = `/${loc}/u/${r.slug}`; return; }
+    if (r.name==='trending') { window.location.href = `/${loc}/trending`; return; }
     // auth-guarded routes
     if ((r.name==='compose' || r.name==='profile') && !window.__currentUser) { setLoginOpen(true); return; }
     if (r.name==='write') r = {name:'compose'};
@@ -129,21 +121,40 @@ function App() {
 
   const onLike = React.useCallback((slug)=>{ setClaps(c=>({...c, [slug]: (c[slug]||0)+1})); }, []);
   const onSave = React.useCallback((slug)=>{ setSavedSet(s=>{ const ns=new Set(s); ns.has(slug)?ns.delete(slug):ns.add(slug); return ns; }); }, []);
-  const onToggleFollow = React.useCallback((slug)=>{ setFollows(s=>{ const ns=new Set(s); ns.has(slug)?ns.delete(slug):ns.add(slug); return ns; }); }, []);
+  // Follow/unfollow a writer by handle. Must be logged in; optimistic, with the
+  // real call to the backend and a rollback if it fails.
+  const onToggleFollow = React.useCallback((handle)=>{
+    if (!window.__currentUser) { setLoginOpen(true); return; }
+    const { followApi } = window.N101_CONTENT;
+    let nowFollowing = false;
+    setFollows(s=>{ const ns=new Set(s); if(ns.has(handle)){ns.delete(handle);} else {ns.add(handle); nowFollowing=true;} return ns; });
+    const call = nowFollowing ? followApi.follow(handle) : followApi.unfollow(handle);
+    call.catch(()=>{ // rollback on failure
+      setFollows(s=>{ const ns=new Set(s); nowFollowing?ns.delete(handle):ns.add(handle); return ns; });
+    });
+  }, []);
   const onSearch = React.useCallback((q)=>{ go({name:'search', q}); }, [go]);
 
-  const onLogin = React.useCallback((user)=>{ setCurrentUser(user); setLoginOpen(false); }, []);
-  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); go({name:'home'}); }, [go]);
+  // Load the real follow set + notifications for a signed-in user (replacing any
+  // stale local cache — the backend is the truth).
+  const hydrateSocial = React.useCallback(()=>{
+    const { followApi, notifApi } = window.N101_CONTENT;
+    followApi.following().then(list=>setFollows(new Set(list.map(f=>f.handle)))).catch(()=>{});
+    notifApi.list().then(({notifications})=>setNotifs(notifications)).catch(()=>{});
+  }, []);
+
+  const onLogin = React.useCallback((user)=>{ setCurrentUser(user); setLoginOpen(false); hydrateSocial(); }, [hydrateSocial]);
+  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); setFollows(new Set()); setNotifs([]); go({name:'home'}); }, [go]);
 
   // Restore the session from the HttpOnly refresh cookie on load. If there's no
   // valid backend session, clear any stale local user (real auth is the truth now).
   React.useEffect(()=>{
     let live = true;
     window.N101_API.refresh()
-      .then(u=>{ if(live) setCurrentUser(prev=>window.N101_API.toAppUser(u, prev)); })
-      .catch(()=>{ if(live) setCurrentUser(null); });
+      .then(u=>{ if(live){ setCurrentUser(prev=>window.N101_API.toAppUser(u, prev)); hydrateSocial(); } })
+      .catch(()=>{ if(live){ setCurrentUser(null); setFollows(new Set()); setNotifs([]); } });
     return ()=>{ live = false; };
-  }, []);
+  }, [hydrateSocial]);
 
   const onAddComment = React.useCallback((slug, text, parentId=null)=>{
     const u = window.__currentUser; if (!u) return;
@@ -159,10 +170,6 @@ function App() {
     window.__userPosts = [post, ...(window.__userPosts||[]).filter(x=>x.slug!==post.slug)];
     if (!isDraft) {
       go({name:'article', slug:post.slug});
-      // simulate engagement shortly after publishing
-      setTimeout(()=>{
-        setNotifs(prev=>[{ kind:'like', who:'Emi Watanabe', text_en:`liked your story “${post.title_en.slice(0,28)}…”`, text_jp:'があなたの記事にいいねしました', when:'now', read:false, route:{name:'article', slug:post.slug} }, ...prev]);
-      }, 4000);
     } else {
       go({name:'profile'});
     }
@@ -234,7 +241,7 @@ function App() {
       <Nav p={p} route={route} lang={lang} onLang={setLang} onSearch={onSearch} savedCount={savedSet.size}
            mode={mode} onToggleMode={()=>setMode(m=>m==='dark'?'light':'dark')}
            currentUser={currentUser} onLogin={()=>setLoginOpen(true)} onLogout={onLogout}
-           notifs={notifs} onReadNotifs={()=>setNotifs(prev=>prev.map(n=>({...n, read:true})))}/>
+           notifs={notifs} onReadNotifs={()=>{ window.N101_CONTENT.notifApi.markRead(); setNotifs(prev=>prev.map(n=>({...n, read:true}))); }}/>
       <main>{screen}</main>
       <Footer p={p} lang={lang}/>
       {loginOpen && <LoginModal p={p} lang={lang} onLogin={onLogin} onClose={()=>setLoginOpen(false)}/>}

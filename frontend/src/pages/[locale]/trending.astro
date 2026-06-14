@@ -1,0 +1,57 @@
+---
+// SSR Trending page (Phase 6 / Step 2). Ranked by the hourly cron-computed
+// posts.trend_score (engagement decayed by age), read back via GET /trending.
+// Replaces the mock-SPA TrendingPage. Prototype design (Shell + Grid).
+import Shell from "../../layouts/Shell.astro";
+import Grid from "../../components/Grid.astro";
+import Pager from "../../components/Pager.astro";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const url = new URL(Astro.request.url);
+const page = Math.max(0, Number(url.searchParams.get('page')) || 0);
+const LIMIT = 12;
+
+const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const [tRes, cRes] = await Promise.all([
+  fetch(`${API}/trending?limit=${LIMIT}&page=${page}`),
+  fetch(`${API}/categories`),
+]);
+if (!tRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+const { posts, total } = await tRes.json();
+const { categories } = await cRes.json();
+const totalPages = Math.ceil(total / LIMIT);
+
+const pageHrefBase = `/${locale}/trending?page=`;
+const pageTitle = jp ? '人気 — nihon101' : 'Trending — nihon101';
+const pageDesc = jp ? 'いま読まれている記事。' : 'What people are reading right now.';
+const canonical = `/${locale}/trending`;
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active="trending">
+  <div class="wrap section">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? '人気' : 'Trending'}
+    </div>
+    <h1 class="ex">{jp ? 'いま、読まれているもの。' : 'What people are reading now.'}</h1>
+    <p class="ex-sub">{jp ? 'いいね・コメント・新しさから、一時間ごとに更新。' : 'Ranked by likes, comments and freshness — refreshed hourly.'}</p>
+
+    <div class="list-bar">
+      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件' : 'stories'}</div>
+    </div>
+
+    {posts.length === 0 ? (
+      <div class="empty">
+        <div class="mu">無</div>
+        <div class="msg">{jp ? 'まだ何もありません。' : 'Nothing trending yet.'}</div>
+      </div>
+    ) : (
+      <>
+        <Grid posts={posts} categories={categories} locale={locale} />
+        <Pager page={page} totalPages={totalPages} hrefBase={pageHrefBase} jp={jp} />
+      </>
+    )}
+  </div>
+</Shell>
