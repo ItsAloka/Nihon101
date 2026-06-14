@@ -9,9 +9,9 @@
  *   final(post)  = base(pool) · (1 + affinity[cat]) · (trend + 0.05)
  *                  · 0.35 if already read/liked (pushed down, not hidden)
  */
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, users, follows, postLikes, postReads } from '../schema';
+import { posts, users, follows, postLikes, postReads, userEmbedding } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { cardCols, type PostCardRow } from './posts';
 import type { Affinity } from './affinity';
@@ -24,35 +24,53 @@ const trendExpr = () => sql<number>`
   / power(((${Date.now()}::bigint - ${posts.publishedAt}) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
 `;
 
-export type FeedCard = PostCardRow & { trend: number };
+// Cosine similarity (0–1) between a post's embedding and the viewer's cached
+// taste vector (joined as user_embedding). 0 when either side has no vector yet.
+const simExpr = () => sql<number>`
+  CASE WHEN ${userEmbedding.embedding} IS NOT NULL AND ${posts.embedding} IS NOT NULL
+       THEN 1 - (${posts.embedding} <=> ${userEmbedding.embedding})
+       ELSE 0 END
+`;
 
-/** Most recent published posts (candidate pool), card shape + trend, no body. */
-export async function feedCandidates(db: DB, poolSize = 120): Promise<FeedCard[]> {
+export type FeedCard = PostCardRow & { trend: number; sim: number };
+
+/** Run the candidate query with trend + (when a viewer is known) semantic
+ *  similarity to their taste vector. */
+async function runCandidates(db: DB, where: SQL | undefined, poolSize: number, userId?: string): Promise<FeedCard[]> {
+  if (userId) {
+    return (await db
+      .select({ ...cardCols, trend: trendExpr(), sim: simExpr() })
+      .from(posts)
+      .leftJoin(users, eq(posts.authorId, users.id))
+      .leftJoin(userEmbedding, eq(userEmbedding.userId, userId))
+      .where(where)
+      .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+      .limit(poolSize)) as FeedCard[];
+  }
   return (await db
-    .select({ ...cardCols, trend: trendExpr() })
+    .select({ ...cardCols, trend: trendExpr(), sim: sql<number>`0` })
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
-    .where(eq(posts.status, 'published'))
+    .where(where)
     .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
     .limit(poolSize)) as FeedCard[];
+}
+
+/** Most recent published posts (candidate pool), card shape + trend + sim. */
+export function feedCandidates(db: DB, opts: { poolSize?: number; userId?: string } = {}): Promise<FeedCard[]> {
+  return runCandidates(db, eq(posts.status, 'published'), opts.poolSize ?? 120, opts.userId);
 }
 
 /** Recent published posts by the authors a user follows. Guarantees followed
  *  posts are present even when they fall outside the global recent slice.
  *  Empty author set → empty result. */
-export async function followedCandidates(
+export function followedCandidates(
   db: DB,
   authorIds: string[],
-  poolSize = 120,
+  opts: { poolSize?: number; userId?: string } = {},
 ): Promise<FeedCard[]> {
-  if (!authorIds.length) return [];
-  return (await db
-    .select({ ...cardCols, trend: trendExpr() })
-    .from(posts)
-    .leftJoin(users, eq(posts.authorId, users.id))
-    .where(and(eq(posts.status, 'published'), inArray(posts.authorId, authorIds)))
-    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
-    .limit(poolSize)) as FeedCard[];
+  if (!authorIds.length) return Promise.resolve([]);
+  return runCandidates(db, and(eq(posts.status, 'published'), inArray(posts.authorId, authorIds)), opts.poolSize ?? 120, opts.userId);
 }
 
 /** Ids of authors the user follows. */
@@ -86,16 +104,21 @@ export interface RankOpts {
   maxPerAuthor?: number;     // cap how many posts one author can take up top
   followCap?: number;        // max share of the feed that may be followed-author posts
   exploreEvery?: number;     // every Nth slot, surface the freshest under-ranked post (0 = off)
+  /** Semantic similarity weight (Step 3): how hard a post's cosine similarity to
+   *  the reader's taste vector boosts it. 0 = off. */
+  simWeight?: number;
 }
 
 /** Score a single candidate. Pulled out so the diversity pass and tests can reuse it.
  *  trend already folds engagement + recency; +0.05 floor keeps zero-engagement
- *  fresh posts from vanishing entirely. */
+ *  fresh posts from vanishing entirely. Semantic similarity (sim ∈ [0,1]) gives a
+ *  multiplicative lift so content like what you read floats up. */
 function scoreCard(p: FeedCard, opts: RankOpts, trendingIds: Set<string>, followBoost: number): number {
   const base = opts.following.has(p.authorId) ? followBoost : trendingIds.has(p.id) ? 2.0 : 1.0;
   const catAff = 1 + (opts.affinity.get(p.categoryId) ?? 0);
+  const simBoost = 1 + (opts.simWeight ?? 0.6) * (p.sim ?? 0);
   const seenPenalty = opts.seen.has(p.id) ? 0.35 : 1.0;
-  return base * catAff * (p.trend + 0.05) * seenPenalty;
+  return base * catAff * simBoost * (p.trend + 0.05) * seenPenalty;
 }
 
 /** Blend the pools into one ranked list, then diversify it (Step 1):
