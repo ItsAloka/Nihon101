@@ -1,0 +1,68 @@
+---
+// SSR About / manifesto page (static — replaces the mock-SPA AboutPage so the
+// nav uses a clean /[locale]/about URL instead of /app#/about). Prototype design.
+import Shell from "../../layouts/Shell.astro";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
+const jp = locale === 'ja';
+
+const items = [
+  { num: '一', en: 'Anyone can write here.', ja: '誰でも書いていい。',
+    bodyEn: 'If you have something honest to say about Japan — a kissaten you love, a word you cannot translate, a town nobody knows — there is a place for it on nihon101. Register, write, and publish.',
+    bodyJa: '日本について、正直に書きたいことがあれば、ここに場所があります。喫茶店、訳せない言葉、誰も知らない町。登録して、書いて、公開してください。' },
+  { num: '二', en: 'Both languages, equally.', ja: '二つの言葉、同じだけ。',
+    bodyEn: 'Every piece runs in English and Japanese, side by side. The translation is not a translation. It is a second writing of the same thing.',
+    bodyJa: 'すべての記事は日本語と英語で出ます。翻訳は翻訳ではありません。同じことを、もう一度書くことです。' },
+  { num: '三', en: 'No urgency.', ja: '急がない。',
+    bodyEn: 'We publish when a piece is ready. We never publish to fill a slot. There is no schedule.',
+    bodyJa: '記事は、できたときに出します。穴を埋めるためには出しません。締切はありません。' },
+  { num: '四', en: 'The reader is doing us a favor.', ja: '読んでくれる人は、優しい人。',
+    bodyEn: 'We do not chase clicks. We send one quiet letter every Sunday. That is the whole spirit of the place.',
+    bodyJa: 'クリックは追いません。日曜日に、静かな手紙を一通だけ送ります。それが全てです。' },
+];
+
+const pageTitle = jp ? 'はじめに — nihon101' : 'About — nihon101';
+const pageDesc = jp ? '日本について、ゆっくり書く場所。' : 'A place to write about Japan, slowly.';
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={`/${locale}/about`} active="about">
+  <div class="wrap ab-wrap">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? 'はじめに' : 'A short manifesto'}
+    </div>
+    <h1 class="ab-title">{jp ? '日本について、ゆっくり書く場所。' : 'A place to write about Japan, slowly.'}</h1>
+    <p class="ab-lede">{jp ? '記事は短くてもいい。長くてもいい。役に立たなくてもいい。ただ、ほんとうのことを書いてください。' : 'A piece can be short. A piece can be long. A piece does not have to be useful. We only ask that it be true.'}</p>
+
+    {items.map((m) => (
+      <div class="ab-item">
+        <div class="ab-num">{m.num}</div>
+        <div>
+          <h3 class="ab-h">{jp ? m.ja : m.en}</h3>
+          <p class="ab-b">{jp ? m.bodyJa : m.bodyEn}</p>
+        </div>
+      </div>
+    ))}
+
+    <div class="ab-cta">
+      <h3 class="ab-cta-h">{jp ? '書いてみませんか？' : 'Want to write here?'}</h3>
+      <p class="ab-cta-b">{jp ? 'アカウントを作れば、すぐに書きはじめられます。' : 'Make an account and you can start writing right away.'}</p>
+      <a class="ab-cta-btn" href={`/${locale}/app#/compose`}>{jp ? '書きはじめる' : 'Start writing'} →</a>
+    </div>
+  </div>
+
+  <style is:global>
+    .ab-wrap { max-width: 820px; padding-top: 56px; padding-bottom: 48px; }
+    .ab-title { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5.5vw, 76px); letter-spacing: -0.025em; line-height: 1.03; color: var(--ink); margin: 14px 0 22px; text-wrap: pretty; }
+    .ab-lede { font-family: var(--fontDisplay); font-style: italic; font-size: clamp(19px, 2.4vw, 24px); color: var(--inkSoft); line-height: 1.45; margin-bottom: 48px; }
+    .ab-item { display: grid; grid-template-columns: 72px 1fr; gap: 24px; margin-bottom: 34px; padding-bottom: 34px; border-bottom: 1px solid var(--line); }
+    .ab-num { font-family: var(--fontDisplay); font-size: 46px; color: var(--stamp); line-height: 1; font-weight: 600; }
+    .ab-h { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.15; letter-spacing: -0.015em; color: var(--ink); margin-bottom: 10px; text-wrap: pretty; }
+    .ab-b { font-family: var(--fontBody); font-size: 15.5px; line-height: 1.65; color: var(--inkSoft); }
+    .ab-cta { margin-top: 56px; padding: 34px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; }
+    .ab-cta-h { font-family: var(--fontDisplay); font-weight: 600; font-size: 26px; letter-spacing: -0.02em; color: var(--ink); margin-bottom: 8px; }
+    .ab-cta-b { font-family: var(--fontBody); font-size: 15px; line-height: 1.6; color: var(--inkSoft); margin-bottom: 20px; }
+    .ab-cta-btn { display: inline-flex; align-items: center; gap: 8px; background: var(--ink); color: var(--bg); padding: 12px 22px; border-radius: 999px; font-family: var(--fontBody); font-size: 14px; font-weight: 600; }
+    @media (max-width: 560px) { .ab-item { grid-template-columns: 1fr; gap: 6px; } }
+  </style>
+</Shell>

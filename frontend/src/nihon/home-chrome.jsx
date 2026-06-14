@@ -42,6 +42,8 @@ export function ssrHref(r, loc) {
     case "author": return `/${loc}/u/${r.slug}`;
     case "trending": return `/${loc}/trending`;
     case "authors": return `/${loc}/writers`;
+    case "feed": return `/${loc}/for-you`;
+    case "about": return `/${loc}/about`;
     default: return "";
   }
 }

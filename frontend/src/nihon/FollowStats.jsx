@@ -3,6 +3,7 @@
 // Used on the SSR profile (/[locale]/u/[handle]) and the SPA own-profile.
 // Self-styled with the site's theme CSS vars (present on every Shell page).
 import React from "react";
+import { createPortal } from "react-dom";
 import "./api.jsx";       // window.N101_API
 import "./content.jsx";   // window.N101_CONTENT (followApi)
 
@@ -89,9 +90,12 @@ function FollowListModal({ handle, locale, tab, onTab, onClose }) {
     }}>{jp ? ja : en}</button>
   );
 
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "color-mix(in oklab, var(--ink) 45%, transparent)",
-      backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+  // Portal to <body> so the modal escapes the profile hero's stacking context —
+  // otherwise cards with cover images (their own stacking contexts) can paint
+  // over a fixed overlay nested inside the page.
+  return createPortal((
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "color-mix(in oklab, var(--ink) 58%, transparent)",
+      backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(440px, 94vw)", maxHeight: "78vh", display: "flex", flexDirection: "column",
         background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 20, overflow: "hidden",
         boxShadow: "0 40px 80px -28px color-mix(in oklab, var(--ink) 50%, transparent)" }}>
@@ -116,7 +120,7 @@ function FollowListModal({ handle, locale, tab, onTab, onClose }) {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 // The two clickable stat chips ("N Readers" / "N Writers") that open the modal.
