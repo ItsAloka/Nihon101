@@ -9,20 +9,22 @@
  *   3. RANKING         — score every candidate against the profile, diversify.
  *   4. ORCHESTRATOR    — forYouFeed(): runs 1→3 and returns the finished feed.
  *
- * Scoring, in one line:
- *   trend(post) = (likes + 2·comments + 0.5·saves) / (age_hours + 2)^1.4   (hotness)
- *   match(post) = catAff[cat] + tagWeight·Σ_tags idf(tag)·tagAff[tag]      (taste)
- *   final(post) = base(follow/trending/normal) · (1 + match) · (trend + 0.05)
- *                 · 0.35 if already seen      (pushed down, not hidden)
+ * Scoring, in one line (X-like — preference FIRST, recency amplifies it):
+ *   relevance(post) = 3·followed + 2·taste + 1·trendNorm                  (do I want this?)
+ *   recency(post)   = 0.5 ^ (age / 3 days)                                (freshness multiplier)
+ *   final(post)     = (0.05 + relevance) · recency · 0.35^seen
+ *   taste(post)     = catAff[cat] + tagWeight·Σ_tags idf(tag)·tagAff[tag]
  *   …then a diversity pass caps per-author + followed share and weaves in fresh
  *   posts so the feed explores instead of ossifying.
+ * Because recency only MULTIPLIES relevance, a fresh-but-irrelevant post can't
+ * float up — only the recent posts you'd actually prefer do.
  *
- * NOTE: *Trending* is a separate, non-personalized algorithm — it lives in its
- * own file (`trending.ts`, an hourly cron that writes posts.trend_score). For You
- * does NOT depend on it; it computes its own live hotness term (`trend`) so the
- * feed stays correct between cron runs. At 50K users this stays cheap: the taste
- * profile is cached (1h TTL), so a feed load is one candidate query + one cached
- * profile read + in-memory scoring.
+ * NOTE: *Trending* is a separate, non-personalized algorithm (`trending.ts`, a
+ * cron that writes posts.trend_score). For You's `trendNorm` term READS that shared
+ * trend_score (see `trendSignal`), falling back to a live floor only when it hasn't
+ * been computed yet — so For You and the Trending page agree by construction. At
+ * 50K users this stays cheap: the taste profile is cached (1h TTL), so a feed load
+ * is one candidate query + one cached profile read + in-memory scoring.
  * ========================================================================== */
 
 import { eq, and, desc, sql, inArray, type SQL } from 'drizzle-orm';
@@ -30,7 +32,6 @@ import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, tags, userAffinity } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { cardCols, publicPostCard, type PostCardRow } from './posts';
-import { trendingTop } from './trending';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -46,8 +47,8 @@ const DAY = 24 * HOUR;
  * ========================================================================== */
 
 const TTL = 1 * HOUR;        // recompute a user's snapshot at most once per hour
-const WINDOW = 90 * DAY;     // engagement older than this is ignored entirely
-const HALF_LIFE = 30 * DAY;  // a signal loses half its weight every 30 days
+const WINDOW = 30 * DAY;     // taste is learned from the last 30 days of engagement
+const HALF_LIFE = 14 * DAY;  // within that, a signal loses half its weight every 14 days
 
 export type Dimension = 'cat' | 'tag';
 
@@ -158,35 +159,39 @@ const trendExpr = () => sql<number>`
 
 export type FeedCard = PostCardRow & { trend: number };
 
-/** Same hotness formula as `trendExpr`, in JS — used to give a `trend` to cards
- *  that arrive without one (the cached trending list, which is plain card shape). */
-function computeTrend(p: PostCardRow): number {
-  const ageH = (Date.now() - (p.publishedAt ?? p.createdAt)) / HOUR;
-  return ((p.likes + 2 * p.comments + 0.5 * p.saves) / Math.pow(ageH + 2, 1.4));
-}
+/** The ONE "trending" signal For You uses — shared with the Trending page. Prefer
+ *  the momentum-aware `trend_score` (floor + recent velocity, written per-minute by
+ *  the trending cron); fall back to the live floor (engagement÷age) only when it
+ *  hasn't been computed yet (local dev with no cron, or a post before its first
+ *  pass). So For You and Trending agree by construction. */
+const trendSignal = (p: FeedCard): number => p.trendScore ?? p.trend;
+
+/** Stable feed ordering key: newest-first, with id as a unique tiebreak so keyset
+ *  pagination has a deterministic seam (publishedAt alone can tie to the ms). */
+const FEED_ORDER = [desc(posts.publishedAt), desc(posts.id)] as const;
 
 /** Run a candidate query with the live trend score, card shape (no bodies). */
-async function runCandidates(db: DB, where: SQL | undefined, poolSize: number): Promise<FeedCard[]> {
+async function runCandidates(db: DB, where: SQL | undefined, limit: number, offset = 0): Promise<FeedCard[]> {
   return (await db
     .select({ ...cardCols, trend: trendExpr() })
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(where)
-    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
-    .limit(poolSize)) as FeedCard[];
+    .orderBy(...FEED_ORDER)
+    .limit(limit)
+    .offset(offset)) as FeedCard[];
 }
 
-/** Most recent published posts (candidate pool). */
-export function feedCandidates(db: DB, opts: { poolSize?: number } = {}): Promise<FeedCard[]> {
-  return runCandidates(db, eq(posts.status, 'published'), opts.poolSize ?? 120);
+/** Newest published posts — the ranked-head pool, or (with offset) the
+ *  chronological tail past the head for deep numbered pages. */
+export function feedCandidates(db: DB, opts: { poolSize?: number; offset?: number } = {}): Promise<FeedCard[]> {
+  return runCandidates(db, eq(posts.status, 'published'), opts.poolSize ?? 120, opts.offset ?? 0);
 }
 
-/** Recent published posts by the authors a user follows. Guarantees followed
- *  posts are present even when they fall outside the global recent slice.
- *  Empty author set → empty result. */
-export function followedCandidates(db: DB, authorIds: string[], opts: { poolSize?: number } = {}): Promise<FeedCard[]> {
-  if (!authorIds.length) return Promise.resolve([]);
-  return runCandidates(db, and(eq(posts.status, 'published'), inArray(posts.authorId, authorIds)), opts.poolSize ?? 120);
+/** Total published posts — drives the page count for numbered pagination. */
+export async function publishedCount(db: DB): Promise<number> {
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(posts).where(eq(posts.status, 'published'));
+  return row?.n ?? 0;
 }
 
 /** Ids of authors the user follows. */
@@ -239,11 +244,6 @@ export interface RankOpts {
   seen: Set<string>;
   /** Per-tag IDF weights (from tagIdf). Missing/empty → tags don't contribute. */
   idf?: Map<string, number>;
-  /** Authoritative site-wide trending ids (from trending.ts). When given, these
-   *  drive the `trending` base multiplier instead of the candidate-quartile guess. */
-  trendingIds?: Set<string>;
-  /** Multiplier for followed authors (the For You feed leans hard on follows). */
-  followBoost?: number;
   /** Diversity knobs. Defaults are sensible for a real feed. */
   maxPerAuthor?: number;     // cap how many posts one author can take up top
   followCap?: number;        // max share of the feed that may be followed-author posts
@@ -252,12 +252,30 @@ export interface RankOpts {
   tagWeight?: number;
 }
 
-/** Score one candidate against the taste profile. The match term is a weighted
- *  dot product of the user's taste (category + tags) and the post's — pure
- *  content matching, no ML. trend already folds engagement + recency; the +0.05
- *  floor keeps zero-engagement fresh posts from vanishing. */
-function scoreCard(p: FeedCard, opts: RankOpts, trendingIds: Set<string>, followBoost: number): number {
-  const base = opts.following.has(p.authorId) ? followBoost : trendingIds.has(p.id) ? 2.0 : 1.0;
+/** Recency half-life: a post loses half its freshness weight every 3 days. Recency
+ *  is the AMPLIFIER (a multiplier), not a source of relevance — so a fresh post
+ *  only rises if it's also relevant. Old posts decay toward (never to) zero, so
+ *  they stay reachable deep in the feed. */
+const RECENCY_HALF_LIFE = 3 * DAY;
+/** Relevance weights — the heart of "For You". A post earns relevance by being
+ *  from someone you follow, matching your taste, or being site-wide hot. These are
+ *  ADDITIVE: a post can qualify on any one of them. Tuned so follows lead, taste is
+ *  close behind, and only a little pure-trending leaks in. */
+const W_FOLLOW = 3.0;   // in-network: a followed author
+const W_TASTE = 2.0;    // content match to your category + tag taste
+const W_TREND = 1.0;    // site-wide hotness (kept small → "a few trending")
+/** Tiny floor so a brand-new post from an unknown author isn't exactly zero
+ *  (a sliver of exploration), but nowhere near enough to outrank a relevant post. */
+const REL_FLOOR = 0.05;
+
+/** Score one candidate, X-style and preference-FIRST:
+ *    relevance = 3·followed + 2·taste + 1·trendNorm     (what you like / follow / hot)
+ *    score     = (0.05 + relevance) · recency · seenPenalty
+ *  Recency only multiplies relevance, so it can't float an irrelevant recent post —
+ *  exactly "recent, but only the ones you'd prefer". `maxTrend` normalizes the
+ *  trending term to 0–1 across the candidate window. */
+function scoreCard(p: FeedCard, opts: RankOpts, maxTrend: number): number {
+  const followed = opts.following.has(p.authorId) ? 1 : 0;
   const catAff = opts.affinity.cat.get(p.categoryId) ?? 0;
   const tagWeight = opts.tagWeight ?? 1.5;
   let tagMatch = 0;
@@ -266,9 +284,13 @@ function scoreCard(p: FeedCard, opts: RankOpts, trendingIds: Set<string>, follow
     if (!aff) continue;
     tagMatch += (opts.idf?.get(t) ?? 0) * aff; // rare tag the user likes ⇒ strong, specific lift
   }
-  const match = catAff + tagWeight * tagMatch;
+  const taste = catAff + tagWeight * tagMatch;
+  const trendNorm = maxTrend > 0 ? Math.max(0, trendSignal(p)) / maxTrend : 0;
+  const relevance = W_FOLLOW * followed + W_TASTE * taste + W_TREND * trendNorm;
+  const age = Date.now() - (p.publishedAt ?? p.createdAt);
+  const recency = Math.pow(0.5, Math.max(0, age) / RECENCY_HALF_LIFE); // fresh ⇒ ~1, 3d ⇒ 0.5
   const seenPenalty = opts.seen.has(p.id) ? 0.35 : 1.0;
-  return base * (1 + match) * (p.trend + 0.05) * seenPenalty;
+  return (REL_FLOOR + relevance) * recency * seenPenalty;
 }
 
 /** Blend the pools into one ranked list, then diversify it:
@@ -277,19 +299,16 @@ function scoreCard(p: FeedCard, opts: RankOpts, trendingIds: Set<string>, follow
  *  - light exploration: every Nth slot surfaces the freshest under-ranked post,
  *    so brand-new writers get a chance and the feed doesn't ossify. */
 export function rankFeed(cands: FeedCard[], opts: RankOpts): FeedCard[] {
-  // Trending pool: the authoritative site-wide list if supplied; otherwise the
-  // top quartile by live trend score among candidates (logged-out / cold-cache).
-  const byTrend = [...cands].sort((a, b) => b.trend - a.trend);
-  const trendingIds = opts.trendingIds?.size
-    ? opts.trendingIds
-    : new Set(byTrend.slice(0, Math.max(5, Math.ceil(cands.length / 4))).map((p) => p.id));
-  const followBoost = opts.followBoost ?? 6.0;
+  // Normalize the trending term to 0–1 across this candidate window (the hottest
+  // post = 1.0), so W_TREND is a stable weight regardless of absolute counts. Uses
+  // the shared momentum signal (trend_score, live floor fallback).
+  const maxTrend = cands.reduce((m, p) => { const t = trendSignal(p); return t > m ? t : m; }, 0);
   const maxPerAuthor = opts.maxPerAuthor ?? 2;
   const followCap = opts.followCap ?? 0.6;
   const exploreEvery = opts.exploreEvery ?? 6;
 
   const ranked = [...cands].sort(
-    (a, b) => scoreCard(b, opts, trendingIds, followBoost) - scoreCard(a, opts, trendingIds, followBoost),
+    (a, b) => scoreCard(b, opts, maxTrend) - scoreCard(a, opts, maxTrend),
   );
 
   // Greedy diversity pass: place a post unless its author already hit the cap or
@@ -343,65 +362,62 @@ export async function recordRead(db: DB, postId: string, userId: string): Promis
 /* ============================================================================
  * 4. ORCHESTRATOR
  * ----------------------------------------------------------------------------
- * The one entry point the route calls. Runs the whole pipeline and returns the
- * finished, client-shaped feed slice. `userId` null = logged out: pure
- * trending + fresh (also what SSR / crawlers get).
+ * The one entry point the route calls. The feed is a RANKED HEAD + CHRONOLOGICAL
+ * TAIL: the newest `HEAD_SIZE` posts are scored by the For You algorithm (taste +
+ * follow + trending + recency); everything older is served plain newest-first so
+ * Load more keeps walking back to the very first post ever. `userId` null = logged
+ * out: no taste, so the head is effectively recency + trending (what SSR gets).
  * ========================================================================== */
+
+/** Size of the smartly-ranked head. Past this, the feed continues chronologically.
+ *  Bounded so a feed read stays cheap at 50K users (rank ≤ HEAD_SIZE in memory). */
+const HEAD_SIZE = 300;
 
 export interface ForYouOpts {
   userId: string | null;
-  limit?: number;   // feed page size (default 24, max 50)
-  offset?: number;  // feed page offset
-  kv?: KVNamespace; // shared trending hot-cache, passed through to trendingTop
+  limit?: number;   // feed page size (default 12, max 50)
+  page?: number;    // 0-based page index for numbered pagination
+  kv?: KVNamespace; // reserved (trending hot-cache); unused since trending is now a live term
 }
 
 export interface ForYouResult {
   feed: ReturnType<typeof publicPostCard>[];
-  nextOffset: number | null;
+  total: number;          // total published posts → totalPages = ceil(total / limit)
   personalized: boolean;
 }
 
+const strip = (p: FeedCard) => { const { trend: _trend, ...rest } = p; return publicPostCard(rest); };
+
 export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult> {
-  const limit = Math.min(50, Math.max(1, opts.limit ?? 24));
-  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = Math.min(50, Math.max(1, opts.limit ?? 12));
+  const page = Math.max(0, opts.page ?? 0);
+  const offset = page * limit;
   const uid = opts.userId;
 
-  // Followed authors first, so we can pull their recent posts into the pool.
-  // The trending top is fetched in parallel: it's both a candidate source (so a
-  // momentum-spiking older post that fell out of the recent slice still appears)
-  // and the authoritative `trending` signal the ranker boosts.
-  const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
-  const [global, followed, trending] = await Promise.all([
-    feedCandidates(db),
-    following.size ? followedCandidates(db, [...following]) : Promise.resolve<FeedCard[]>([]),
-    trendingTop(db, { limit: 20, kv: opts.kv }),
-  ]);
+  const total = await publishedCount(db);
+  const headLen = Math.min(HEAD_SIZE, total);
 
-  // Candidate pool = global recent ∪ followed authors' recent posts ∪ trending
-  // (deduped). Trending cards arrive without a live trend score, so compute one.
-  const byId = new Map<string, FeedCard>();
-  for (const p of global) byId.set(p.id, p);
-  for (const p of followed) byId.set(p.id, p);
-  for (const p of trending) if (!byId.has(p.id)) byId.set(p.id, { ...p, trend: computeTrend(p) });
-  const trendingIds = new Set(trending.map((p) => p.id));
-  const cands = [...byId.values()];
+  let items: FeedCard[];
+  if (offset < headLen) {
+    // ---- RANKED HEAD: score the newest HEAD_SIZE posts, slice this page. ----
+    const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
+    const cands = await feedCandidates(db, { poolSize: HEAD_SIZE });
+    const [affinity, seen, idf] = uid
+      ? await Promise.all([
+          userAffinityFor(db, uid),
+          seenPostIds(db, uid, cands.map((p) => p.id)),
+          tagIdf(db),
+        ])
+      : [emptyAffinity(), new Set<string>(), new Map<string, number>()];
 
-  // Per-user signals (taste + seen) plus viewer-independent tag-IDF.
-  const [affinity, seen, idf] = uid
-    ? await Promise.all([
-        userAffinityFor(db, uid),
-        seenPostIds(db, uid, cands.map((p) => p.id)),
-        tagIdf(db),
-      ])
-    : [emptyAffinity(), new Set<string>(), new Map<string, number>()];
+    const ranked = rankFeed(cands, { affinity, following, seen, idf });
+    items = ranked.slice(offset, offset + limit);
+  } else {
+    // ---- CHRONOLOGICAL TAIL: deep numbered pages past the head, newest-first.
+    // The head occupies the newest HEAD_SIZE posts, so a global newest-first offset
+    // lands exactly on the next-oldest post (no overlap, no re-ranking cost). ----
+    items = await feedCandidates(db, { poolSize: limit, offset });
+  }
 
-  const ranked = rankFeed(cands, { affinity, following, seen, idf, trendingIds });
-  const page = ranked.slice(offset, offset + limit);
-
-  const strip = (p: FeedCard) => { const { trend: _trend, ...rest } = p; return publicPostCard(rest); };
-  return {
-    feed: page.map(strip),
-    nextOffset: offset + limit < ranked.length ? offset + limit : null,
-    personalized: !!uid,
-  };
+  return { feed: items.map(strip), total, personalized: !!uid };
 }

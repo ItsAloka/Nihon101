@@ -1008,18 +1008,33 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   // The ranked feed (mapped to the prototype card shape), who-to-follow authors,
   // and topic chips — all real. Refetch when sign-in or the follow set changes so
   // freshly-followed writers' posts get pulled into the server-side pool.
-  const [posts, setPosts] = React.useState(null);   // po[] | null=loading
+  const [posts, setPosts] = React.useState(null);   // po[] | null=loading (current page)
   const [personalized, setPersonalized] = React.useState(false);
+  const [page, setPage] = React.useState(0);        // 0-based page index
+  const [total, setTotal] = React.useState(0);      // total posts → page count
   const [authors, setAuthors] = React.useState([]);  // who-to-follow candidates
   const [cats, setCats] = React.useState([]);
 
+  const PAGE = 12;                                  // blog-style: 12 cards per page (matches Trending)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE));
+
+  // Reset to page 1 when the viewer or their follow set changes.
+  React.useEffect(()=>{ setPage(0); }, [currentUser, follows.size]);
+
+  // Fetch the current page (replace, not append — numbered pagination).
   React.useEffect(()=>{
     let live = true;
-    feedApi.forYou({ limit: 30 })
-      .then(r=>{ if(live){ setPosts(r.feed.map(hydrateReal)); setPersonalized(!!r.personalized); } })
-      .catch(()=>{ if(live){ setPosts([]); } });
+    setPosts(null);
+    feedApi.forYou({ limit: PAGE, page })
+      .then(r=>{ if(live){ setPosts(r.feed.map(hydrateReal)); setPersonalized(!!r.personalized); setTotal(r.total ?? 0); } })
+      .catch(()=>{ if(live){ setPosts([]); setTotal(0); } });
     return ()=>{ live = false; };
-  }, [currentUser, follows.size]);
+  }, [currentUser, follows.size, page]);
+
+  const goPage = React.useCallback((n)=>{
+    setPage(Math.max(0, Math.min(n, totalPages-1)));
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [totalPages]);
 
   React.useEffect(()=>{
     let live = true;
@@ -1040,12 +1055,12 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   const loading = posts === null;
   const hasAff = personalized;
 
-  // posts from followed writers
-  const followed = all.filter(po=>po.authorHandle && follows.has(po.authorHandle));
-
-  // recommended (exclude followed + saved); backend already ranked the list.
-  const exclude = new Set([...followed.map(po=>po.slug), ...(savedSet?[...savedSet]:[])]);
-  const recommended = all.filter(po=>!exclude.has(po.slug)).slice(0,9);
+  // ONE blended stream, in the backend's ranked order (follows + trending + fresh
+  // + taste, already interleaved). No follow/recommended split — that silently
+  // dropped followed-author posts past the first few and broke pagination. Each
+  // card still shows *why* it's here via its reason chip.
+  const stream = all;
+  const hasFollowed = all.some(po=>po.authorHandle && follows.has(po.authorHandle));
 
   // topic chips — top real categories
   const topicChips = cats.slice(0,6).map(c=>({ slug:c.id, kanji:c.kanji, en:c.labelEn, jp:c.labelJa }));
@@ -1092,25 +1107,16 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
         </div>
       )}
 
-      {/* Following section */}
-      {currentUser && (
-        followed.length>0 ? (
-          <section style={{marginBottom:56}}>
-            <FeedHeading p={p} lang={lang} en="Latest from writers you follow" jp="フォロー中の書き手から" kicker_en={`${followed.length} new`} kicker_jp={`${followed.length}件`}/>
-            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
-              {followed.slice(0,6).map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
-            </div>
-          </section>
-        ) : (
-          <section style={{marginBottom:48, padding:'28px 32px', borderRadius:20, background:p.surface, border:`1px solid ${p.line}`}}>
-            <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, color:p.ink, marginBottom:6}}>
-              {lang==='jp'?'フィードを作りましょう':'Build your feed'}
-            </div>
-            <p style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkSoft, marginBottom:20, maxWidth:560, lineHeight:1.5}}>
-              {lang==='jp'?'好きな書き手をフォローすると、新しい記事がここに届きます。':'Follow a few writers and their new stories will land right here.'}
-            </p>
-          </section>
-        )
+      {/* No follows yet — gentle prompt to seed the feed. */}
+      {currentUser && !hasFollowed && (
+        <section style={{marginBottom:48, padding:'28px 32px', borderRadius:20, background:p.surface, border:`1px solid ${p.line}`}}>
+          <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, color:p.ink, marginBottom:6}}>
+            {lang==='jp'?'フィードを作りましょう':'Build your feed'}
+          </div>
+          <p style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkSoft, marginBottom:0, maxWidth:560, lineHeight:1.5}}>
+            {lang==='jp'?'好きな書き手をフォローすると、新しい記事がここに届きます。':'Follow a few writers and their new stories will land right here.'}
+          </p>
+        </section>
       )}
 
       {/* Who to follow */}
@@ -1141,9 +1147,28 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
           <div style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkFaint, padding:'8px 0'}}>{lang==='jp'?'読み込み中…':'Loading…'}</div>
         ) : (
           <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
-            {recommended.map(po=>(<RecCard key={po.slug} po={po}/>))}
+            {stream.map(po=>(<RecCard key={po.slug} po={po}/>))}
           </div>
         )}
+        {!loading && totalPages>1 && (()=>{
+          // Numbered pagination, same look as the Trending page (windowed: Prev · 1
+          // … current±2 … N · Next). Anchors so the global `.pager a` styling applies.
+          const win=2, from=Math.max(0, page-win), to=Math.min(totalPages-1, page+win);
+          const nums=[]; for(let i=from;i<=to;i++) nums.push(i);
+          const link=(key,cls,label,n)=>(
+            <a key={key} className={cls} aria-current={n===page?'page':undefined} style={{cursor:'pointer'}}
+               onClick={()=>goPage(n)}>{label}</a>
+          );
+          return (
+            <nav className="pager" aria-label="Pagination">
+              {page>0 && link('prev','pg-btn',(lang==='jp'?'‹ 前へ':'‹ Prev'),page-1)}
+              {from>0 && (<>{link('first','pg-num','1',0)}{from>1 && <span className="pg-gap">…</span>}</>)}
+              {nums.map(n=>link(n, `pg-num${n===page?' on':''}`, String(n+1), n))}
+              {to<totalPages-1 && (<>{to<totalPages-2 && <span className="pg-gap">…</span>}{link('last','pg-num',String(totalPages),totalPages-1)}</>)}
+              {page<totalPages-1 && link('next','pg-btn',(lang==='jp'?'次へ ›':'Next ›'),page+1)}
+            </nav>
+          );
+        })()}
       </section>
 
       {/* Topics */}

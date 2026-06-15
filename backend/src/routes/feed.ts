@@ -22,12 +22,12 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
 // For You — the single X-style ranked feed. The whole algorithm lives in
 // db/queries/for-you.ts; this route just resolves the viewer and hands off.
 // Logged out = pure trending+fresh (also what SSR and crawlers get).
-// ?limit caps the slice (default 24, max 50), ?offset pages it.
+// ?limit caps the slice (default 12, max 50); ?page is the 0-based page index.
 app.get('/', async (c) => {
   const result = await forYouFeed(getDb(c), {
     userId: await optionalUserId(c),
     limit: Number(c.req.query('limit')) || undefined,
-    offset: Number(c.req.query('offset')) || undefined,
+    page: Number(c.req.query('page')) || undefined,
     kv: c.env.TRENDING_KV,
   });
   return c.json(result);
