@@ -1,0 +1,11 @@
+---
+// Clean-URL mount for the signed-in reader's own profile (replaces
+// /{locale}/app#/profile). Public author profiles live at /{locale}/u/[handle];
+// this is the private "my profile" management view. Auth-gated inside the SPA.
+import SpaLayout from "../../layouts/SpaLayout.astro";
+
+const { locale } = Astro.params;
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+---
+
+<SpaLayout lang={locale} syncLang />

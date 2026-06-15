@@ -30,6 +30,7 @@ import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, tags, userAffinity } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { cardCols, publicPostCard, type PostCardRow } from './posts';
+import { trendingTop } from './trending';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -157,6 +158,13 @@ const trendExpr = () => sql<number>`
 
 export type FeedCard = PostCardRow & { trend: number };
 
+/** Same hotness formula as `trendExpr`, in JS — used to give a `trend` to cards
+ *  that arrive without one (the cached trending list, which is plain card shape). */
+function computeTrend(p: PostCardRow): number {
+  const ageH = (Date.now() - (p.publishedAt ?? p.createdAt)) / HOUR;
+  return ((p.likes + 2 * p.comments + 0.5 * p.saves) / Math.pow(ageH + 2, 1.4));
+}
+
 /** Run a candidate query with the live trend score, card shape (no bodies). */
 async function runCandidates(db: DB, where: SQL | undefined, poolSize: number): Promise<FeedCard[]> {
   return (await db
@@ -231,6 +239,9 @@ export interface RankOpts {
   seen: Set<string>;
   /** Per-tag IDF weights (from tagIdf). Missing/empty → tags don't contribute. */
   idf?: Map<string, number>;
+  /** Authoritative site-wide trending ids (from trending.ts). When given, these
+   *  drive the `trending` base multiplier instead of the candidate-quartile guess. */
+  trendingIds?: Set<string>;
   /** Multiplier for followed authors (the For You feed leans hard on follows). */
   followBoost?: number;
   /** Diversity knobs. Defaults are sensible for a real feed. */
@@ -266,9 +277,12 @@ function scoreCard(p: FeedCard, opts: RankOpts, trendingIds: Set<string>, follow
  *  - light exploration: every Nth slot surfaces the freshest under-ranked post,
  *    so brand-new writers get a chance and the feed doesn't ossify. */
 export function rankFeed(cands: FeedCard[], opts: RankOpts): FeedCard[] {
-  // Trending pool = top quartile by trend score among candidates.
+  // Trending pool: the authoritative site-wide list if supplied; otherwise the
+  // top quartile by live trend score among candidates (logged-out / cold-cache).
   const byTrend = [...cands].sort((a, b) => b.trend - a.trend);
-  const trendingIds = new Set(byTrend.slice(0, Math.max(5, Math.ceil(cands.length / 4))).map((p) => p.id));
+  const trendingIds = opts.trendingIds?.size
+    ? opts.trendingIds
+    : new Set(byTrend.slice(0, Math.max(5, Math.ceil(cands.length / 4))).map((p) => p.id));
   const followBoost = opts.followBoost ?? 6.0;
   const maxPerAuthor = opts.maxPerAuthor ?? 2;
   const followCap = opts.followCap ?? 0.6;
@@ -308,7 +322,10 @@ export function rankFeed(cands: FeedCard[], opts: RankOpts): FeedCard[] {
     }
   }
 
-  return out.concat(tail);
+  // Dedupe (an exploration pick is also still in `tail`); keep first occurrence,
+  // so nothing is rendered — or keyed in the UI — twice.
+  const seen = new Set<string>();
+  return out.concat(tail).filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 }
 
 /** Record (or refresh) a read — the lightest engagement signal. One row per
@@ -335,6 +352,7 @@ export interface ForYouOpts {
   userId: string | null;
   limit?: number;   // feed page size (default 24, max 50)
   offset?: number;  // feed page offset
+  kv?: KVNamespace; // shared trending hot-cache, passed through to trendingTop
 }
 
 export interface ForYouResult {
@@ -349,16 +367,23 @@ export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult
   const uid = opts.userId;
 
   // Followed authors first, so we can pull their recent posts into the pool.
+  // The trending top is fetched in parallel: it's both a candidate source (so a
+  // momentum-spiking older post that fell out of the recent slice still appears)
+  // and the authoritative `trending` signal the ranker boosts.
   const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
-  const [global, followed] = await Promise.all([
+  const [global, followed, trending] = await Promise.all([
     feedCandidates(db),
     following.size ? followedCandidates(db, [...following]) : Promise.resolve<FeedCard[]>([]),
+    trendingTop(db, { limit: 20, kv: opts.kv }),
   ]);
 
-  // Candidate pool = global recent ∪ followed authors' recent posts (deduped).
+  // Candidate pool = global recent ∪ followed authors' recent posts ∪ trending
+  // (deduped). Trending cards arrive without a live trend score, so compute one.
   const byId = new Map<string, FeedCard>();
   for (const p of global) byId.set(p.id, p);
   for (const p of followed) byId.set(p.id, p);
+  for (const p of trending) if (!byId.has(p.id)) byId.set(p.id, { ...p, trend: computeTrend(p) });
+  const trendingIds = new Set(trending.map((p) => p.id));
   const cands = [...byId.values()];
 
   // Per-user signals (taste + seen) plus viewer-independent tag-IDF.
@@ -370,7 +395,7 @@ export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult
       ])
     : [emptyAffinity(), new Set<string>(), new Map<string, number>()];
 
-  const ranked = rankFeed(cands, { affinity, following, seen, idf });
+  const ranked = rankFeed(cands, { affinity, following, seen, idf, trendingIds });
   const page = ranked.slice(offset, offset + limit);
 
   const strip = (p: FeedCard) => { const { trend: _trend, ...rest } = p; return publicPostCard(rest); };

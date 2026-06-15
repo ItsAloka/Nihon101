@@ -1,5 +1,8 @@
 export type AppBindings = {
   MEDIA: R2Bucket;
+  // Site-wide trending hot-cache (top-20 cards), written by the per-minute cron.
+  // Optional: absent in local dev with no KV binding → trending falls back to DB.
+  TRENDING_KV?: KVNamespace;
 };
 
 export type AppVars = {

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nihon101 — improved (framed + cuter, same prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* === SAME prototype tokens (hakuji palette, Shippori display) === */
+  :root{
+    --bg:#FBFAF7; --surface:#FFFFFF; --surface2:#F2F0EB;
+    --ink:#1A1817; --inkSoft:#5C544C; --inkFaint:#A39F98;
+    --line:#ECE8E0; --accent:#F58FA3; --accentDeep:#E54E70;
+    --stamp:#D63752; --tint:#FCE5EA;
+    --fontDisplay:'Shippori Mincho B1','Times New Roman',serif;
+    --fontBody:'Inter','Noto Sans JP',system-ui,sans-serif;
+    --fontMono:'JetBrains Mono',monospace;
+    /* NEW cute knobs: rounder corners + a soft visible frame */
+    --rcard:22px;            /* was ~16px, a touch rounder */
+    --frame:1.5px solid var(--line);
+    --frameHover:1.5px solid color-mix(in oklab, var(--accent) 55%, var(--line));
+    --lift:0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--fontBody);-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 32px}
+  .mono{font-family:var(--fontMono);letter-spacing:.1em;text-transform:uppercase}
+  h1,h2,h3{font-family:var(--fontDisplay);font-weight:600;letter-spacing:-.02em}
+
+  .note{max-width:1320px;margin:24px auto 0;padding:14px 18px;background:var(--tint);border:1.5px dashed color-mix(in oklab,var(--accent) 60%,var(--line));border-radius:14px;font-size:13.5px;color:var(--inkSoft)}
+  .note b{color:var(--stamp)}
+
+  /* category chip — same idea, kept */
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);background:var(--surface)}
+  .chip .k{font-family:var(--fontDisplay);color:var(--stamp);text-transform:none;letter-spacing:0}
+  .kicker{font-family:var(--fontMono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--inkFaint);display:flex;align-items:center;gap:8px}
+
+  .sec-head{margin:72px 0 26px;display:flex;align-items:end;justify-content:space-between;gap:24px}
+  .sec-head h2{font-size:clamp(26px,2.6vw,36px);display:inline-flex;align-items:baseline;gap:12px;margin-top:8px}
+  .sec-head h2 .alt{font-size:.42em;color:var(--inkFaint);letter-spacing:.08em}
+
+  /* ===== editor list — NOW framed cards (was borderless) ===== */
+  .editor-list{list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .editor-list li{display:flex;gap:16px;align-items:flex-start;
+    background:var(--surface);border:var(--frame);border-radius:var(--rcard);
+    padding:22px;transition:.22s}
+  .editor-list li:hover{transform:translateY(-4px);border:var(--frameHover);box-shadow:var(--lift)}
+  .editor-list .num{font-family:var(--fontDisplay);font-size:42px;font-weight:600;color:var(--stamp);line-height:.9;min-width:48px;letter-spacing:-.04em}
+  .editor-list .cat{font-family:var(--fontMono);font-size:10px;color:var(--inkFaint);letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+  .editor-list h3{font-size:20px;line-height:1.18;margin-bottom:6px}
+  .editor-list .ex{font-size:13.5px;line-height:1.55;color:var(--inkSoft);margin-bottom:10px}
+
+  /* ===== recent grid — the main ask: VISIBLE FRAME on every card ===== */
+  .recent-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+  .post-card{
+    background:var(--surface);
+    border:var(--frame);              /* << visible frame */
+    border-radius:var(--rcard);
+    padding:14px;                     /* image now sits inside the frame */
+    display:flex;flex-direction:column;gap:12px;transition:.22s}
+  .post-card:hover{transform:translateY(-5px);border:var(--frameHover);box-shadow:var(--lift)}
+  .post-card .ph{position:relative;height:200px;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .post-card .ph .glyph{font-family:var(--fontDisplay);font-weight:600;font-size:78px;color:rgba(255,255,255,.62)}
+  .post-card .ph .vig{position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.35) 120%);opacity:.2}
+  .post-card .cmeta{display:flex;align-items:center;gap:10px;padding:2px 4px 0}
+  .post-card .mins{font-family:var(--fontMono);font-size:11px;color:var(--inkFaint)}
+  .post-card h3{font-size:21px;line-height:1.18;padding:0 4px}
+  .post-card .ex{font-size:13.5px;line-height:1.55;color:var(--inkSoft);padding:0 4px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .post-card .foot{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 4px 2px;margin-top:auto;border-top:1px solid var(--line)}
+  .who{display:flex;align-items:center;gap:8px}
+  .who .a{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--fontDisplay);font-weight:600;font-size:12px;color:#fff}
+  .who .nm{font-size:12.5px;font-weight:600}
+  .who .dt{font-size:11px;color:var(--inkFaint)}
+  .stats{display:flex;gap:14px;font-family:var(--fontMono);font-size:12.5px;font-weight:600;color:var(--inkSoft)}
+  .stats .s{display:inline-flex;align-items:center;gap:5px}
+  .stats .heart{color:var(--stamp)}
+
+  /* a tiny cute accent: a little stamp dot tab on the card corner */
+  .post-card .tab{position:absolute;top:10px;left:10px;background:rgba(255,255,255,.92);backdrop-filter:blur(4px);
+    border-radius:999px;padding:4px 10px;font-family:var(--fontMono);font-size:10px;letter-spacing:.06em;color:var(--inkSoft);text-transform:uppercase;display:inline-flex;align-items:center;gap:6px}
+  .post-card .tab .d{width:6px;height:6px;border-radius:50%;background:var(--stamp)}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <b>What changed (same prototype, just cuter):</b> every card now has a <b>visible soft frame</b> (1.5px line, rounds to accent-pink on hover), a touch more corner-round (22px), the cover image sits <i>inside</i> the frame with padding, and a hairline divider above the author/stats foot so cards read as finished little objects. Nothing else about the design moved.
+</div>
+
+<div class="wrap">
+
+  <!-- EDITOR LIST (now framed) -->
+  <div class="sec-head">
+    <div>
+      <div class="kicker">〜 picked this week</div>
+      <h2>The editor's reading list<span class="alt">編集者の読みもの</span></h2>
+    </div>
+  </div>
+  <ol class="editor-list">
+    <li>
+      <div class="num">01</div>
+      <div>
+        <div class="cat">FOOD · 4 MIN</div>
+        <h3>Eat slowly tonight</h3>
+        <p class="ex">A small ritual for the end of a long day, and why it matters more than the meal.</p>
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#FBC5CC,#F58197)">そ</span><span class="nm">SobaWriter</span></div>
+      </div>
+    </li>
+    <li>
+      <div class="num">02</div>
+      <div>
+        <div class="cat">FOOD · 5 MIN</div>
+        <h3>Slurping ramen at midnight</h3>
+        <p class="ex">Noise as gratitude — the loudest table is the most polite one.</p>
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#FFD27A,#F08D5C)">そ</span><span class="nm">SobaWriter</span></div>
+      </div>
+    </li>
+    <li>
+      <div class="num">03</div>
+      <div>
+        <div class="cat">FOOD · 3 MIN</div>
+        <h3>How to slurp soba</h3>
+        <p class="ex">A short guide to noise and joy, and the one rule everyone forgets.</p>
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#A6C7F0,#7FA9DE)">そ</span><span class="nm">SobaWriter</span></div>
+      </div>
+    </li>
+  </ol>
+
+  <!-- RECENT GRID (framed cards = the main fix) -->
+  <div class="sec-head">
+    <div>
+      <div class="kicker">〜 all writers · all topics</div>
+      <h2>Recently published<span class="alt">あたらしい記事</span></h2>
+    </div>
+    <a class="mono" style="font-size:13px;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:600">See all →</a>
+  </div>
+  <div class="recent-grid">
+
+    <article class="post-card">
+      <div class="ph" style="background:linear-gradient(135deg,#FCCFD6,#F58FA3)">
+        <span class="glyph">桜</span><span class="vig"></span>
+        <span class="tab"><span class="d"></span> photo</span>
+      </div>
+      <div class="cmeta"><span class="chip"><span class="k">文</span>Culture</span><span class="mins">1 min</span></div>
+      <h3>Your Name — a quiet review</h3>
+      <p class="ex">This film stays with you long after the credits, like a place you visited only in a dream.</p>
+      <div class="foot">
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#D6B8F0,#BC7FA0)">SM</span><span><div class="nm">Sora Mori</div><div class="dt">Jun 8, 2026</div></span></div>
+        <div class="stats"><span class="s heart">♥ 0</span><span class="s">💬 0</span></div>
+      </div>
+    </article>
+
+    <article class="post-card">
+      <div class="ph" style="background:linear-gradient(135deg,#FFCFB0,#F08D5C)">
+        <span class="glyph">弁</span><span class="vig"></span>
+        <span class="tab"><span class="d"></span> photo: the comet at magic hour</span>
+      </div>
+      <div class="cmeta"><span class="chip"><span class="k">画</span>Animation</span><span class="mins">4 min</span></div>
+      <h3>Your Name, and the ache of almost remembering</h3>
+      <p class="ex">Makoto Shinkai's 2016 film is about two strangers who keep forgetting each other — and the single red thread that…</p>
+      <div class="foot">
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#FFE6B5,#FFCB7A)">か</span><span><div class="nm">Kage Loom</div><div class="dt">Jun 8, 2026</div></span></div>
+        <div class="stats"><span class="s heart">♥ 0</span><span class="s">💬 1</span></div>
+      </div>
+    </article>
+
+    <article class="post-card">
+      <div class="ph" style="background:linear-gradient(135deg,#C4DCF6,#7FA9DE)">
+        <span class="glyph">雪</span><span class="vig"></span>
+        <span class="tab"><span class="d"></span> photo</span>
+      </div>
+      <div class="cmeta"><span class="chip"><span class="k">旅</span>Travel</span><span class="mins">1 min</span></div>
+      <h3>The long way around</h3>
+      <p class="ex">On islands and ferries, and the small ports where the timetable is more of a suggestion.</p>
+      <div class="foot">
+        <div class="who"><span class="a" style="background:linear-gradient(135deg,#9BC2EE,#7FA9DE)">SM</span><span><div class="nm">Sora Mori</div><div class="dt">Jun 8, 2026</div></span></div>
+        <div class="stats"><span class="s heart">♥ 0</span><span class="s">💬 0</span></div>
+      </div>
+    </article>
+
+  </div>
+
+</div>
+</body>
+</html>

@@ -534,29 +534,60 @@ function MyPostCard({ p, lang, post, onChanged }) {
     ? { label: lang==='jp' ? live.labelJa : live.labelEn, tint: live.tint }
     : seed ? { label: lang==='jp' ? seed.jp : seed.en, tint: seed.tint } : null;
   const tint = cat?.tint || 'rose';
+  const kanji = (live && live.kanji) || (seed && seed.kanji) || '';
   const [c1,c2] = window.tintGradient ? window.tintGradient(tint) : ['#eee','#ddd'];
+  const me = window.__currentUser || { en:'', jp:'', initials:'?', tint:'rose', avatarUrl:null };
+  const when = post.publishedAt ?? post.createdAt;
+  const dateStr = when ? new Date(when).toLocaleDateString(lang==='jp'?'ja-JP':'en-US', { year:'numeric', month:'short', day:'numeric' }) : '';
+  const tags = Array.isArray(post.tags) ? post.tags.filter(Boolean).slice(0,3) : [];
   // Clicking the card opens the post in reading mode (where the owner gets
   // Edit/Delete). No actions on the card itself.
   const open = ()=> window.__nihon_go({name:'article', slug: post.slug});
   return (
-    <div onClick={open} style={{position:'relative', borderRadius:16, overflow:'hidden', border:`1px solid ${p.line}`, background:p.surface, display:'flex', flexDirection:'column', cursor:'pointer'}}>
-      {post.status==='draft' && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
-      <div style={{height:150, background: post.cover?undefined:`linear-gradient(135deg, ${c1}, ${c2})`}}>
+    <div onClick={open} style={{position:'relative', borderRadius:22, border:`1.5px solid ${p.line}`, background:p.surface, padding:14, display:'flex', flexDirection:'column', gap:12, cursor:'pointer', transition:'transform .25s ease, border-color .25s ease, box-shadow .25s ease'}}
+      onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
+      onMouseLeave={(e)=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.boxShadow='none'; }}>
+      <div style={{position:'relative', height:200, borderRadius:14, overflow:'hidden', background: post.cover?undefined:`linear-gradient(135deg, ${c1}, ${c2})`}}>
+        {post.status==='draft' && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
         {post.cover && <img src={post.cover} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>}
       </div>
-      <div style={{padding:'14px 16px', display:'flex', flexDirection:'column', gap:8, flex:1}}>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.stamp, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:6}}>{cat ? cat.label : post.categoryId}</div>
-          <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, lineHeight:1.2, color:p.ink, marginBottom:6, textWrap:'pretty'}}>{title}</h3>
-          {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft, lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
+      <div style={{padding:'0 4px', display:'flex', flexDirection:'column', gap:10, flex:1}}>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <span style={{display:'inline-flex', alignItems:'center', gap:6, padding:'4px 11px', borderRadius:999, fontSize:11, fontWeight:600, letterSpacing:'0.04em', textTransform:'uppercase', border:`1px solid ${p.line}`, background:p.surface, color:p.ink}}>
+            {kanji && <span style={{fontFamily:'var(--fontDisplay)', color:p.stamp, textTransform:'none', letterSpacing:0}}>{kanji}</span>}
+            {cat ? cat.label : post.categoryId}
+          </span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{post.readMins || 1} min</span>
         </div>
-        <div style={{display:'flex', alignItems:'center', gap:16, paddingTop:10, borderTop:`1px solid ${p.line}`}}>
-          <span style={{display:'inline-flex', alignItems:'center', gap:6, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
-            <HeartIcon color={p.stamp} filled size={14}/> {(post.likes||0).toLocaleString()}
-          </span>
-          <span style={{display:'inline-flex', alignItems:'center', gap:6, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
-            <CommentIcon color={p.inkSoft} size={14}/> {(post.comments||0).toLocaleString()}
-          </span>
+        <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:21, lineHeight:1.18, letterSpacing:'-0.015em', color:p.ink, textWrap:'pretty'}}>{title}</h3>
+        {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, lineHeight:1.55, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
+        {tags.length>0 && (
+          <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+            {tags.map(tg=>(
+              <span key={tg} style={{display:'inline-flex', alignItems:'center', gap:1, padding:'3px 9px', borderRadius:999, border:`1px solid ${p.line}`, background:p.surface, fontSize:11, fontWeight:500, color:p.inkSoft}}>
+                <span style={{color:p.accent, fontWeight:800}}>#</span>{tg}
+              </span>
+            ))}
+          </div>
+        )}
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginTop:'auto', paddingTop:12, borderTop:`1px solid ${p.line}`}}>
+          <div style={{display:'flex', alignItems:'center', gap:8, minWidth:0}}>
+            <span style={{width:26, height:26, borderRadius:'50%', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:11, color:'#3a2e28', background:`linear-gradient(135deg, ${window.tintBg(me.tint, p)}, ${p.surface2})`, border:`1px solid ${p.line}`}}>
+              {me.avatarUrl ? <img src={me.avatarUrl} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/> : me.initials}
+            </span>
+            <span style={{minWidth:0}}>
+              <span style={{display:'block', fontFamily:'var(--fontBody)', fontSize:12.5, fontWeight:600, color:p.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{lang==='jp'?me.jp:me.en}</span>
+              <span style={{display:'block', fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint}}>{dateStr}</span>
+            </span>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:14, flexShrink:0}}>
+            <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
+              <HeartIcon color={p.stamp} filled size={15}/> {(post.likes||0).toLocaleString()}
+            </span>
+            <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
+              <CommentIcon color={p.inkFaint} size={15}/> {(post.comments||0).toLocaleString()}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -764,13 +795,13 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
           </div>
         ) : (
           isMine ? (
-            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, paddingBottom:20}}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
               {list.map(po=>(
                 <MyPostCard key={po.id} p={p} lang={lang} post={po} onChanged={refreshMine}/>
               ))}
             </div>
           ) : (
-            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, paddingBottom:20}}>
+            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
               {list.map(po=>(
                 <div key={po.slug} style={{position:'relative'}}>
                   <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>
@@ -1048,7 +1079,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
         {currentUser ? (lang==='jp'?`${currentUser.jp}さんのために。`:`For you, ${currentUser.en.split(' ')[0]}.`) : (lang==='jp'?'あなた好みの日本。':'Japan, tuned to you.')}
       </h1>
       <p style={{fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft, marginBottom:40, maxWidth:680}}>
-        {lang==='jp'?'フォローしている書き手と、あなたの好みから選びました。':'Built from the writers you follow and the topics you read.'}
+        {lang==='jp'?'フォロー中の書き手、いま人気の記事、そしてあなたの好みから選びました。':'Built from the writers you follow, what’s trending, and the topics you read.'}
       </p>
 
       {/* not signed in */}
@@ -1105,7 +1136,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
 
       {/* Recommended */}
       <section style={{marginBottom:48}}>
-        <FeedHeading p={p} lang={lang} en="Picked for you" jp="あなたへのおすすめ" kicker_en={hasAff?'based on what you read':'popular this week'} kicker_jp={hasAff?'読んだ記事から':'今週の人気'}/>
+        <FeedHeading p={p} lang={lang} en="Picked for you" jp="あなたへのおすすめ" kicker_en={hasAff?'follows · trending · your taste':'trending this week'} kicker_jp={hasAff?'フォロー・人気・好みから':'今週の人気'}/>
         {loading ? (
           <div style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkFaint, padding:'8px 0'}}>{lang==='jp'?'読み込み中…':'Loading…'}</div>
         ) : (

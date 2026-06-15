@@ -15,7 +15,7 @@ import feed from './routes/feed';
 import notifications from './routes/notifications';
 import trending from './routes/trending';
 import { standaloneDb } from './db/client';
-import { recomputeTrendScores } from './db/queries/trending';
+import { recomputeTrendingCache } from './db/queries/trending';
 
 const app = new Hono<AppEnv>();
 
@@ -56,10 +56,11 @@ app.route('/trending', trending);
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: AppEnv['Bindings']) {
-    // Hourly: recompute every published post's engagement-decayed trend score.
+    // Per minute: recompute every published post's momentum trend score, then
+    // bake the top-20 cards to KV for the zero-Postgres hot path.
     const { db, pool } = standaloneDb(env);
     try {
-      await recomputeTrendScores(db);
+      await recomputeTrendingCache(db, env.TRENDING_KV);
     } finally {
       await pool.end();
     }

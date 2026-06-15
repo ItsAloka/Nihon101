@@ -10,7 +10,7 @@ if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 
 const jp = locale === 'ja';
 
 const pageTitle = jp ? 'おすすめ — nihon101' : 'For You — nihon101';
-const pageDesc = jp ? 'フォローしている書き手と、あなたの好みから。' : 'Built from the writers you follow and the topics you read.';
+const pageDesc = jp ? 'フォロー中の書き手、いま人気の記事、そしてあなたの好みから。' : 'Built from the writers you follow, what\'s trending, and the topics you read.';
 ---
 <Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={`/${locale}/for-you`} active="feed">
   <ForYouFeed client:only="react" locale={locale} />

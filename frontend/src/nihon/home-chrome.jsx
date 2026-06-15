@@ -5,6 +5,7 @@
 // (see pages/[locale]/index.astro). The body stays server-rendered for SEO.
 import React from "react";
 import "./api.jsx";     // window.N101_API
+import "./content.jsx"; // window.N101_CONTENT (notifApi, …)
 import "./ui.jsx";      // window.Nav, Footer, PALETTES, deriveDark
 import "./social.jsx";  // window.LoginModal (+ chains ui/home/screens globals)
 
@@ -36,6 +37,10 @@ function serializeHash(r) {
 // or '' to fall through to the SPA shell. Shared with the SPA navigator (app.jsx).
 export function ssrHref(r, loc) {
   switch (r.name) {
+    case "article": return `/${loc}/p/${r.slug}`;
+    case "saved": return `/${loc}/saved`;
+    case "compose": case "write": return r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`;
+    case "profile": return `/${loc}/me`;
     case "search": return `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
     case "category": return `/${loc}/c/${r.slug}`;
     case "tag": return `/${loc}/t/${r.slug}`;
@@ -69,7 +74,31 @@ export function HomeHeader({ locale, active = "home" }) {
   const [currentUser, setCurrentUser] = React.useState(null);
   const [savedCount, setSavedCount] = React.useState(0);
   const [loginOpen, setLoginOpen] = React.useState(false);
+  const [notifs, setNotifs] = React.useState([]);
   const p = paletteFor(mode);
+
+  // Load the viewer's notifications once signed in, then poll the list every 60s
+  // so the bell badge stays current. Mark-all-read / clear-all hit the backend and
+  // update locally so the panel reacts immediately.
+  React.useEffect(() => {
+    if (!currentUser) { setNotifs([]); return; }
+    let live = true;
+    const load = () => window.N101_CONTENT.notifApi.list()
+      .then((r) => { if (live) setNotifs(r.notifications); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [currentUser]);
+
+  const onReadNotifs = React.useCallback(() => {
+    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    window.N101_CONTENT.notifApi.markRead();
+  }, []);
+  const onClearNotifs = React.useCallback(() => {
+    setNotifs([]);
+    window.N101_CONTENT.notifApi.clearAll();
+  }, []);
 
   // Install the home-scoped navigator so the reused Nav/Footer can leave this page.
   // Reader-discovery surfaces (explore/category/tag) are real SSR pages now, so
@@ -100,6 +129,37 @@ export function HomeHeader({ locale, active = "home" }) {
     return () => { window.removeEventListener("nihon:saved", h); window.removeEventListener("storage", h); };
   }, []);
 
+  // Wire the SSR home hero bookmark buttons (plain HTML rendered by index.astro)
+  // to the REAL backend (post_saves), so a save from the home page persists and
+  // shows up on the Saved page — not just in localStorage. Logged in → toggle +
+  // reflect the real saved set; logged out → prompt sign-in. Re-runs when the
+  // session resolves so the initial "on" state matches the backend.
+  React.useEffect(() => {
+    const btns = Array.from(document.querySelectorAll(".hero-save"));
+    if (!btns.length) return;
+    let saved = new Set();
+    const paint = () => btns.forEach((b) => b.classList.toggle("on", saved.has(b.getAttribute("data-slug"))));
+    if (currentUser) {
+      window.N101_CONTENT.postApi.listSaved()
+        .then((rows) => { saved = new Set(rows.map((r) => r.slug)); setSavedCount(saved.size); paint(); })
+        .catch(() => {});
+    }
+    const onClick = (e) => {
+      e.preventDefault();
+      const slug = e.currentTarget.getAttribute("data-slug");
+      if (!currentUser) { setLoginOpen(true); return; }
+      const was = saved.has(slug);
+      was ? saved.delete(slug) : saved.add(slug);
+      setSavedCount(saved.size); paint();
+      window.N101_CONTENT.postApi.toggleSave(slug).catch(() => { // rollback
+        was ? saved.add(slug) : saved.delete(slug);
+        setSavedCount(saved.size); paint();
+      });
+    };
+    btns.forEach((b) => b.addEventListener("click", onClick));
+    return () => btns.forEach((b) => b.removeEventListener("click", onClick));
+  }, [currentUser]);
+
   // Dark mode: drive the whole page (SSR body via [data-mode], + footer island).
   React.useEffect(() => {
     try { localStorage.setItem("nihon.mode", mode); } catch (e) {}
@@ -120,7 +180,7 @@ export function HomeHeader({ locale, active = "home" }) {
         currentUser={currentUser}
         onLogin={() => setLoginOpen(true)}
         onLogout={() => { window.N101_API.logout(); setCurrentUser(null); }}
-        notifs={[]} onReadNotifs={() => {}}
+        notifs={notifs} onReadNotifs={onReadNotifs} onClearNotifs={onClearNotifs}
       />
       {loginOpen && (
         <LoginModal

@@ -31,7 +31,11 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [route, setRoute] = React.useState(()=>{
-    try { const h = window.location.hash; if (h && h.startsWith('#/')) return parseHash(h); } catch(e){}
+    try {
+      const h = window.location.hash; if (h && h.startsWith('#/')) return parseHash(h);
+      const fromPath = routeFromPath(window.location.pathname, window.location.search);
+      if (fromPath) return fromPath;
+    } catch(e){}
     return { name: 'home' };
   });
   const [history, setHistory] = React.useState([]);
@@ -72,9 +76,17 @@ function App() {
     if (r.name==='authors') { window.location.href = `/${loc}/writers`; return; }
     if (r.name==='feed') { window.location.href = `/${loc}/for-you`; return; }
     if (r.name==='about') { window.location.href = `/${loc}/about`; return; }
-    // auth-guarded routes
-    if ((r.name==='compose' || r.name==='profile') && !window.__currentUser) { setLoginOpen(true); return; }
-    if (r.name==='write') r = {name:'compose'};
+    if (r.name==='article') { window.location.href = `/${loc}/p/${r.slug}`; return; }
+    if (r.name==='saved') { window.location.href = `/${loc}/saved`; return; }
+    // auth-guarded clean-URL surfaces
+    if (r.name==='compose' || r.name==='write') {
+      if (!window.__currentUser) { setLoginOpen(true); return; }
+      window.location.href = r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`; return;
+    }
+    if (r.name==='profile') {
+      if (!window.__currentUser) { setLoginOpen(true); return; }
+      window.location.href = `/${loc}/me`; return;
+    }
     setHistory(h=>[...h, r._from || routeRef.current]);
     setRoute(r);
     try { window.location.hash = serializeHash(r); } catch(e){}
@@ -192,25 +204,32 @@ function App() {
 
   let screen = null;
   const r = route;
-  // Reader surfaces are real SSR pages now — a direct deep-link into the SPA
-  // shell (e.g. #/trending) must hard-navigate out to the SSR page instead of
-  // rendering the retired mock screen. (go() already does this on navigation;
-  // this covers first-load deep links.) Guarded on /app so it never loops.
-  if (window.location.pathname.includes('/app')) {
+  // Almost every screen is a real SSR page now (the SPA only truly *renders* the
+  // private surfaces it's mounted on: saved / write / me, plus privacy/contact).
+  // Whenever the current route maps to an SSR URL that ISN'T the page we're on,
+  // hard-navigate there. The pathname diff is what prevents a self-redirect loop
+  // (e.g. route 'saved' while already at /{loc}/saved) — and it's what makes
+  // navigating back to 'home' from /saved or /write leave the SPA instead of
+  // rendering a blank screen.
+  {
     const loc = window.location.pathname.split('/')[1] === 'en' ? 'en' : 'ja';
     const ssr = (
       r.name === 'home' ? `/${loc}/` :
       r.name === 'category' && r.slug ? `/${loc}/c/${r.slug}` :
       r.name === 'tag' && r.slug ? `/${loc}/t/${r.slug}` :
       r.name === 'author' && r.slug ? `/${loc}/u/${r.slug}` :
+      r.name === 'article' && r.slug ? `/${loc}/p/${r.slug}` :
       r.name === 'trending' ? `/${loc}/trending` :
       r.name === 'authors' ? `/${loc}/writers` :
       r.name === 'feed' ? `/${loc}/for-you` :
       r.name === 'about' ? `/${loc}/about` :
+      r.name === 'saved' ? `/${loc}/saved` :
+      r.name === 'profile' ? `/${loc}/me` :
+      (r.name === 'compose' || r.name === 'write') ? (r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`) :
       r.name === 'search' ? `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}` :
       ''
     );
-    if (ssr) { window.location.href = ssr; return null; }
+    if (ssr && ssr.split('?')[0] !== window.location.pathname) { window.location.href = ssr; return null; }
   }
   if (r.name === 'home') {
     return null; // handled by the SSR guard above
@@ -279,6 +298,19 @@ function LoginPrompt({p, lang, onLogin}) {
       <button onClick={onLogin} style={{...window.gradStyle(p), display:'inline-flex'}}>{lang==='jp'?'ログイン':'Sign in'}</button>
     </div>
   );
+}
+
+// Initial screen from a clean pathname (the SPA is mounted at /{loc}/saved,
+// /{loc}/write[?id=], /{loc}/me — see the matching .astro pages). Returns null
+// for any other path so the caller falls back to the hash / home.
+function routeFromPath(pathname, search) {
+  const seg = (pathname || '').split('/').filter(Boolean); // [locale, screen]
+  const screen = seg[1];
+  const qp = new URLSearchParams(search || '');
+  if (screen === 'saved') return { name: 'saved' };
+  if (screen === 'write') return qp.get('id') ? { name: 'compose', editId: qp.get('id') } : { name: 'compose' };
+  if (screen === 'me') return { name: 'profile' };
+  return null;
 }
 
 function parseHash(h) {
