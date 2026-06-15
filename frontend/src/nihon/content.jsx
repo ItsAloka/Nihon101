@@ -106,9 +106,9 @@ const feedApi = {
   // The ranked For You feed. Personalized when a token is present (followed
   // authors boosted + category affinity), else trending+fresh. Returns the raw
   // backend cards + paging cursor; callers map via hydrateReal.
-  forYou: ({ limit = 24, offset = 0 } = {}) => {
-    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    return req(`/feed?${q}`).then((r) => r); // { feed, nextOffset, personalized }
+  forYou: ({ limit = 12, page = 0 } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit), page: String(page) });
+    return req(`/feed?${q}`).then((r) => r); // { feed, total, personalized }
   },
   // Record that the viewer read a post — the affinity signal. Fire-and-forget.
   recordRead: (postId) => req(`/feed/read/${postId}`, { method: 'POST', auth: true }).catch(() => {}),
