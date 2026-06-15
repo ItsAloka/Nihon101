@@ -28,6 +28,7 @@ app.get('/', async (c) => {
     userId: await optionalUserId(c),
     limit: Number(c.req.query('limit')) || undefined,
     offset: Number(c.req.query('offset')) || undefined,
+    kv: c.env.TRENDING_KV,
   });
   return c.json(result);
 });

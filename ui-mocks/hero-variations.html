@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nihon101 — hero variations (5)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#FBFAF7; --surface:#FFFFFF; --surface2:#F2F0EB;
+    --ink:#1A1817; --inkSoft:#5C544C; --inkFaint:#A39F98;
+    --line:#ECE8E0; --accent:#F58FA3; --accentDeep:#E54E70;
+    --stamp:#D63752; --tint:#FCE5EA;
+    --fontDisplay:'Shippori Mincho B1','Times New Roman',serif;
+    --fontBody:'Inter','Noto Sans JP',system-ui,sans-serif;
+    --fontMono:'JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--fontBody);-webkit-font-smoothing:antialiased;line-height:1.5}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 32px}
+  h1,h2,h3{font-family:var(--fontDisplay);font-weight:600;letter-spacing:-.02em;text-wrap:pretty}
+
+  /* ---- shared bits ---- */
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border:1px solid var(--line);background:var(--surface)}
+  .chip .k{font-family:var(--fontDisplay);color:var(--stamp);text-transform:none;letter-spacing:0}
+  .kicker{font-family:var(--fontMono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--inkFaint)}
+  .read{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--accent),var(--accentDeep));color:#fff;padding:14px 22px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 12px 24px -10px var(--accentDeep)}
+  .ghost{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--surface);width:46px;height:46px;border-radius:999px}
+  .author{display:inline-flex;align-items:center;gap:10px}
+  .author .ava{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#FBC5CC,#F58197);display:flex;align-items:center;justify-content:center;font-family:var(--fontDisplay);font-weight:600;color:#fff}
+  .author .nm{font-size:13px;font-weight:600}
+  .author .dt{font-size:11px;color:var(--inkFaint)}
+  .photo{position:relative;border-radius:18px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .photo .glyph{font-family:var(--fontDisplay);font-weight:600;color:rgba(255,255,255,.62);line-height:1;letter-spacing:-.04em}
+  .photo .vig{position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(0,0,0,.35) 120%);opacity:.22}
+  .hanko{position:absolute;border-radius:14%;border:2.5px solid var(--stamp);color:var(--stamp);display:flex;align-items:center;justify-content:center;font-family:var(--fontDisplay);font-weight:700;transform:rotate(-6deg)}
+  .ptag{position:absolute;left:14px;bottom:12px;display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.92);backdrop-filter:blur(6px);padding:5px 10px;border-radius:999px;font-family:var(--fontMono);font-size:10px;letter-spacing:.08em;color:var(--inkSoft);text-transform:uppercase}
+  .ptag .d{width:6px;height:6px;border-radius:3px;background:var(--stamp)}
+  .wash{background-image:linear-gradient(transparent 70%,var(--accent) 70%,var(--accent) 92%,transparent 92%);background-repeat:no-repeat}
+
+  /* ---- mock page scaffolding (labels) ---- */
+  .label{max-width:1320px;margin:64px auto 0;padding:0 32px;display:flex;align-items:center;gap:14px}
+  .label .n{font-family:var(--fontDisplay);font-size:34px;font-weight:700;color:var(--stamp)}
+  .label .t{font-family:var(--fontDisplay);font-size:22px;font-weight:600}
+  .label .d{font-size:13px;color:var(--inkFaint);margin-left:6px}
+  .divider{max-width:1320px;margin:48px auto 0;border-top:1px dashed var(--line)}
+  section.hero{position:relative;overflow:hidden}
+
+  /* =========================================================
+     V1 — SPLIT (refined current): text left, framed cover right
+     ========================================================= */
+  .v1 .grid{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center;padding:40px 0}
+  .v1 .meta{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+  .v1 h1{font-size:clamp(44px,5vw,78px);line-height:1.04;margin-bottom:22px}
+  .v1 p{font-size:18px;color:var(--inkSoft);max-width:520px;margin-bottom:30px}
+  .v1 .cta{display:flex;align-items:center;gap:16px}
+  .v1 .author{margin-right:8px}
+  .v1 .cover{height:520px;border-radius:24px;background:linear-gradient(135deg,#E2CCF2,#B89BD9)}
+  .v1 .cover .glyph{font-size:240px}
+  .v1 .hanko{top:16px;right:16px;width:64px;height:64px;font-size:28px}
+
+  /* =========================================================
+     V2 — CENTERED EDITORIAL: big centered headline over a wide cover band
+     ========================================================= */
+  .v2 .inner{text-align:center;padding:52px 0 0}
+  .v2 .meta{display:inline-flex;gap:12px;margin-bottom:18px}
+  .v2 h1{font-size:clamp(48px,6vw,92px);line-height:1.02;max-width:14ch;margin:0 auto 18px}
+  .v2 p{font-size:18px;color:var(--inkSoft);max-width:60ch;margin:0 auto 26px}
+  .v2 .cta{display:flex;gap:14px;justify-content:center;margin-bottom:40px}
+  .v2 .cover{height:380px;border-radius:24px;background:linear-gradient(135deg,#C4DCF6,#7FA9DE)}
+  .v2 .cover .glyph{font-size:200px}
+
+  /* =========================================================
+     V3 — FULL-BLEED COVER + floating glass card (poster style)
+     ========================================================= */
+  .v3 .stage{position:relative;height:600px;border-radius:28px;overflow:hidden;margin-top:24px;background:linear-gradient(135deg,#FFCFB0,#F08D5C);display:flex;align-items:center;justify-content:center}
+  .v3 .stage .glyph{font-family:var(--fontDisplay);font-weight:600;color:rgba(255,255,255,.5);font-size:340px}
+  .v3 .card{position:absolute;left:40px;bottom:40px;max-width:560px;background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.6);border-radius:22px;padding:30px}
+  .v3 .meta{display:flex;gap:12px;margin-bottom:14px}
+  .v3 h1{font-size:clamp(34px,3.6vw,52px);line-height:1.06;margin-bottom:12px}
+  .v3 p{font-size:15px;color:var(--inkSoft);margin-bottom:18px}
+  .v3 .row{display:flex;justify-content:space-between;align-items:center;gap:16px}
+
+  /* =========================================================
+     V4 — ASYMMETRIC MAGAZINE: offset cover, tategaki, hanko, overlap
+     ========================================================= */
+  .v4 .grid{position:relative;display:grid;grid-template-columns:1fr 1.15fr;gap:0;align-items:center;padding:48px 0;min-height:560px}
+  .v4 .txt{position:relative;z-index:2;padding:40px;background:var(--surface);border:1px solid var(--line);border-radius:24px;box-shadow:0 30px 60px -40px rgba(26,24,23,.35);margin-right:-80px}
+  .v4 .meta{display:flex;gap:12px;margin-bottom:18px}
+  .v4 h1{font-size:clamp(38px,4.4vw,64px);line-height:1.05;margin-bottom:16px}
+  .v4 h1 .lead{display:block}
+  .v4 p{font-size:16px;color:var(--inkSoft);margin-bottom:24px;max-width:42ch}
+  .v4 .cover{height:520px;border-radius:24px;background:linear-gradient(135deg,#D4E4B0,#9CB66D)}
+  .v4 .cover .glyph{font-size:240px}
+  .v4 .tategaki{position:absolute;right:-8px;top:60px;writing-mode:vertical-rl;font-family:var(--fontDisplay);font-size:14px;letter-spacing:.5em;color:var(--inkFaint);z-index:3}
+  .v4 .hanko{top:20px;right:24px;width:72px;height:72px;font-size:32px}
+
+  /* =========================================================
+     V5 — MINIMAL CALM: type-first, tiny cover chip, lots of air
+     ========================================================= */
+  .v5 .inner{padding:72px 0 56px;max-width:980px}
+  .v5 .top{display:flex;align-items:center;gap:14px;margin-bottom:30px}
+  .v5 .miniCover{width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#FFEFC8,#FFCB7A);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .v5 .miniCover .glyph{font-family:var(--fontDisplay);font-weight:600;color:rgba(255,255,255,.7);font-size:38px}
+  .v5 h1{font-size:clamp(40px,5.2vw,80px);line-height:1.06;margin-bottom:28px}
+  .v5 .foot{display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+  .v5 .lede{font-size:19px;color:var(--inkSoft);max-width:62ch;font-family:var(--fontDisplay);font-style:italic}
+
+  @media(max-width:920px){
+    .v1 .grid,.v4 .grid{grid-template-columns:1fr;gap:32px}
+    .v4 .txt{margin-right:0}
+    .v4 .tategaki{display:none}
+    .v3 .card{left:16px;right:16px;bottom:16px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== V1 — SPLIT ===================== -->
+<div class="label"><span class="n">01</span><span class="t">Split</span><span class="d">— refined current layout · text + framed cover, calm and balanced</span></div>
+<section class="hero v1"><div class="wrap"><div class="grid">
+  <div>
+    <div class="meta"><span class="chip"><span class="k">文</span>Culture</span><span class="kicker">cover story · 6 min</span></div>
+    <h1><span class="wash">The little</span> word for light through leaves</h1>
+    <p>Some feelings only have a name in Japanese. This week we sit with <em>komorebi</em>, and the quiet art of noticing what passes.</p>
+    <div class="cta">
+      <span class="author"><span class="ava">ゆ</span><span><span class="nm">Yuki Shirakawa</span><br><span class="dt">June 15, 2026</span></span></span>
+      <a class="read">Read the story →</a>
+      <a class="ghost">🔖</a>
+    </div>
+  </div>
+  <div class="photo cover"><span class="glyph">燈</span><span class="vig"></span><span class="hanko">文</span><span class="ptag"><span class="d"></span>photo: kyoto, late afternoon</span></div>
+</div></div></section>
+
+<div class="divider"></div>
+
+<!-- ===================== V2 — CENTERED EDITORIAL ===================== -->
+<div class="label"><span class="n">02</span><span class="t">Centered editorial</span><span class="d">— big centered headline over a wide cover band, magazine cover feel</span></div>
+<section class="hero v2"><div class="wrap"><div class="inner">
+  <div class="meta"><span class="chip"><span class="k">旅</span>Travel</span><span class="kicker">this week · 7 min</span></div>
+  <h1>Snow country, slow trains</h1>
+  <p>Heading north until the station announcements turn into a language the snow already speaks. A quiet essay on going nowhere, beautifully.</p>
+  <div class="cta"><a class="read">Read the story →</a><a class="ghost">🔖</a></div>
+  <div class="photo cover"><span class="glyph">雪</span><span class="vig"></span><span class="ptag"><span class="d"></span>photo: niigata line</span></div>
+</div></div></section>
+
+<div class="divider"></div>
+
+<!-- ===================== V3 — FULL-BLEED POSTER ===================== -->
+<div class="label"><span class="n">03</span><span class="t">Full-bleed poster</span><span class="d">— immersive cover with a floating glass card, boldest / most modern</span></div>
+<section class="hero v3"><div class="wrap"><div class="stage">
+  <span class="glyph">弁</span>
+  <div class="card">
+    <div class="meta"><span class="chip"><span class="k">画</span>Animation</span><span class="kicker">4 min read</span></div>
+    <h1>The ache of almost remembering</h1>
+    <p>Makoto Shinkai's film is about two strangers who keep forgetting each other — and the single red thread that won't let them.</p>
+    <div class="row">
+      <span class="author"><span class="ava">か</span><span><span class="nm">Kage Loom</span><br><span class="dt">June 8, 2026</span></span></span>
+      <a class="read">Read →</a>
+    </div>
+  </div>
+</div></div></section>
+
+<div class="divider"></div>
+
+<!-- ===================== V4 — ASYMMETRIC MAGAZINE ===================== -->
+<div class="label"><span class="n">04</span><span class="t">Asymmetric magazine</span><span class="d">— overlapping text card, tategaki + hanko, most "Japanese print"</span></div>
+<section class="hero v4"><div class="wrap"><div class="grid">
+  <div class="txt">
+    <div class="meta"><span class="chip"><span class="k">食</span>Food</span><span class="kicker">cover story · 5 min</span></div>
+    <h1><span class="lead">A bowl of ramen</span> on a rainy Tuesday</h1>
+    <p>The quietest restaurants in Tokyo have a single counter and a kettle that never stops. On warmth, steam, and being a regular.</p>
+    <div class="cta"><a class="read">Read the story →</a></div>
+  </div>
+  <div class="photo cover"><span class="glyph">麺</span><span class="vig"></span><span class="hanko">特</span></div>
+  <div class="tategaki">日本の物語 · stories from japan</div>
+</div></div></section>
+
+<div class="divider"></div>
+
+<!-- ===================== V5 — MINIMAL CALM ===================== -->
+<div class="label"><span class="n">05</span><span class="t">Minimal calm</span><span class="d">— type-first, tiny cover chip, maximum whitespace · "slow reading" mood</span></div>
+<section class="hero v5"><div class="wrap"><div class="inner">
+  <div class="top">
+    <div class="miniCover"><span class="glyph">茶</span></div>
+    <div><div class="meta"><span class="chip"><span class="k">語</span>Language</span></div></div>
+    <span class="kicker" style="margin-left:auto">vol. 02 · issue 14</span>
+  </div>
+  <h1>What wabi-sabi is really about.</h1>
+  <p class="lede">Not shabby, not broken — just honest about time, and gentle about it too. A small grammar for imperfection.</p>
+  <div class="foot" style="margin-top:30px">
+    <span class="author"><span class="ava">れ</span><span><span class="nm">Ren Takeda</span><br><span class="dt">June 1, 2026</span></span></span>
+    <a class="read">Read the story →</a>
+    <span class="kicker">+ 27 new this week</span>
+  </div>
+</div></div></section>
+
+<div style="height:80px"></div>
+</body>
+</html>

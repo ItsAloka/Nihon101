@@ -11,8 +11,16 @@ compatibility_flags = ["nodejs_compat"]
 binding = "MEDIA"
 bucket_name = "nihon101-media"
 
+# Site-wide trending hot-cache (top-20 cards). Local dev (`wrangler dev`)
+# simulates KV with miniflare regardless of id. For prod, create the namespace
+# (`wrangler kv namespace create TRENDING_KV`) and paste the real id below.
+[[kv_namespaces]]
+binding = "TRENDING_KV"
+id = "trending_kv_local"
+
 [triggers]
-crons = ["0 * * * *"]
+# Per minute: recompute momentum trend_score for all posts + bake the top-20 to KV.
+crons = ["* * * * *"]
 
 [vars]
 FRONTEND_ORIGIN = "http://localhost:4321"

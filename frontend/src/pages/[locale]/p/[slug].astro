@@ -1,0 +1,210 @@
+---
+// SSR article reader at a clean /[locale]/p/[slug] URL (replaces the SPA
+// /[locale]/app#/article/slug). The reading view — title, byline, cover, body,
+// tags, author card — is server-rendered HTML so it's fully crawlable (the
+// CLAUDE.md SSR-for-SEO rule). Only the session-dependent bits (save/share/like/
+// comments, owner edit/delete) hydrate as <ReaderIsland> islands, so there's no
+// visual drift from the SPA reader (screens.jsx ArticlePage) — same markup, same
+// CommentSection. Prototype design; only the data is real.
+import Shell from "../../../layouts/Shell.astro";
+import ReaderIsland from "../../../nihon/ReaderIsland.jsx";
+import { makeHelpers, tagSlug, TINT_GRAD, TINT_HEX } from "../../../lib/cards";
+
+const { locale, slug } = Astro.params as { locale: string; slug: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+
+const API = import.meta.env.DEV ? "http://localhost:8787" : "https://api.nihon101.com";
+const [postRes, catsRes] = await Promise.all([
+  fetch(`${API}/posts/slug/${encodeURIComponent(slug)}`),
+  fetch(`${API}/categories`),
+]);
+if (!postRes.ok) return new Response(null, { status: 404 });
+const { post } = await postRes.json();
+if (!post || post.status !== "published") return new Response(null, { status: 404 });
+const { categories } = catsRes.ok ? await catsRes.json() : { categories: [] };
+const h = makeHelpers(categories, jp);
+
+const title = h.title(post);
+const excerpt = h.excerpt(post);
+const bodyHtml = (jp ? post.bodyJa : post.bodyEn) || (jp ? post.bodyEn : post.bodyJa) || "";
+const authorName = h.authorName(post);
+const ms = post.publishedAt ?? post.createdAt;
+const dateStr = h.dateFmt(ms);
+const chars = String(post.bodyEn || "").length + String(post.bodyJa || "").length;
+const readMins = Math.max(1, Math.round(chars / 1100));
+const tint = h.catTint(post.categoryId);
+const grad = TINT_GRAD[tint] || TINT_GRAD.rose;
+const avatarHex = TINT_HEX[tint] || "#FBC5CC";
+const authorInitials = h.initialsOf(authorName);
+const profileHref = post.authorHandle ? `/${locale}/u/${post.authorHandle}` : null;
+
+// Author bio/role/location aren't on the post payload — fetch the public profile
+// so the "written by" card shows the writer's real bio (not a placeholder).
+let authorProfile: any = null;
+if (post.authorHandle) {
+  try {
+    const r = await fetch(`${API}/users/${encodeURIComponent(post.authorHandle)}`);
+    if (r.ok) authorProfile = (await r.json()).user;
+  } catch {}
+}
+const authorBio = authorProfile
+  ? (jp ? (authorProfile.bioJa || authorProfile.bio) : (authorProfile.bio || authorProfile.bioJa))
+  : "";
+const authorMeta = authorProfile
+  ? [authorProfile.role, authorProfile.location].filter(Boolean).join(" · ")
+  : "";
+
+// Density → reading rhythm, mirroring screens.jsx ArticleHtml.
+const density = post.density === "normal" ? "normal" : post.density === "relaxed" ? "relaxed" : "compact";
+const line = density === "compact" ? 1.65 : density === "normal" ? 1.75 : 1.9;
+const gap = density === "compact" ? 18 : density === "normal" ? 24 : 34;
+
+const pageTitle = `${title} — nihon101`;
+const pageDesc = excerpt || `${title} · nihon101`;
+const canonical = `/${locale}/p/${post.slug}`;
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active="">
+  <article class="rd">
+    <div class="wrap">
+      <a class="rd-back" href={`/${locale}/`}>← {jp ? "ホーム" : "Home"}</a>
+
+      <header class="rd-head">
+        <div class="rd-meta">
+          <span class="chip">
+            <span class="kanji">{h.catKanji(post.categoryId)}</span>
+            {h.catLabel(post.categoryId)}
+          </span>
+          <span class="rd-kicker">{readMins} min read</span>
+        </div>
+        <h1>{title}</h1>
+        <p class="rd-excerpt">{excerpt}</p>
+        <div class="rd-byline">
+          <a class="rd-author" href={profileHref || "#"}>
+            <span class="rd-ava" style={`background:linear-gradient(135deg, ${avatarHex}, color-mix(in oklab, ${avatarHex} 50%, var(--surface2)));`}>
+              {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt="" /> : authorInitials}
+            </span>
+            <span>
+              <span class="rd-name">{authorName}</span><br />
+              <span class="rd-date">{dateStr}</span>
+            </span>
+          </a>
+          <ReaderIsland client:only="react" slot="top" postId={post.id} slug={post.slug} locale={locale} authorId={post.authorId} likes={post.likes} />
+        </div>
+      </header>
+    </div>
+
+    {post.cover && /^https?:\/\//.test(post.cover) && (
+      <div class="wrap">
+        <div class="rd-cover">
+          <img src={post.cover} alt="" />
+          {post.coverLabel && <span class="rd-cover-tag"><span class="dot"></span> photo: {post.coverLabel}</span>}
+        </div>
+        {(post.coverCredit && post.coverCredit.trim()) && (
+          <div class="rd-credit">{post.coverCredit.trim()} · {dateStr}</div>
+        )}
+      </div>
+    )}
+    {!post.cover && (
+      <div class="wrap">
+        <div class="rd-cover rd-cover-grad" style={`background:linear-gradient(135deg, ${grad[0]}, ${grad[1]});`}>
+          <span class="rd-cover-glyph">{h.glyphFor(post.categoryId)}</span>
+        </div>
+      </div>
+    )}
+
+    <div class="wrap">
+      <div class="rd-body" set:html={bodyHtml}></div>
+
+      {post.tags && post.tags.length > 0 && (
+        <div class="rd-tags">
+          {post.tags.map((tg: string) => (
+            <a class="rd-tag" href={`/${locale}/t/${tagSlug(tg)}`}><span class="h">#</span>{tg}</a>
+          ))}
+        </div>
+      )}
+
+      <section class="rd-authorcard">
+        <span class="rd-ava lg" style={`background:linear-gradient(135deg, ${avatarHex}, color-mix(in oklab, ${avatarHex} 50%, var(--surface2)));`}>
+          {post.authorAvatarUrl ? <img src={post.authorAvatarUrl} alt="" /> : authorInitials}
+        </span>
+        <div class="rd-authorcard-body">
+          <div class="rd-authorcard-kick">{jp ? "書いた人" : "written by"}{authorMeta ? ` · ${authorMeta}` : ""}</div>
+          <div class="rd-authorcard-name">
+            {authorName}
+            {post.authorHandle && <span class="rd-authorcard-handle">@{post.authorHandle}</span>}
+          </div>
+          <div class="rd-authorcard-bio">{authorBio || (jp ? "nihon101の書き手。" : "Writer at nihon101.")}</div>
+        </div>
+        {profileHref && <a class="rd-authorcard-link" href={profileHref}>{jp ? "プロフィール" : "View profile"}</a>}
+      </section>
+
+      <div class="rd-engage">
+        <ReaderIsland client:only="react" slot="engage" postId={post.id} slug={post.slug} locale={locale} authorId={post.authorId} likes={post.likes} />
+      </div>
+    </div>
+  </article>
+
+  <style define:vars={{ lh: String(line), gap: `${gap}px` }}>
+    .rd { padding: 48px 0 96px; }
+    .rd-back { display: inline-flex; align-items: center; gap: 8px; font-family: var(--fontBody); font-size: 13px; font-weight: 600; color: var(--ink); border: 1px solid var(--line); background: var(--surface); padding: 10px 16px; border-radius: 999px; margin-bottom: 24px; transition: border-color .18s ease, background .18s ease; }
+    .rd-back:hover { border-color: var(--accent); background: var(--tint); }
+    .rd-head { max-width: 780px; margin: 0 auto; }
+    .rd-meta { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .rd-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; }
+    .rd-head h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 4.5vw, 64px); line-height: 1.05; letter-spacing: -0.025em; color: var(--ink); margin-bottom: 18px; text-wrap: pretty; }
+    .rd-excerpt { font-family: var(--fontDisplay); font-style: italic; font-size: 22px; line-height: 1.4; color: var(--inkSoft); margin-bottom: 32px; text-wrap: pretty; }
+    .rd-byline { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 48px; gap: 16px; }
+    .rd-author { display: flex; align-items: center; gap: 14px; }
+    .rd-ava { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 600; font-size: 19px; color: var(--ink); border: 1px solid var(--line); overflow: hidden; }
+    .rd-ava.lg { width: 80px; height: 80px; font-size: 32px; }
+    .rd-ava img { width: 100%; height: 100%; object-fit: cover; }
+    .rd-name { font-family: var(--fontDisplay); font-weight: 600; font-size: 18px; color: var(--ink); }
+    .rd-date { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); }
+
+    .rd-cover { max-width: 1080px; margin: 0 auto 0; position: relative; border-radius: 20px; overflow: hidden; }
+    .rd-cover img { width: 100%; height: 520px; object-fit: cover; display: block; }
+    .rd-cover-grad { height: 320px; display: flex; align-items: center; justify-content: center; margin-bottom: 0; }
+    .rd-cover-glyph { font-family: var(--fontDisplay); font-weight: 600; font-size: 120px; color: rgba(255,255,255,0.6); }
+    .rd-cover-tag { position: absolute; left: 14px; bottom: 12px; display: inline-flex; align-items: center; gap: 8px; background: color-mix(in oklab, var(--surface) 92%, transparent); backdrop-filter: blur(6px); padding: 5px 10px; border-radius: 999px; font-family: var(--fontMono); font-size: 10px; letter-spacing: 0.08em; color: var(--inkSoft); text-transform: uppercase; }
+    .rd-cover-tag .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--stamp); display: inline-block; }
+    .rd-credit { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); letter-spacing: 0.04em; text-align: center; margin-top: 14px; max-width: 1080px; margin-left: auto; margin-right: auto; }
+    .rd > .wrap:has(.rd-cover) { margin-bottom: 48px; }
+
+    .rd-body { max-width: 680px; margin: 0 auto; font-family: var(--fontDisplay); font-size: 20px; line-height: var(--lh); color: var(--ink); }
+    .rd-body :global(p) { margin: 0 0 var(--gap); }
+    .rd-body :global(h1) { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; margin: 32px 0 12px; }
+    .rd-body :global(h2) { font-size: 26px; font-weight: 600; margin: 28px 0 10px; }
+    .rd-body :global(blockquote) { border-left: 3px solid var(--stamp); padding-left: 24px; margin: 28px 0; font-style: italic; color: var(--inkSoft); }
+    .rd-body :global(ul) { padding-left: 28px; margin: 0 0 24px; list-style: disc outside; }
+    .rd-body :global(ol) { padding-left: 28px; margin: 0 0 24px; list-style: decimal outside; }
+    .rd-body :global(li) { margin: 6px 0; }
+    .rd-body :global(li::marker) { color: var(--stamp); }
+    .rd-body :global(a) { color: var(--stamp); text-decoration: underline; }
+    .rd-body :global(hr) { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
+    .rd-body :global(pre) { background: var(--ink); color: var(--surface); padding: 16px; border-radius: 12px; overflow: auto; font-family: var(--fontMono); font-size: 14px; margin: 0 0 24px; }
+    .rd-body :global(img) { max-width: 100%; height: auto; border-radius: 12px; }
+    .rd-body :global(figure) { margin: 24px 0; }
+    .rd-body :global(figcaption) { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); text-align: center; margin-top: 8px; }
+    .rd-body :global(table) { border-collapse: collapse; width: 100%; margin: 24px 0; }
+    .rd-body :global(td), .rd-body :global(th) { border: 1px solid var(--line); padding: 8px 10px; }
+    .rd-body :global(th) { background: var(--bg); font-weight: 700; }
+    .rd-body :global(> p:first-of-type::first-letter) { float: left; font-family: var(--fontDisplay); font-weight: 600; font-size: 96px; line-height: 0.8; color: var(--stamp); margin: 8px 14px 0 0; }
+    .rd-body :global([data-youtube-video] iframe), .rd-body :global(iframe) { width: 100%; aspect-ratio: 16/9; height: auto; border: 0; border-radius: 12px; margin: 24px 0; display: block; }
+    .rd-body::after { content: ""; display: table; clear: both; }
+
+    .rd-tags { max-width: 680px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 44px; margin-bottom: 44px; }
+    .rd-tag { display: inline-flex; align-items: center; gap: 2px; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-family: var(--fontBody); font-size: 13px; font-weight: 500; color: var(--inkSoft); }
+    .rd-tag .h { color: var(--accent); font-weight: 800; }
+
+    .rd-engage { max-width: 780px; margin: 0 auto; }
+    .rd-authorcard { max-width: 780px; margin: 44px auto; display: flex; gap: 20px; padding: 26px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; align-items: center; }
+    .rd-authorcard-body { flex: 1; min-width: 0; }
+    .rd-authorcard-kick { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .rd-authorcard-name { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; color: var(--ink); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .rd-authorcard-handle { font-family: var(--fontMono); font-size: 13px; font-weight: 400; color: var(--inkFaint); letter-spacing: 0.02em; }
+    .rd-authorcard-bio { font-family: var(--fontBody); font-size: 14px; color: var(--inkSoft); margin-top: 6px; line-height: 1.5; }
+    .rd-authorcard-link { flex-shrink: 0; font-family: var(--fontBody); font-size: 13px; font-weight: 600; color: var(--ink); border: 1.5px solid var(--line); border-radius: 999px; padding: 9px 18px; transition: border-color 0.18s ease, background 0.18s ease; }
+    .rd-authorcard-link:hover { border-color: var(--accent); background: var(--tint); }
+  </style>
+</Shell>

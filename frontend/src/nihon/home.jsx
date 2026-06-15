@@ -1,7 +1,7 @@
 // home.jsx — landing page
 import React from "react";
 import "./ui.jsx";
-const { WavyBG, CategoryChip, AuthorChip, Photo, Hanko, WaveMark, gradStyle, ArrowRight, BookmarkIcon, tintBg } = window;
+const { WavyBG, CategoryChip, AuthorChip, Photo, Hanko, WaveMark, gradStyle, ArrowRight, BookmarkIcon, HeartIcon, CommentIcon, tintBg } = window;
 
 function HomePage({ p, lang, posts, t, savedSet, likedMap, onLike, onSave }) {
   const D = window.NIHON_DATA;
@@ -260,15 +260,15 @@ function SecondaryFeature({p, lang, post, t}) {
     <div onClick={()=>window.__nihon_go({name:'article', slug:post.slug})}
       style={{
        display:'grid', gridTemplateColumns:'1fr 1fr', gap:28,
-       background: t.cardStyle==='outlined'?'transparent':p.surface,
-       border: t.cardStyle==='clean'?'none':`1px solid ${p.line}`,
-       padding: t.cardStyle==='clean'?0:24,
-       borderRadius:18, textDecoration:'none', color:p.ink,
+       background: p.surface,
+       border: `1.5px solid ${p.line}`,
+       padding: 24,
+       borderRadius:22, textDecoration:'none', color:p.ink,
        alignItems:'stretch', cursor:'pointer',
-       transition:'transform .25s',
+       transition:'transform .25s, border-color .25s, box-shadow .25s',
      }}
-     onMouseEnter={(e)=>e.currentTarget.style.transform='translateY(-2px)'}
-     onMouseLeave={(e)=>e.currentTarget.style.transform='translateY(0)'}
+     onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
+     onMouseLeave={(e)=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.boxShadow='none'; }}
     >
       <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={340} radius={14}/>
       <div style={{display:'flex', flexDirection:'column', justifyContent:'center', gap:14}}>
@@ -343,11 +343,13 @@ function EditorList({p, lang, posts, t}) {
         <li key={post.slug}>
           <div onClick={()=>window.__nihon_go({name:'article', slug:post.slug})}
             style={{
-              display:'flex', gap:18, color:p.ink, alignItems:'flex-start', cursor:'pointer',
-              padding:t.cardStyle==='outlined'?20:0,
-              border:t.cardStyle==='outlined'?`1px solid ${p.line}`:'none',
-              borderRadius:t.cardStyle==='outlined'?14:0,
-            }}>
+              display:'flex', gap:16, color:p.ink, alignItems:'flex-start', cursor:'pointer',
+              padding:22, background:p.surface,
+              border:`1.5px solid ${p.line}`, borderRadius:22,
+              transition:'transform .22s ease, border-color .22s ease, box-shadow .22s ease',
+            }}
+            onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
+            onMouseLeave={(e)=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.boxShadow='none'; }}>
             <div style={{
               fontFamily:'var(--fontDisplay)', fontSize:48, fontWeight:600, color:p.stamp,
               lineHeight:0.9, minWidth:54, letterSpacing:'-0.04em',
@@ -380,17 +382,17 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
   const card = t.cardStyle;
   return (
     <article style={{
-      background: card==='textured' ? p.surface : (card==='outlined' ? 'transparent' : 'transparent'),
-      border: card==='outlined' ? `1px solid ${p.line}` : 'none',
-      padding: (card==='textured' || card==='outlined') ? 18 : 0,
-      borderRadius: 16,
+      background: p.surface,
+      border: `1.5px solid ${p.line}`,
+      padding: 14,
+      borderRadius: 22,
       display:'flex', flexDirection:'column', gap:12,
       position:'relative',
-      transition:'transform .25s ease',
+      transition:'transform .25s ease, border-color .25s ease, box-shadow .25s ease',
     }}
-    onMouseEnter={(e)=>e.currentTarget.style.transform='translateY(-4px)'}
-    onMouseLeave={(e)=>e.currentTarget.style.transform='translateY(0)'}>
-      <a href={`#/article/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
+    onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
+    onMouseLeave={(e)=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.boxShadow='none'; }}>
+      <a href={`/${lang==='jp'?'ja':'en'}/p/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
         style={{textDecoration:'none', color:'inherit'}}>
         <Photo p={p} hue={post.cover.hue} label={post.cover.label} src={post.cover.src} h={compact?200:240} radius={12}/>
       </a>
@@ -398,7 +400,7 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
         <CategoryChip slug={post.category} p={p} lang={lang} size="sm"/>
         <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>{post.readMins} min</span>
       </div>
-      <a href={`#/article/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
+      <a href={`/${lang==='jp'?'ja':'en'}/p/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
          style={{textDecoration:'none', color:p.ink}}>
         <h3 style={{
           fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, lineHeight:1.15, letterSpacing:'-0.015em', color:p.ink, textWrap:'pretty',
@@ -409,12 +411,27 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
       {!compact && <p style={{fontFamily:'var(--fontBody)', fontSize:14, lineHeight:1.55, color:p.inkSoft}}>
         {excerpt?.slice(0,110)}…
       </p>}
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:4}}>
+      {!compact && Array.isArray(post.tags) && post.tags.filter(Boolean).length>0 && (
+        <div style={{display:'flex', flexWrap:'wrap', gap:6}}>
+          {post.tags.filter(Boolean).slice(0,3).map(tg=>(
+            <a key={tg} href={`/${lang==='jp'?'ja':'en'}/t/${window.tagSlug ? window.tagSlug(tg) : tg}`}
+               onClick={(e)=>e.stopPropagation()}
+               style={{display:'inline-flex', alignItems:'center', gap:1, padding:'3px 9px', borderRadius:999, border:`1px solid ${p.line}`, background:p.surface, fontSize:11, fontWeight:500, color:p.inkSoft, textDecoration:'none'}}>
+              <span style={{color:p.accent, fontWeight:800}}>#</span>{tg}
+            </a>
+          ))}
+        </div>
+      )}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginTop:'auto', paddingTop:12, borderTop:`1px solid ${p.line}`}}>
         <AuthorChip name={post.author} nameJp={post.author_jp} handle={post.authorHandle} avatarUrl={post.authorAvatarUrl} p={p} lang={lang} size="sm" date={post.date}/>
-        <button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); onSave(post.slug);}}
-          style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:saved?p.stamp:p.inkFaint, padding:4}}>
-          <BookmarkIcon color={saved?p.stamp:p.inkFaint} filled={saved}/>
-        </button>
+        <div style={{display:'flex', alignItems:'center', gap:14, flexShrink:0}}>
+          <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
+            <HeartIcon color={p.stamp} filled size={15}/> {(post.likes||0).toLocaleString()}
+          </span>
+          <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
+            <CommentIcon color={p.inkFaint} size={15}/> {(post.commentCount ?? post.comments ?? 0).toLocaleString()}
+          </span>
+        </div>
       </div>
     </article>
   );

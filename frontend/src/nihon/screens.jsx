@@ -334,7 +334,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         <SectionHeader p={p} lang={lang}
           en={`More in ${cat?.en || ''}`} jp={`もっと ${cat?.jp || ''}`}
           kicker_en="related reading" kicker_jp="関連する記事"/>
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {related.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
         </div>
       </div>}
@@ -716,7 +716,7 @@ function CategoryPage({p, lang, slug, t, savedSet, onSave}) {
             {lang==='jp'?'まだ記事がありません。最初の書き手になりませんか？':'No pieces yet. Want to be the first writer here?'}
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32, marginTop:32}}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, marginTop:32}}>
             {posts.map(post=>(<ArticleCard key={post.slug} p={p} lang={lang} post={post} t={t} saved={savedSet.has(post.slug)} onSave={onSave}/>))}
           </div>
         )}
@@ -816,7 +816,7 @@ function SearchPage({p, lang, initialQuery, t, savedSet, onSave}) {
             </div>
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
             {results.map(post=>(<ArticleCard key={post.slug} p={p} lang={lang} post={post} t={t} saved={savedSet.has(post.slug)} onSave={onSave}/>))}
           </div>
         )}
@@ -888,7 +888,7 @@ function AuthorPage({p, lang, slug, t, savedSet, onSave, follows, onToggleFollow
           kicker_en={`${posts.length} stories`}
           kicker_jp={`${posts.length}本の記事`}
         />
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {posts.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
         </div>
       </div>
@@ -1231,7 +1231,7 @@ function SavedPage({p, lang, savedSet, t, onSave}) {
           </div>
         </div>
       ) : (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {posts.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={true} onSave={onSave}/>))}
         </div>
       )}
@@ -1419,5 +1419,5 @@ function ContactItem({p, lang, k, en, jp, body_en, body_jp, action}) {
 
 Object.assign(window, {
   ArticlePage, ArticleLoader, CategoryPage, SearchPage, AuthorPage, AuthorsPage, AboutPage, SavedPage,
-  CommentSection, relTime, authorBeat, writerStats, PrivacyPage, ContactPage,
+  CommentSection, ShareIcon, relTime, authorBeat, writerStats, PrivacyPage, ContactPage,
 });

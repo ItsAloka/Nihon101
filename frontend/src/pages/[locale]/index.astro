@@ -35,6 +35,8 @@ const TINT_HEX: Record<string, string> = {
 };
 
 const app = (hash: string) => `/${locale}/app${hash}`;
+const read = (slug: string) => `/${locale}/p/${slug}`;      // SSR article reader
+const writeHref = `/${locale}/write`;                        // SSR composer
 const catHref = (id: string) => `/${locale}/c/${id}`;       // SSR category page (Phase 3)
 const searchHref = `/${locale}/search`;                      // SSR explore page (Phase 3)
 const title = (p: any) => (jp ? (p.titleJa || p.titleEn) : (p.titleEn || p.titleJa));
@@ -98,10 +100,14 @@ const pageDesc = jp
     <script is:inline>
       // Apply the saved theme before paint (no flash); the header island owns toggling.
       try { document.documentElement.dataset.mode = localStorage.getItem('nihon.mode') || 'light'; } catch (e) {}
-      // Legacy deep links: the SPA used to live here (/{locale}/#/article/x).
-      // Forward old hash routes to /{locale}/app before paint.
-      if (location.hash.length > 2 && location.hash.startsWith('#/'))
-        location.replace(location.pathname.replace(/\/?$/, '') + '/app' + location.hash);
+      // Legacy deep links from the old SPA hash router. Article reads now have a
+      // real SSR URL (/{locale}/p/slug); send those straight there. Anything else
+      // still lives in the app shell (/{locale}/app#…).
+      if (location.hash.length > 2 && location.hash.startsWith('#/')) {
+        var base = location.pathname.replace(/\/?$/, '');
+        var art = location.hash.match(/^#\/article\/([^/?#]+)/);
+        location.replace(art ? base + '/p/' + art[1] : base + '/app' + location.hash);
+      }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -154,7 +160,7 @@ const pageDesc = jp
       .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--line); background: var(--surface); }
       .chip .kanji { font-family: var(--fontDisplay); color: var(--stamp); text-transform: none; letter-spacing: 0; }
       .hero-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; }
-      h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(48px, 5.5vw, 88px); line-height: 1.02; letter-spacing: -0.025em; margin-bottom: 24px; text-wrap: pretty; }
+      h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(44px, 5vw, 78px); line-height: 1.04; letter-spacing: -0.025em; margin-bottom: 24px; text-wrap: pretty; }
       h1 .wash { background-image: linear-gradient(transparent 70%, var(--accent) 70%, var(--accent) 92%, transparent 92%); background-repeat: no-repeat; padding-right: 0.1em; }
       .hero-excerpt { font-size: 18px; line-height: 1.55; color: var(--inkSoft); margin-bottom: 32px; max-width: 560px; }
       .hero-cta { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -170,7 +176,9 @@ const pageDesc = jp
       .achip .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
       .achip .dt { font-size: 11px; color: var(--inkFaint); }
       .hero-photo { position: relative; }
-      .tategaki { position: absolute; left: -32px; top: 48px; writing-mode: vertical-rl; text-orientation: mixed; font-family: var(--fontDisplay); font-size: 13px; letter-spacing: 0.4em; color: var(--inkFaint); }
+      .hero-photo .photo { border-radius: 24px; box-shadow: 0 40px 70px -50px color-mix(in oklab, var(--accentDeep) 60%, transparent); }
+      .hero-photo .cover-hanko { border-radius: 16%; }
+      .tategaki { position: absolute; left: -34px; top: 52px; writing-mode: vertical-rl; text-orientation: mixed; font-family: var(--fontDisplay); font-size: 14px; letter-spacing: 0.5em; color: var(--inkFaint); }
 
       /* hero carousel controls */
       .hero-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 32px; }
@@ -194,8 +202,8 @@ const pageDesc = jp
 
       /* secondary + topics */
       .second-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 48px; margin-top: 64px; align-items: start; }
-      .feature-card { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; background: var(--surface); border: 1px solid var(--line); padding: 24px; border-radius: 18px; align-items: stretch; transition: transform 0.25s ease; }
-      .feature-card:hover { transform: translateY(-2px); }
+      .feature-card { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; background: var(--surface); border: 1.5px solid var(--line); padding: 24px; border-radius: 22px; align-items: stretch; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
+      .feature-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .feature-card .body { display: flex; flex-direction: column; justify-content: center; gap: 14px; }
       .feature-card .cmeta { display: flex; align-items: center; gap: 10px; }
       .feature-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; text-wrap: pretty; }
@@ -220,22 +228,23 @@ const pageDesc = jp
       .see-all { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 
       /* editor list */
-      .editor-list { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
-      .editor-list .num { font-family: var(--fontDisplay); font-size: 48px; font-weight: 600; color: var(--stamp); line-height: 0.9; min-width: 54px; letter-spacing: -0.04em; }
-      .editor-list li { display: flex; gap: 18px; align-items: flex-start; }
+      .editor-list { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+      .editor-list .num { font-family: var(--fontDisplay); font-size: 42px; font-weight: 600; color: var(--stamp); line-height: 0.9; min-width: 48px; letter-spacing: -0.04em; }
+      .editor-list li { display: flex; gap: 16px; align-items: flex-start; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 22px; transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease; }
+      .editor-list li:hover { transform: translateY(-4px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .editor-list .cat { font-family: var(--fontMono); font-size: 10px; color: var(--inkFaint); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
       .editor-list h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; }
       .editor-list .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); margin: 8px 0 10px; }
 
       /* recent grid */
       .recent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; }
-      .post-card { display: flex; flex-direction: column; gap: 12px; transition: transform 0.25s ease; border-radius: 16px; }
-      .post-card:hover { transform: translateY(-4px); }
+      .post-card { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 14px; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
+      .post-card:hover { transform: translateY(-4px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .post-card .cmeta { display: flex; align-items: center; gap: 10px; }
       .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
       .post-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; text-wrap: pretty; }
       .post-card .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; gap: 12px; }
+      .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); gap: 12px; }
       .post-card .stats { display: flex; align-items: center; gap: 14px; flex: none; }
       .post-card .stat { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fontMono); font-size: 12.5px; font-weight: 600; color: var(--inkSoft); }
       .post-card .stat svg { width: 15px; height: 15px; }
@@ -310,14 +319,14 @@ const pageDesc = jp
                       <span class="dt">{dateFmt(po.publishedAt ?? po.createdAt)}</span>
                     </span>
                   </a>
-                  <a class="read-btn" href={app(`#/article/${po.slug}`)}>{jp ? '読む' : 'Read the story'} →</a>
+                  <a class="read-btn" href={read(po.slug)}>{jp ? '読む' : 'Read the story'} →</a>
                   <button class="hero-save" data-slug={po.slug} type="button" aria-label="Save">
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
                   </button>
                 </div>
               </div>
               <div class="hero-photo">
-                <a class="photo" style={`height:560px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={app(`#/article/${po.slug}`)}>
+                <a class="photo" style={`height:520px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={read(po.slug)}>
                   {po.cover ? <img src={po.cover} alt={title(po)} /> : <span class="glyph">{glyphFor(po.categoryId)}</span>}
                   {!po.cover && <span class="blob"></span>}
                   <span class="vignette"></span>
@@ -356,7 +365,7 @@ const pageDesc = jp
       <section class="second-grid">
         {feature && (
           <div class="feature-card">
-            <a class="photo" style={`height:340px;${feature.cover ? '' : `background:linear-gradient(135deg, ${grad(feature.categoryId)[0]}, ${grad(feature.categoryId)[1]});`}`} href={app(`#/article/${feature.slug}`)}>
+            <a class="photo" style={`height:340px;${feature.cover ? '' : `background:linear-gradient(135deg, ${grad(feature.categoryId)[0]}, ${grad(feature.categoryId)[1]});`}`} href={read(feature.slug)}>
               {feature.cover ? <img src={feature.cover} alt={title(feature)} loading="lazy" /> : <span class="glyph">{glyphFor(feature.categoryId)}</span>}
               {!feature.cover && <span class="blob"></span>}
               <span class="vignette"></span>
@@ -370,7 +379,7 @@ const pageDesc = jp
                 </a>
                 <span class="hero-kicker">{jp ? 'もうひとつの特集' : 'also featured'}</span>
               </div>
-              <a href={app(`#/article/${feature.slug}`)}><h3>{title(feature)}</h3></a>
+              <a href={read(feature.slug)}><h3>{title(feature)}</h3></a>
               <p>{excerpt(feature)}</p>
               <a class="achip" href={`/${locale}/u/${feature.authorHandle}`}>
                 <span class="ava" style={`width:32px;height:32px;font-size:13px;background:linear-gradient(135deg, ${tintOf(feature.authorHandle)}, #f2f0eb);`}>{feature.authorAvatarUrl ? <img src={feature.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(feature.authorName || '?')}</span>
@@ -395,7 +404,7 @@ const pageDesc = jp
               </li>
             ))}
           </ul>
-          <a class="make-topic" href={app('#/compose')}>
+          <a class="make-topic" href={writeHref}>
             <span class="hanko">新</span>
             <span class="tx">
               <span class="t1">{jp ? 'カテゴリーを作る' : 'Make a topic'}</span><br />
@@ -420,7 +429,7 @@ const pageDesc = jp
                 <div class="num">{String(i + 1).padStart(2, '0')}</div>
                 <div>
                   <div class="cat">{catLabel(pk.categoryId)} · {pk.readMins} min</div>
-                  <a href={app(`#/article/${pk.slug}`)}><h3>{title(pk)}</h3></a>
+                  <a href={read(pk.slug)}><h3>{title(pk)}</h3></a>
                   <p class="ex">{(excerpt(pk) || '').slice(0, 120)}…</p>
                   <a class="achip" href={`/${locale}/u/${pk.authorHandle}`}>
                     <span class="ava" style={`width:26px;height:26px;font-size:11px;overflow:hidden;background:linear-gradient(135deg, ${tintOf(pk.authorHandle)}, #f2f0eb);`}>{pk.authorAvatarUrl ? <img src={pk.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(pk.authorName || '?')}</span>
@@ -444,7 +453,7 @@ const pageDesc = jp
       <div class="recent-grid">
         {recent.map((po: any) => (
           <article class="post-card">
-            <a class="photo" style={`height:240px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={app(`#/article/${po.slug}`)}>
+            <a class="photo" style={`height:240px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={read(po.slug)}>
               {po.cover ? <img src={po.cover} alt={title(po)} loading="lazy" /> : <span class="glyph" style="font-size:84px;">{glyphFor(po.categoryId)}</span>}
               <span class="vignette"></span>
               {po.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {po.coverLabel}</span>}
@@ -456,10 +465,10 @@ const pageDesc = jp
               </a>
               <span class="mins">{po.readMins} min</span>
             </div>
-            <a href={app(`#/article/${po.slug}`)}><h3>{title(po)}</h3></a>
+            <a href={read(po.slug)}><h3>{title(po)}</h3></a>
             <p class="ex">{excerpt(po)}</p>
             <div class="foot">
-              <a class="achip" href={po.authorHandle ? `/${locale}/u/${po.authorHandle}` : app(`#/article/${po.slug}`)}>
+              <a class="achip" href={po.authorHandle ? `/${locale}/u/${po.authorHandle}` : read(po.slug)}>
                 <span class="ava" style={`width:26px;height:26px;font-size:11px;overflow:hidden;background:linear-gradient(135deg, ${tintOf(po.authorHandle)}, #f2f0eb);`}>{po.authorAvatarUrl ? <img src={po.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(po.authorName || '?')}</span>
                 <span>
                   <span class="nm" style="font-size:12.5px;">{authorName(po)}</span><br />
@@ -539,21 +548,10 @@ const pageDesc = jp
         if (hero) { hero.addEventListener('mouseenter', stop); hero.addEventListener('mouseleave', start); }
         start();
 
-        // Hero bookmark — toggles the same localStorage set the SPA uses ('nihon.saved').
-        function savedSet() { try { return new Set(JSON.parse(localStorage.getItem('nihon.saved') || '[]')); } catch (e) { return new Set(); } }
-        document.querySelectorAll('.hero-save').forEach((btn) => {
-          const slug = btn.getAttribute('data-slug');
-          const sync = () => btn.classList.toggle('on', savedSet().has(slug));
-          sync();
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const s = savedSet();
-            s.has(slug) ? s.delete(slug) : s.add(slug);
-            try { localStorage.setItem('nihon.saved', JSON.stringify(Array.from(s))); } catch (e2) {}
-            sync();
-            window.dispatchEvent(new CustomEvent('nihon:saved'));
-          });
-        });
+        // Hero bookmark clicks + initial state are wired by the HomeHeader island
+        // (home-chrome.jsx), which has the session + backend client so a save
+        // persists to post_saves and shows up on the Saved page. (Plain localStorage
+        // here would never reach the backend — the cause of "saved posts vanish".)
       })();
     </script>
   </body>
