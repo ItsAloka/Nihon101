@@ -10,12 +10,18 @@
  *   4. ORCHESTRATOR    — forYouFeed(): runs 1→3 and returns the finished feed.
  *
  * Scoring, in one line (X-like — preference FIRST, recency amplifies it):
- *   relevance(post) = 3·followed + 2·taste + 1·trendNorm                  (do I want this?)
+ *   relevance(post) = 3·followed + 2·taste + 1.5·authorAff + 1·trendNorm   (do I want this?)
  *   recency(post)   = 0.5 ^ (age / 3 days)                                (freshness multiplier)
  *   final(post)     = (0.05 + relevance) · recency · 0.35^seen
  *   taste(post)     = catAff[cat] + tagWeight·Σ_tags idf(tag)·tagAff[tag]
  *   …then a diversity pass caps per-author + followed share and weaves in fresh
  *   posts so the feed explores instead of ossifying.
+ * The taste profile is learned per-user from engagement (read1/save2/like3/comment4,
+ * MINUS unlike3/unsave2), with three refinements that keep it honest: a per-post
+ * re-engagement multiplier (one post you read+saved+commented beats three one-touch
+ * posts), Bayesian shrinkage (a thin profile stays muted, confidence grows with
+ * evidence), and entropy-driven exploration (the narrower your taste, the harder the
+ * feed explores to avoid a bubble). Affinity spans category, tag, AND author.
  * Because recency only MULTIPLIES relevance, a fresh-but-irrelevant post can't
  * float up — only the recent posts you'd actually prefer do.
  *
@@ -29,7 +35,7 @@
 
 import { eq, and, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, users, follows, postLikes, postReads, tags, userAffinity } from '../schema';
+import { posts, users, follows, postLikes, postReads, postSaves, postComments, tags, userAffinity, userSignals } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { cardCols, publicPostCard, type PostCardRow } from './posts';
 
@@ -50,17 +56,30 @@ const TTL = 1 * HOUR;        // recompute a user's snapshot at most once per hou
 const WINDOW = 30 * DAY;     // taste is learned from the last 30 days of engagement
 const HALF_LIFE = 14 * DAY;  // within that, a signal loses half its weight every 14 days
 
-export type Dimension = 'cat' | 'tag';
+export type Dimension = 'cat' | 'tag' | 'author';
 
 export interface Affinity {
   cat: Map<string, number>;
   tag: Map<string, number>;
+  author: Map<string, number>;   // taste for a specific writer (beyond a follow)
 }
 
-export const emptyAffinity = (): Affinity => ({ cat: new Map(), tag: new Map() });
+export const emptyAffinity = (): Affinity => ({ cat: new Map(), tag: new Map(), author: new Map() });
 
-/** Raw weights per dimension, recency-decayed, then each dimension normalized to
- *  max 1. One query: an event CTE feeds two aggregates (category + tags). */
+/** Bayesian-shrinkage divisor. normalize-to-max made a single like = full 1.0
+ *  affinity (wildly overconfident for a 1-event user). Dividing by (max + K)
+ *  instead keeps a thin profile MUTED and only lets a rich one approach 1, so the
+ *  feed trusts taste in proportion to how much it actually knows. K≈3 events. */
+const SHRINK_K = 3;
+
+/** Raw weights per dimension, recency-decayed, then each dimension shrunk toward 0.
+ *  One query, three stages:
+ *    ev      — every engagement (read1/save2/like3/comment4 + negative unlike/unsave),
+ *              each weighted base · 0.5^(age/HALF_LIFE).
+ *    post_w  — collapse to one weight PER POST, lifted by a re-engagement multiplier:
+ *              a post you read AND saved AND commented is worth far more than three
+ *              one-touch posts. 1 + 0.3·(distinct event types − 1).
+ *    aggregate post_w into the three taste dimensions (category, tag, author). */
 async function computeAffinity(db: DB, userId: string): Promise<Affinity> {
   const now = Date.now();
   const since = now - WINDOW;
@@ -68,7 +87,7 @@ async function computeAffinity(db: DB, userId: string): Promise<Affinity> {
   const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${HALF_LIFE}.0)`);
   const rows = await db.execute(sql`
     WITH ev AS (
-      SELECT post_id, base * (${decay}) AS weight FROM (
+      SELECT post_id, base, base * (${decay}) AS weight FROM (
         SELECT post_id, created_at, 1.0 AS base FROM post_reads    WHERE user_id = ${userId} AND created_at > ${since}
         UNION ALL
         SELECT post_id, created_at, 2.0 AS base FROM post_saves    WHERE user_id = ${userId} AND created_at > ${since}
@@ -76,13 +95,23 @@ async function computeAffinity(db: DB, userId: string): Promise<Affinity> {
         SELECT post_id, created_at, 3.0 AS base FROM post_likes    WHERE user_id = ${userId} AND created_at > ${since}
         UNION ALL
         SELECT post_id, created_at, 4.0 AS base FROM post_comments WHERE user_id = ${userId} AND created_at > ${since}
+        UNION ALL
+        SELECT post_id, created_at, base       FROM user_signals   WHERE user_id = ${userId} AND created_at > ${since}
       ) s
+    ),
+    post_w AS (
+      SELECT post_id,
+             SUM(weight) * (1 + 0.3 * (COUNT(DISTINCT base) - 1)) AS weight
+      FROM ev GROUP BY post_id
     )
-    SELECT 'cat' AS dim, p.category_id AS key, SUM(ev.weight) AS weight
-      FROM ev JOIN posts p ON p.id = ev.post_id GROUP BY p.category_id
+    SELECT 'cat' AS dim, p.category_id AS key, SUM(post_w.weight) AS weight
+      FROM post_w JOIN posts p ON p.id = post_w.post_id GROUP BY p.category_id
     UNION ALL
-    SELECT 'tag' AS dim, t.tag AS key, SUM(ev.weight) AS weight
-      FROM ev JOIN posts p ON p.id = ev.post_id
+    SELECT 'author' AS dim, p.author_id AS key, SUM(post_w.weight) AS weight
+      FROM post_w JOIN posts p ON p.id = post_w.post_id GROUP BY p.author_id
+    UNION ALL
+    SELECT 'tag' AS dim, t.tag AS key, SUM(post_w.weight) AS weight
+      FROM post_w JOIN posts p ON p.id = post_w.post_id
       CROSS JOIN LATERAL jsonb_array_elements_text(p.tags) AS t(tag)
       GROUP BY t.tag
   `);
@@ -92,21 +121,26 @@ async function computeAffinity(db: DB, userId: string): Promise<Affinity> {
     if (!r.key) continue;
     aff[r.dim].set(r.key, Number(r.weight));
   }
-  normalize(aff.cat);
-  normalize(aff.tag);
+  shrink(aff.cat);
+  shrink(aff.tag);
+  shrink(aff.author);
   return aff;
 }
 
-function normalize(m: Map<string, number>): void {
+/** Scale each weight by 1/(max + K), not 1/max. Strongest taste tops out below 1
+ *  for a thin profile and approaches 1 only once it's well-fed; negatives stay
+ *  negative. Confidence grows with evidence instead of snapping to full on event 1. */
+function shrink(m: Map<string, number>): void {
   let max = 0;
   for (const v of m.values()) if (v > max) max = v;
-  if (max > 0) for (const [k, v] of m) m.set(k, v / max);
+  const denom = max + SHRINK_K;
+  for (const [k, v] of m) m.set(k, v / denom);
 }
 
 /** Persist a freshly computed snapshot (replace the user's rows). */
 async function persistAffinity(db: DB, userId: string, aff: Affinity): Promise<void> {
   const now = Date.now();
-  const values = (['cat', 'tag'] as const).flatMap((dim) =>
+  const values = (['cat', 'tag', 'author'] as const).flatMap((dim) =>
     [...aff[dim]].map(([key, weight]) => ({ id: newId('aff'), userId, dimension: dim, key, weight, updatedAt: now })),
   );
   await db.delete(userAffinity).where(eq(userAffinity.userId, userId));
@@ -203,16 +237,22 @@ export async function followedAuthorIds(db: DB, userId: string): Promise<Set<str
   return new Set(rows.map((r) => r.id));
 }
 
-/** Post ids the user has already read or liked (among the given candidates). */
+/** Post ids the user has already engaged with (among the given candidates) — read,
+ *  liked, saved, or commented. Drives the "seen" demotion so nothing you've already
+ *  acted on keeps resurfacing at the top. */
 export async function seenPostIds(db: DB, userId: string, postIds: string[]): Promise<Set<string>> {
   if (!postIds.length) return new Set();
-  const [reads, likes] = await Promise.all([
+  const [reads, likes, saves, comments] = await Promise.all([
     db.select({ id: postReads.postId }).from(postReads)
       .where(and(eq(postReads.userId, userId), inArray(postReads.postId, postIds))),
     db.select({ id: postLikes.postId }).from(postLikes)
       .where(and(eq(postLikes.userId, userId), inArray(postLikes.postId, postIds))),
+    db.select({ id: postSaves.postId }).from(postSaves)
+      .where(and(eq(postSaves.userId, userId), inArray(postSaves.postId, postIds))),
+    db.selectDistinct({ id: postComments.postId }).from(postComments)
+      .where(and(eq(postComments.userId, userId), inArray(postComments.postId, postIds))),
   ]);
-  return new Set([...reads, ...likes].map((r) => r.id));
+  return new Set([...reads, ...likes, ...saves, ...comments].map((r) => r.id));
 }
 
 /* ============================================================================
@@ -263,6 +303,7 @@ const RECENCY_HALF_LIFE = 3 * DAY;
  *  close behind, and only a little pure-trending leaks in. */
 const W_FOLLOW = 3.0;   // in-network: a followed author
 const W_TASTE = 2.0;    // content match to your category + tag taste
+const W_AUTHOR = 1.5;   // you keep engaging this writer (even if you don't follow them)
 const W_TREND = 1.0;    // site-wide hotness (kept small → "a few trending")
 /** Tiny floor so a brand-new post from an unknown author isn't exactly zero
  *  (a sliver of exploration), but nowhere near enough to outrank a relevant post. */
@@ -285,8 +326,9 @@ function scoreCard(p: FeedCard, opts: RankOpts, maxTrend: number): number {
     tagMatch += (opts.idf?.get(t) ?? 0) * aff; // rare tag the user likes ⇒ strong, specific lift
   }
   const taste = catAff + tagWeight * tagMatch;
+  const authorAff = opts.affinity.author.get(p.authorId) ?? 0; // can be negative (reversed engagement)
   const trendNorm = maxTrend > 0 ? Math.max(0, trendSignal(p)) / maxTrend : 0;
-  const relevance = W_FOLLOW * followed + W_TASTE * taste + W_TREND * trendNorm;
+  const relevance = W_FOLLOW * followed + W_TASTE * taste + W_AUTHOR * authorAff + W_TREND * trendNorm;
   const age = Date.now() - (p.publishedAt ?? p.createdAt);
   const recency = Math.pow(0.5, Math.max(0, age) / RECENCY_HALF_LIFE); // fresh ⇒ ~1, 3d ⇒ 0.5
   const seenPenalty = opts.seen.has(p.id) ? 0.35 : 1.0;
@@ -347,16 +389,33 @@ export function rankFeed(cands: FeedCard[], opts: RankOpts): FeedCard[] {
   return out.concat(tail).filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
 }
 
+/** How often to force a fresh post into the feed, derived from how NARROW the
+ *  user's taste is (Shannon entropy of their category affinity). A user who only
+ *  ever touches one category has low entropy → explore hard (small cadence) to pop
+ *  the bubble; a user who reads broadly has high entropy → the ranking is already
+ *  varied, so explore less. Empty taste (new / logged-out) → the neutral default 6. */
+export function exploreCadence(aff: Affinity): number {
+  const w = [...aff.cat.values()].filter((v) => v > 0);
+  if (w.length < 2) return 6;
+  const total = w.reduce((s, v) => s + v, 0);
+  let h = 0;
+  for (const v of w) { const p = v / total; h -= p * Math.log(p); }
+  const hNorm = h / Math.log(w.length); // 0 = one-track taste, 1 = perfectly spread
+  return Math.min(10, Math.max(3, Math.round(3 + 7 * hNorm)));
+}
+
 /** Record (or refresh) a read — the lightest engagement signal. One row per
- *  (post, user); re-reading just refreshes the timestamp. */
+ *  (post, user); re-reading just refreshes the timestamp. Skips the author reading
+ *  their own post (no self-inflation of their taste profile or the post's trending
+ *  velocity): the INSERT…SELECT only fires when the post's author isn't the reader. */
 export async function recordRead(db: DB, postId: string, userId: string): Promise<void> {
-  await db
-    .insert(postReads)
-    .values({ id: newId('read'), postId, userId, createdAt: Date.now() })
-    .onConflictDoUpdate({
-      target: [postReads.postId, postReads.userId],
-      set: { createdAt: Date.now() },
-    });
+  const now = Date.now();
+  await db.execute(sql`
+    INSERT INTO post_reads (id, post_id, user_id, created_at)
+    SELECT ${newId('read')}, ${postId}, ${userId}, ${now}
+    FROM posts WHERE id = ${postId} AND author_id <> ${userId}
+    ON CONFLICT (post_id, user_id) DO UPDATE SET created_at = ${now}
+  `);
 }
 
 /* ============================================================================
@@ -410,7 +469,7 @@ export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult
         ])
       : [emptyAffinity(), new Set<string>(), new Map<string, number>()];
 
-    const ranked = rankFeed(cands, { affinity, following, seen, idf });
+    const ranked = rankFeed(cands, { affinity, following, seen, idf, exploreEvery: exploreCadence(affinity) });
     items = ranked.slice(offset, offset + limit);
   } else {
     // ---- CHRONOLOGICAL TAIL: deep numbered pages past the head, newest-first.

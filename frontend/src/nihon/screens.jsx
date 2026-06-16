@@ -425,9 +425,22 @@ function ArticleLoader(props) {
 const initials = (name)=> (name||'?').trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase() || '?';
 const toCommentView = (c)=> ({
   id: c.id, parentId: c.parentId || null,
-  author: { slug:c.userId, en:c.authorName||'Reader', jp:c.authorName||'読者', initials:initials(c.authorName), tint:'rose' },
+  author: {
+    slug:c.userId, handle:c.authorHandle||null, avatarUrl:c.authorAvatarUrl||null,
+    en:c.authorName||'Reader', jp:c.authorNameJa||c.authorName||'読者',
+    initials:initials(c.authorName), tint:'rose',
+  },
   text: c.body, ts: c.createdAt, likes: c.likes, liked: c.liked, _real:true, userId:c.userId,
 });
+
+// Render a comment body, coloring any run of ● (profanity-masked by the backend) red.
+function CommentText({ text, p }) {
+  if (!text || text.indexOf('●') === -1) return text;
+  const parts = text.split(/(●+)/);
+  return parts.map((s, i) => s[0] === '●'
+    ? <span key={i} style={{color:'#e0245e'}}>{s}</span>
+    : <React.Fragment key={i}>{s}</React.Fragment>);
+}
 function RealArticle(props) {
   const { post, currentUser } = props;
   const id = post._id;
@@ -557,17 +570,23 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
   const [replying, setReplying] = React.useState(false);
   const mine = currentUser && (c.userId===currentUser.id || c.author?.slug===currentUser.slug);
   const canDelete = !!onDelete && (mine || onDelete.canModerate);
+  const href = profileHref(lang, c.author?.handle);
+  const nameEl = (
+    <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>
+      {lang==='jp'?c.author.jp:c.author.en}
+    </span>
+  );
   return (
     <div style={{display:'flex', gap:14}}>
-      <Avatar user={c.author} p={p} size={isReply?34:44}/>
+      {href
+        ? <a href={href} style={{display:'block', textDecoration:'none'}}><Avatar user={c.author} p={p} size={isReply?34:44}/></a>
+        : <Avatar user={c.author} p={p} size={isReply?34:44}/>}
       <div style={{flex:1, minWidth:0}}>
         <div style={{display:'flex', alignItems:'baseline', gap:10, marginBottom:4}}>
-          <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>
-            {lang==='jp'?c.author.jp:c.author.en}
-          </span>
+          {href ? <a href={href} style={{textDecoration:'none'}}>{nameEl}</a> : nameEl}
           <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{relTime(c.ts, lang)}</span>
         </div>
-        <p style={{fontFamily:'var(--fontBody)', fontSize:15, lineHeight:1.6, color:p.ink, marginBottom:8, textWrap:'pretty'}}>{c.text}</p>
+        <p style={{fontFamily:'var(--fontBody)', fontSize:15, lineHeight:1.6, color:p.ink, marginBottom:8, textWrap:'pretty'}}><CommentText text={c.text} p={p}/></p>
         <div style={{display:'flex', alignItems:'center', gap:18}}>
           <button onClick={()=> currentUser ? onLike(slug, c.id) : onRequireLogin()}
             style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color: c.liked?p.stamp:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>

@@ -9,12 +9,16 @@
  * Scoring, in one line:
  *   velocity(post) = Σ events in last WINDOW: read1 + save2 + like3 + comment4,
  *                    each decayed by a 24h half-life            ← "hot today"
+ *   accel(post)    = 1 + recentVel/(velocity+1)  ∈ [1,2]       ← gaining NOW, not just popular
+ *   reach(post)    = (reads_in_window + 2)^0.15                ← mild anti rich-get-richer damp
  *   floor(post)    = (likes + 2·comments + 0.5·saves) / (age_h + 2)^1.4
- *   trend(post)    = floor + W · velocity
+ *   trend(post)    = floor + W · velocity · accel / reach
  *
  * The floor is the old all-time score kept underneath so the list never empties on
- * a quiet day / seeded data; velocity decides who's actually on top. An old post
- * can resurface on a fresh burst; a quiet post drifts out.
+ * a quiet day / seeded data; velocity·accel decides who's actually on top, and reach
+ * lets a high-RATE post break past an already-popular one. An old post resurfaces on
+ * a fresh burst; a quiet post drifts out. The shared hot top is then author-capped
+ * (≤2 per writer) so one prolific/viral author can't own it.
  *
  * TWO PRECOMPUTED LAYERS, both written by the per-minute cron (src/index.ts):
  *   1. posts.trend_score  — momentum written to the indexed column, so the
@@ -32,18 +36,28 @@ import { cardCols, type PostCardRow } from './posts';
 const HOUR = 3_600_000;
 const HALF_LIFE = 24 * HOUR;   // a recent event loses half its weight every 24h
 const WINDOW = 72 * HOUR;      // only engagement inside this window counts as "recent"
+const RECENT = 24 * HOUR;      // the "is it accelerating?" sub-window (last 24h)
 const WEIGHT = 1.0;            // how hard momentum lifts a post above its all-time floor
 
-/** Recompute trend_score for every published post in one UPDATE: the all-time
- *  floor plus WEIGHT·(recent velocity). The velocity CTE sums windowed events
- *  (read1/save2/like3/comment4), each decayed by a 24h half-life. */
+/** Recompute trend_score, momentum-aware. For each post with recent engagement:
+ *    floor    = (likes + 2·comments + 0.5·saves) / (age_h + 2)^1.4        (all-time)
+ *    vel      = Σ windowed events (read1/save2/like3/comment4), 24h-decayed (volume)
+ *    accel    = 1 + recentVel/(vel + 1)   ∈ [1,2]   ← gaining NOW > recently popular
+ *    reach    = (reads_in_window + 2)^0.15           ← mild anti rich-get-richer damp
+ *    trend    = floor + WEIGHT · vel · accel / reach
+ *  accel boosts posts whose engagement is concentrated in the last 24h; reach gently
+ *  divides out raw exposure so a high-RATE post can break in past an already-popular
+ *  one. Only posts with events in WINDOW are touched (#5: a silent post has velocity
+ *  0 → its score is pure floor, which barely moves per minute, so re-scoring it every
+ *  minute is wasted work). */
 export async function recomputeTrendScores(db: DB): Promise<void> {
   const now = Date.now();
   const since = now - WINDOW;
+  const recentSince = now - RECENT;
   const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${HALF_LIFE}.0)`);
   await db.execute(sql`
-    WITH vel AS (
-      SELECT post_id, SUM(base * (${decay})) AS v FROM (
+    WITH ev AS (
+      SELECT post_id, created_at, base, base * (${decay}) AS w FROM (
         SELECT post_id, created_at, 1.0 AS base FROM post_reads    WHERE created_at > ${since}
         UNION ALL
         SELECT post_id, created_at, 2.0 AS base FROM post_saves    WHERE created_at > ${since}
@@ -51,13 +65,23 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
         SELECT post_id, created_at, 3.0 AS base FROM post_likes    WHERE created_at > ${since}
         UNION ALL
         SELECT post_id, created_at, 4.0 AS base FROM post_comments WHERE created_at > ${since}
-      ) s GROUP BY post_id
+      ) s
+    ),
+    vel AS (
+      SELECT post_id,
+        SUM(w) AS v,
+        SUM(w) FILTER (WHERE created_at > ${recentSince}) AS recent_v,
+        COUNT(*) FILTER (WHERE base = 1.0) AS reads
+      FROM ev GROUP BY post_id
     )
     UPDATE posts SET trend_score =
       (likes + 2 * comments + 0.5 * saves)::float
         / power(((${now}::bigint - published_at) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
-      + ${WEIGHT} * COALESCE((SELECT v FROM vel WHERE vel.post_id = posts.id), 0)
-    WHERE status = 'published' AND published_at IS NOT NULL
+      + ${WEIGHT} * vel.v
+          * (1 + COALESCE(vel.recent_v, 0) / (vel.v + 1))
+          / power(vel.reads + 2, 0.15)
+    FROM vel
+    WHERE posts.id = vel.post_id AND status = 'published' AND published_at IS NOT NULL
   `);
 }
 
@@ -96,6 +120,24 @@ export async function countTrending(db: DB): Promise<number> {
 const KEY = 'trending:home:v1';
 const IN_MEM_TTL = 30_000;   // per-isolate memory layer: re-read KV at most every 30s
 const CACHE_POOL = 20;       // cache the top-20; callers slice to their own limit
+const POOL_OVERSCAN = 4;     // pull 4× before capping so the diversity pass still fills 20
+const MAX_PER_AUTHOR = 2;    // one prolific/viral author can't own the hot list
+
+/** Greedy author cap over a score-ordered list: keep at most MAX_PER_AUTHOR per
+ *  author, preserving order, until `limit` cards are chosen. Overflow is dropped
+ *  (we over-fetched), so a single writer can't swamp the trending top. */
+function capByAuthor(cards: PostCardRow[], limit: number): PostCardRow[] {
+  const out: PostCardRow[] = [];
+  const per = new Map<string, number>();
+  for (const c of cards) {
+    const n = per.get(c.authorId) ?? 0;
+    if (n >= MAX_PER_AUTHOR) continue;
+    out.push(c);
+    per.set(c.authorId, n + 1);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 let mem: { at: number; cards: PostCardRow[] } | null = null;
 let inflight: Promise<PostCardRow[]> | null = null;  // single-flight: concurrent misses share one refresh
@@ -113,7 +155,7 @@ async function refresh(db: DB, kv: KVNamespace | undefined): Promise<PostCardRow
       }
     } catch { /* KV miss / parse error → fall through to a live read */ }
   }
-  const cards = await listTrending(db, CACHE_POOL);
+  const cards = capByAuthor(await listTrending(db, CACHE_POOL * POOL_OVERSCAN), CACHE_POOL);
   mem = { at: Date.now(), cards };
   return cards;
 }
@@ -139,6 +181,6 @@ export async function trendingTop(db: DB, opts: { limit?: number; kv?: KVNamespa
 export async function recomputeTrendingCache(db: DB, kv: KVNamespace | undefined): Promise<void> {
   await recomputeTrendScores(db);
   if (!kv) return;
-  const cards = await listTrending(db, CACHE_POOL);
+  const cards = capByAuthor(await listTrending(db, CACHE_POOL * POOL_OVERSCAN), CACHE_POOL);
   await kv.put(KEY, JSON.stringify(cards));
 }
