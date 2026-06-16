@@ -8,13 +8,14 @@ import { id } from '../lib/ids';
 import { randomToken } from '../lib/crypto';
 import { startSession } from '../lib/session';
 import { uniqueHandle } from '../db/queries/users';
+import { limits } from '../middleware/rateLimit';
 
 const google = new Hono<AppEnv>();
 const STATE_COOKIE = 'n101_oauth';
 const now = () => Date.now();
 
 // 1) Kick off: stash a CSRF nonce, bounce the user to Google's consent screen.
-google.get('/start', (c) => {
+google.get('/start', limits.oauth, (c) => {
   const locale = c.req.query('locale') === 'en' ? 'en' : 'ja';
   const nonce = randomToken(16);
 
@@ -39,7 +40,7 @@ google.get('/start', (c) => {
 
 // 2) Callback: verify state, exchange code, upsert the user, start a session,
 //    then redirect to the frontend (which silently refreshes into a session).
-google.get('/callback', async (c) => {
+google.get('/callback', limits.oauth, async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state') ?? '';
   const [nonce, localeRaw] = state.split('.');

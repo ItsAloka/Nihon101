@@ -16,6 +16,11 @@ import notifications from './routes/notifications';
 import trending from './routes/trending';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
+import { recomputeWeatherCache } from './lib/weather';
+import weather from './routes/weather';
+
+// Durable Object class must be exported from the Worker entry to be bound.
+export { RateLimiterDO } from './durable/RateLimiterDO';
 
 const app = new Hono<AppEnv>();
 
@@ -27,6 +32,21 @@ app.use('*', async (c, next) => {
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   return corsMw(c, next);
+});
+
+// Security headers on every API response. This Worker only ever returns JSON or
+// media bytes (never an HTML document), so a deny-everything CSP is safe here and
+// gives defense-in-depth: even if a response were mis-rendered as HTML, nothing
+// could load or execute. The page-level CSP that governs the actual site lives on
+// the frontend (Astro). HSTS is harmless over http (dev) and enforced in prod.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), browsing-topics=()');
+  c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 });
 
 // Close the per-request Postgres pool once the request finishes.
@@ -52,6 +72,7 @@ app.route('/search', search);
 app.route('/feed', feed);
 app.route('/notifications', notifications);
 app.route('/trending', trending);
+app.route('/weather', weather);
 
 export default {
   fetch: app.fetch,
@@ -60,7 +81,12 @@ export default {
     // bake the top-20 cards to KV for the zero-Postgres hot path.
     const { db, pool } = standaloneDb(env);
     try {
-      await recomputeTrendingCache(db, env.TRENDING_KV);
+      // Trending needs the DB; weather is a throttled external fetch (≈ every
+      // 30 min) baked to the same KV. Run both; weather failures are swallowed.
+      await Promise.all([
+        recomputeTrendingCache(db, env.TRENDING_KV),
+        recomputeWeatherCache(env.TRENDING_KV),
+      ]);
     } finally {
       await pool.end();
     }

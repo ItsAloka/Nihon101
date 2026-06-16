@@ -3,6 +3,7 @@ import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
 import { forYouFeed, recordRead } from '../db/queries/for-you';
 
 const app = new Hono<AppEnv>();
@@ -23,7 +24,7 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
 // db/queries/for-you.ts; this route just resolves the viewer and hands off.
 // Logged out = pure trending+fresh (also what SSR and crawlers get).
 // ?limit caps the slice (default 12, max 50); ?page is the 0-based page index.
-app.get('/', async (c) => {
+app.get('/', limits.feed, async (c) => {
   const result = await forYouFeed(getDb(c), {
     userId: await optionalUserId(c),
     limit: Number(c.req.query('limit')) || undefined,
@@ -35,7 +36,7 @@ app.get('/', async (c) => {
 
 // Record that the requester read a post — the affinity signal. Fire-and-forget
 // from the reader; never blocks the page.
-app.post('/read/:postId', requireAuth, async (c) => {
+app.post('/read/:postId', requireAuth, limits.read, async (c) => {
   await recordRead(getDb(c), c.req.param('postId'), c.var.user!.id);
   return c.json({ ok: true });
 });

@@ -3,6 +3,7 @@ import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { publicPostCard } from '../db/queries/posts';
 import { listTrending, countTrending } from '../db/queries/trending';
+import { limits } from '../middleware/rateLimit';
 
 const app = new Hono<AppEnv>();
 
@@ -11,7 +12,7 @@ const app = new Hono<AppEnv>();
 // listing — uncapped, consistent across pages (no dupes, no gaps), so totalPages =
 // ceil(total/limit) is exact. The author-diversity cap lives on the compact home
 // hot-widget (trendingTop), not here, so the full page never shows empty tail pages.
-app.get('/', async (c) => {
+app.get('/', limits.feed, async (c) => {
   const db = getDb(c);
   const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 12));
   const page = Math.max(0, Number(c.req.query('page')) || 0);

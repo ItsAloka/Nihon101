@@ -2,6 +2,8 @@ import { Hono, type Context } from 'hono';
 import { getDb, standaloneDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
+import { sanitizeHtml } from '../lib/sanitizeHtml';
 import { verifyAccess } from '../lib/tokens';
 import { getCategoryById, bumpCategoryCount } from '../db/queries/categories';
 import { bumpTagCounts, diffTags } from '../db/queries/tags';
@@ -48,7 +50,9 @@ const MAX_COMMENT = 4_000;
 const MAX_TITLE = 300;
 const MAX_EXCERPT = 600;
 const MAX_BODY = 200_000;
-const clampBody = (v: unknown) => String(v ?? '').slice(0, MAX_BODY);
+// Length-cap THEN allowlist-sanitize, so the stored body is always safe HTML
+// regardless of what was POSTed (the editor's output is trusted; the API is not).
+const clampBody = (v: unknown) => sanitizeHtml(String(v ?? '').slice(0, MAX_BODY));
 
 const STATUSES: PostStatus[] = ['draft', 'published'];
 const DENSITIES: PostDensity[] = ['compact', 'normal', 'relaxed'];
@@ -81,7 +85,7 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
       const patch: Record<string, unknown> = {};
       if (out.title != null) patch[to === 'en' ? 'titleEn' : 'titleJa'] = out.title;
       if (out.excerpt != null) patch[to === 'en' ? 'excerptEn' : 'excerptJa'] = out.excerpt;
-      if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = out.body;
+      if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = sanitizeHtml(out.body);
       if (Object.keys(patch).length) await updatePost(bgDb, post.id, patch);
     } catch { /* leave the other locale empty; next publish retries */ }
     finally { try { await pool.end(); } catch { /* noop */ } }
@@ -115,7 +119,7 @@ function parseScore(input: unknown): number | null {
 }
 
 // List posts. Published is public; drafts are owner-only.
-app.get('/', async (c) => {
+app.get('/', limits.publicRead, async (c) => {
   const categoryId = c.req.query('cat') || undefined;
   const authorId = c.req.query('author') || undefined;
   const statusParam = c.req.query('status');
@@ -141,7 +145,7 @@ app.get('/', async (c) => {
 });
 
 // Single post by slug (reading view). Drafts visible only to their author.
-app.get('/slug/:slug', async (c) => {
+app.get('/slug/:slug', limits.publicRead, async (c) => {
   const post = await getPostWithAuthorBySlug(db(c), c.req.param('slug'));
   if (!post) return c.json({ error: 'not_found' }, 404);
   const uid = await currentUserId(c);
@@ -161,7 +165,7 @@ app.get('/saved', requireAuth, async (c) => {
 });
 
 // Single post. Drafts visible only to their author.
-app.get('/:id', async (c) => {
+app.get('/:id', limits.publicRead, async (c) => {
   const post = await getPostWithAuthor(db(c), c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
   const uid = await currentUserId(c);
@@ -172,7 +176,7 @@ app.get('/:id', async (c) => {
 });
 
 // Create a draft or published post.
-app.post('/', requireAuth, async (c) => {
+app.post('/', requireAuth, limits.postCreate, async (c) => {
   const d = db(c);
   const body = await c.req.json().catch(() => null);
 
@@ -216,7 +220,7 @@ app.post('/', requireAuth, async (c) => {
 });
 
 // Update (owner only). Handles draft<->published count + category moves.
-app.put('/:id', requireAuth, async (c) => {
+app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   const d = db(c);
   const existing = await getPostById(d, c.req.param('id'));
   if (!existing) return c.json({ error: 'not_found' }, 404);
@@ -282,7 +286,7 @@ app.put('/:id', requireAuth, async (c) => {
 });
 
 // Delete (owner only). Drop the published count if it was live.
-app.delete('/:id', requireAuth, async (c) => {
+app.delete('/:id', requireAuth, limits.postDelete, async (c) => {
   const d = db(c);
   const existing = await getPostById(d, c.req.param('id'));
   if (!existing) return c.json({ error: 'not_found' }, 404);
@@ -299,7 +303,7 @@ app.delete('/:id', requireAuth, async (c) => {
 // ---- Engagement: likes + comments (published posts only) ----------------
 
 // Toggle the requester's like on a post.
-app.post('/:id/like', requireAuth, async (c) => {
+app.post('/:id/like', requireAuth, limits.likePost, async (c) => {
   const d = db(c);
   const post = await getPostById(d, c.req.param('id'));
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
@@ -315,7 +319,7 @@ app.post('/:id/like', requireAuth, async (c) => {
 
 // Toggle the requester's save (bookmark) on a post, keyed by slug (the client
 // works in slugs; the slug is unique). Returns the new state + the post's count.
-app.post('/slug/:slug/save', requireAuth, async (c) => {
+app.post('/slug/:slug/save', requireAuth, limits.save, async (c) => {
   const d = db(c);
   const post = await getPostBySlug(d, c.req.param('slug'));
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
@@ -325,7 +329,7 @@ app.post('/slug/:slug/save', requireAuth, async (c) => {
 
 // List a post's comments (public). Includes the viewer's per-comment liked
 // state when a valid token is present.
-app.get('/:id/comments', async (c) => {
+app.get('/:id/comments', limits.publicRead, async (c) => {
   const d = db(c);
   const post = await getPostById(d, c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
@@ -336,7 +340,7 @@ app.get('/:id/comments', async (c) => {
 });
 
 // Add a comment.
-app.post('/:id/comments', requireAuth, async (c) => {
+app.post('/:id/comments', requireAuth, limits.comment, async (c) => {
   const d = db(c);
   const post = await getPostById(d, c.req.param('id'));
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
@@ -375,7 +379,7 @@ app.post('/:id/comments', requireAuth, async (c) => {
 });
 
 // Delete a comment (its author or the post's owner).
-app.delete('/:id/comments/:cid', requireAuth, async (c) => {
+app.delete('/:id/comments/:cid', requireAuth, limits.comment, async (c) => {
   const d = db(c);
   const comment = await getComment(d, c.req.param('cid'));
   if (!comment || comment.postId !== c.req.param('id')) return c.json({ error: 'not_found' }, 404);
@@ -387,7 +391,7 @@ app.delete('/:id/comments/:cid', requireAuth, async (c) => {
 });
 
 // Toggle the requester's like on a comment.
-app.post('/:id/comments/:cid/like', requireAuth, async (c) => {
+app.post('/:id/comments/:cid/like', requireAuth, limits.likeComment, async (c) => {
   const d = db(c);
   const comment = await getComment(d, c.req.param('cid'));
   if (!comment || comment.postId !== c.req.param('id')) return c.json({ error: 'not_found' }, 404);

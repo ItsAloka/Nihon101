@@ -18,6 +18,17 @@ bucket_name = "nihon101-media"
 binding = "TRENDING_KV"
 id = "trending_kv_local"
 
+# Exact atomic rate limiter for the auth brute-force class (login/register). One
+# DO instance per (bucket, ip); KV's eventual consistency would let a multi-region
+# burst leak past a strict cap, a DO is a single global actor so the count is exact.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimiterDO"]
+
 [triggers]
 # Per minute: recompute momentum trend_score for all posts + bake the top-20 to KV.
 crons = ["* * * * *"]
