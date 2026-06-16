@@ -76,3 +76,39 @@
 13. **`recordRead` writes on every article open** (`backend/src/routes/feed.ts`).
     One upsert per read — fine, but high-write. If it gets hot, debounce client-
     side or batch. Indexed by `(post_id,user_id)` unique so no row blow-up.
+
+## Pre-launch gaps — added 2026-06-16 (security + rate-limit audit)
+
+> Audited after shipping the rate-limiter (DO/KV/memory three-tier), stored-XSS
+> sanitizer, and API security headers. These four are the remaining **operational**
+> gaps — not correctness or security holes. Recommended order: **14 → 15 → 16 → 17.**
+
+14. **Connection pooling (blocker)** — same as #6 above; restating as a launch
+    gate. The Worker opens + closes a Postgres connection **per request**; at 50k
+    users this exhausts connections and adds latency. Fix before public launch:
+    Cloudflare **Hyperdrive** in front of Neon (pooling + edge cache, recommended),
+    or Neon's **`-pooler`** connection string (PgBouncer) and stop closing the pool
+    per request. Set the prod `DATABASE_URL` as a Wrangler secret. (CLAUDE.md PROD TODO.)
+
+15. **Media served without edge caching** (`backend/src/routes/media.ts:40`).
+    `GET /media/:key` reads from the **private** R2 bucket on every hit (R2 charges
+    per GET), so at AdSense-traffic levels each edge miss is wasted cost + latency.
+    The Worker-proxy approach is correct (keeps the bucket private; do NOT switch to
+    expiring presigned URLs — those break stable/cacheable public blog images). Fix:
+    wrap the serve path in `caches.default` (put on first read, hit on repeat) and
+    honor `If-None-Match` → `304`. Optionally front it with a `media.nihon101.com`
+    custom domain for CDN caching. ~15 lines.
+
+16. **Frontend page CSP not set** (`frontend/` Astro responses). The stored-XSS hole
+    is closed at the data layer (write-time sanitizer + backfill), so this is now
+    **defense-in-depth**, not an open hole. Deliberately deferred until AdSense is
+    wired, because AdSense dictates the required `script-src` — building the CSP
+    before then means building it twice. Add an Astro middleware setting
+    `Content-Security-Policy` (script-src/style-src/img-src/frame-src tuned to React
+    islands + Google OAuth + AdSense) when ads go in.
+
+17. **No automated tests** — none exist. Fine for shipping, but (a) a recruiter will
+    ask, and (b) the rate-limiter, sanitizer, and auth/refresh rotation are exactly
+    the kind of security-critical logic worth locking with tests. Add a small suite
+    (the sanitizer XSS battery + rate-limit tier behavior + refresh-token rotation)
+    before or just after launch.
