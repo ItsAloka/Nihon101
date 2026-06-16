@@ -39,17 +39,19 @@ const WINDOW = 72 * HOUR;      // only engagement inside this window counts as "
 const RECENT = 24 * HOUR;      // the "is it accelerating?" sub-window (last 24h)
 const WEIGHT = 1.0;            // how hard momentum lifts a post above its all-time floor
 
-/** Recompute trend_score, momentum-aware. For each post with recent engagement:
+/** Recompute trend_score for EVERY published post:
  *    floor    = (likes + 2·comments + 0.5·saves) / (age_h + 2)^1.4        (all-time)
  *    vel      = Σ windowed events (read1/save2/like3/comment4), 24h-decayed (volume)
  *    accel    = 1 + recentVel/(vel + 1)   ∈ [1,2]   ← gaining NOW > recently popular
  *    reach    = (reads_in_window + 2)^0.15           ← mild anti rich-get-richer damp
  *    trend    = floor + WEIGHT · vel · accel / reach
- *  accel boosts posts whose engagement is concentrated in the last 24h; reach gently
+ *  Every published post gets at least its all-time floor (so the Trending page
+ *  always fills, ranked sensibly even on a quiet day); posts with momentum get the
+ *  velocity·accel/reach term added on top and rise above the floor crowd. accel
+ *  boosts posts whose engagement is concentrated in the last 24h; reach gently
  *  divides out raw exposure so a high-RATE post can break in past an already-popular
- *  one. Only posts with events in WINDOW are touched (#5: a silent post has velocity
- *  0 → its score is pure floor, which barely moves per minute, so re-scoring it every
- *  minute is wasted work). */
+ *  one. The velocity CTE only sums posts with events in WINDOW (cheap); the floor is
+ *  applied to the rest via a LEFT JOIN with a 0 momentum term. */
 export async function recomputeTrendScores(db: DB): Promise<void> {
   const now = Date.now();
   const since = now - WINDOW;
@@ -75,13 +77,16 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
       FROM ev GROUP BY post_id
     )
     UPDATE posts SET trend_score =
-      (likes + 2 * comments + 0.5 * saves)::float
-        / power(((${now}::bigint - published_at) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
-      + ${WEIGHT} * vel.v
-          * (1 + COALESCE(vel.recent_v, 0) / (vel.v + 1))
-          / power(vel.reads + 2, 0.15)
-    FROM vel
-    WHERE posts.id = vel.post_id AND status = 'published' AND published_at IS NOT NULL
+      (posts.likes + 2 * posts.comments + 0.5 * posts.saves)::float
+        / power(((${now}::bigint - posts.published_at) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
+      + COALESCE(
+          ${WEIGHT} * vel.v
+            * (1 + COALESCE(vel.recent_v, 0) / (vel.v + 1))
+            / power(vel.reads + 2, 0.15),
+          0)
+    FROM (SELECT id FROM posts WHERE status = 'published' AND published_at IS NOT NULL) pub
+    LEFT JOIN vel ON vel.post_id = pub.id
+    WHERE posts.id = pub.id
   `);
 }
 
