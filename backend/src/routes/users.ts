@@ -6,6 +6,7 @@ import type { AppEnv } from '../types';
 import { getDb } from '../db/client';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
 import { getUserByHandle, getUserById, listAuthors, countAuthors } from '../db/queries/users';
 import { listPosts, publicPost } from '../db/queries/posts';
 import { follow, unfollow, isFollowing, followCounts, listFollowing, listFollowers, listFollowingUsers } from '../db/queries/follows';
@@ -32,7 +33,7 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
 
 // Writers directory (public, SSR) — every author with a published post.
 // ?sort=top|new, ?page paginates. Declared before /:handle.
-app.get('/', async (c) => {
+app.get('/', limits.publicRead, async (c) => {
   const db = getDb(c);
   const limit = Math.min(48, Math.max(1, Number(c.req.query('limit')) || 24));
   const page = Math.max(0, Number(c.req.query('page')) || 0);
@@ -55,7 +56,7 @@ app.get('/me/following', requireAuth, async (c) => {
 // Readers (followers) + Writers (following) lists for the profile modal —
 // newest-follow-first, each row carrying the viewer's follow-state. Public, but
 // reads the viewer's token to fill per-row follow buttons. Declared before /:handle.
-app.get('/:handle/followers', async (c) => {
+app.get('/:handle/followers', limits.publicRead, async (c) => {
   const db = getDb(c);
   const u = await resolveUser(db, c.req.param('handle'));
   if (!u) return c.json({ error: 'not_found' }, 404);
@@ -67,7 +68,7 @@ app.get('/:handle/followers', async (c) => {
   return c.json({ users });
 });
 
-app.get('/:handle/following', async (c) => {
+app.get('/:handle/following', limits.publicRead, async (c) => {
   const db = getDb(c);
   const u = await resolveUser(db, c.req.param('handle'));
   if (!u) return c.json({ error: 'not_found' }, 404);
@@ -79,7 +80,7 @@ app.get('/:handle/following', async (c) => {
   return c.json({ users });
 });
 
-app.get('/:handle', async (c) => {
+app.get('/:handle', limits.publicRead, async (c) => {
   const db = getDb(c);
   const u = await getUserByHandle(db, c.req.param('handle').toLowerCase());
   if (!u) return c.json({ error: 'not_found' }, 404);
@@ -114,7 +115,7 @@ app.get('/:handle', async (c) => {
 });
 
 // Follow a user (param = id or handle). Notifies the followee. Idempotent.
-app.post('/:id/follow', requireAuth, async (c) => {
+app.post('/:id/follow', requireAuth, limits.follow, async (c) => {
   const db = getDb(c);
   const me = c.var.user!.id;
   const target = await resolveUser(db, c.req.param('id'));
@@ -128,7 +129,7 @@ app.post('/:id/follow', requireAuth, async (c) => {
 });
 
 // Unfollow a user (param = id or handle). Idempotent.
-app.delete('/:id/follow', requireAuth, async (c) => {
+app.delete('/:id/follow', requireAuth, limits.follow, async (c) => {
   const db = getDb(c);
   const target = await resolveUser(db, c.req.param('id'));
   if (!target) return c.json({ error: 'not_found' }, 404);

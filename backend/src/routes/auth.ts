@@ -10,6 +10,7 @@ import { signAccess } from '../lib/tokens';
 import { clearRefreshCookie, readRefreshCookie } from '../lib/cookies';
 import { sendEmail, resetEmailHtml } from '../lib/mail';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
 import { startSession, revokeFamily } from '../lib/session';
 import { uniqueHandle, handleTaken, HANDLE_RE } from '../db/queries/users';
 
@@ -37,7 +38,7 @@ const publicUser = (u: any): PublicUser => ({
 });
 
 // ---------------------------------------------------------------- register
-auth.post('/register', async (c) => {
+auth.post('/register', limits.register, async (c) => {
   const { email, password, displayName } = await c.req.json().catch(() => ({}));
   const mail = String(email ?? '').trim().toLowerCase();
   const name = String(displayName ?? '').trim();
@@ -69,7 +70,7 @@ auth.post('/register', async (c) => {
 });
 
 // ------------------------------------------------------------------- login
-auth.post('/login', async (c) => {
+auth.post('/login', limits.login, async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const mail = String(email ?? '').trim().toLowerCase();
 
@@ -86,7 +87,7 @@ auth.post('/login', async (c) => {
 });
 
 // ----------------------------------------------------------------- refresh
-auth.post('/refresh', async (c) => {
+auth.post('/refresh', limits.refresh, async (c) => {
   const raw = readRefreshCookie(c);
   if (!raw) return c.json({ error: 'no_session' }, 401);
 
@@ -153,7 +154,7 @@ auth.get('/me', requireAuth, async (c) => {
 });
 
 // -------------------------------------------------------- update profile
-auth.patch('/me', requireAuth, async (c) => {
+auth.patch('/me', requireAuth, limits.profile, async (c) => {
   const sess = c.get('user')!;
   const body = await c.req.json().catch(() => ({}));
   const set: Record<string, unknown> = {};
@@ -214,7 +215,7 @@ auth.patch('/me', requireAuth, async (c) => {
 });
 
 // ------------------------------------------------------- change password
-auth.post('/change-password', requireAuth, async (c) => {
+auth.post('/change-password', requireAuth, limits.profile, async (c) => {
   const sess = c.get('user')!;
   const { current, password } = await c.req.json().catch(() => ({}));
   if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
@@ -262,7 +263,7 @@ auth.delete('/me', requireAuth, async (c) => {
 });
 
 // ------------------------------------------------------------------ forgot
-auth.post('/forgot', async (c) => {
+auth.post('/forgot', limits.forgot, async (c) => {
   const { email, locale } = await c.req.json().catch(() => ({}));
   const mail = String(email ?? '').trim().toLowerCase();
   const loc: 'ja' | 'en' = locale === 'en' ? 'en' : 'ja';
@@ -295,7 +296,7 @@ auth.post('/forgot', async (c) => {
 });
 
 // ------------------------------------------------------------------- reset
-auth.post('/reset', async (c) => {
+auth.post('/reset', limits.reset, async (c) => {
   const { token, password } = await c.req.json().catch(() => ({}));
   if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
   if (!token) return c.json({ error: 'invalid_token' }, 400);

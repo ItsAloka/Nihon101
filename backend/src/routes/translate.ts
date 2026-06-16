@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
 import { translateFields, type Locale, type TranslateFields } from '../lib/openai';
 
 const app = new Hono<AppEnv>();
@@ -8,7 +9,7 @@ const LOCALES: Locale[] = ['en', 'ja'];
 
 /** Translate editor fields between locales via ChatGPT (auth-only — it costs us
  * tokens). Body: { to: 'en'|'ja', fields: { title?, excerpt?, body? } }. */
-app.post('/', requireAuth, async (c) => {
+app.post('/', requireAuth, limits.translate, async (c) => {
   if (!c.env.OPENAI_API_KEY) return c.json({ error: 'translate_unconfigured' }, 503);
 
   const body = await c.req.json().catch(() => null);

@@ -3,6 +3,9 @@ export type AppBindings = {
   // Site-wide trending hot-cache (top-20 cards), written by the per-minute cron.
   // Optional: absent in local dev with no KV binding → trending falls back to DB.
   TRENDING_KV?: KVNamespace;
+  // Exact atomic rate limiter for the auth brute-force class (login/register).
+  // Optional: absent → rateLimit('do') falls back to the KV tier.
+  RATE_LIMITER?: DurableObjectNamespace;
 };
 
 export type AppVars = {

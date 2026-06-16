@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
+import { limits } from '../middleware/rateLimit';
 
 const app = new Hono<AppEnv>();
 
@@ -14,7 +15,7 @@ const EXT: Record<string, string> = {
 };
 
 // Upload one image. Returns a public URL pointing back at GET /media/:key.
-app.post('/', requireAuth, async (c) => {
+app.post('/', requireAuth, limits.upload, async (c) => {
   const form = await c.req.formData().catch(() => null);
   // Workers/DOM File typings clash here, so treat the entry structurally.
   const file = form?.get('file') as unknown as

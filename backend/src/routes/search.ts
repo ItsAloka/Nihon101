@@ -5,6 +5,7 @@ import { publicPostCard } from '../db/queries/posts';
 import { searchPosts, suggestPosts, searchAuthors, type SearchSort, type Loc } from '../db/queries/search';
 import { topTags, searchTags } from '../db/queries/tags';
 import { searchCategories } from '../db/queries/categories';
+import { limits } from '../middleware/rateLimit';
 
 const app = new Hono<AppEnv>();
 
@@ -16,7 +17,7 @@ const loc = (c: { req: { query: (k: string) => string | undefined } }): Loc =>
 // lists by category/tag (the SSR category + tag pages call it that way). ?page is
 // 0-based, 12 per page by default. Author matches ride along on the first page of a
 // text search.
-app.get('/', async (c) => {
+app.get('/', limits.search, async (c) => {
   const db = getDb(c);
   const q = c.req.query('q')?.trim() || '';
   const categoryId = c.req.query('cat') || undefined;
@@ -41,7 +42,7 @@ app.get('/', async (c) => {
 
 // Top tags by published-post usage — the "try searching for" suggestion chips on
 // the empty search page.
-app.get('/suggest', async (c) => {
+app.get('/suggest', limits.search, async (c) => {
   const rows = await topTags(getDb(c), 8);
   return c.json({ tags: rows.map((t) => ({ id: t.id, label: t.label, postCount: t.postCount })) });
 });
@@ -49,7 +50,7 @@ app.get('/suggest', async (c) => {
 // Query-aware autocomplete for the search dropdown: grouped matches in the order the
 // UI renders them — posts, categories, tags, authors. Each group is capped small;
 // the full results live on the /search page.
-app.get('/autocomplete', async (c) => {
+app.get('/autocomplete', limits.autocomplete, async (c) => {
   const db = getDb(c);
   const q = c.req.query('q')?.trim() || '';
   if (!q) return c.json({ posts: [], categories: [], tags: [], authors: [] });
