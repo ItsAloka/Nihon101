@@ -13,7 +13,7 @@ const jp = locale === 'ja';
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
 const res = await fetch(`${API}/home`);
 if (!res.ok) return new Response(null, { status: 502 });
-const { hero, feature, picks, recent, categories, topAuthors } = await res.json();
+const { hero, feature, picks, recent, categories, topAuthors, weather } = await res.json();
 const heroSlides = (hero || []).filter(Boolean);
 const catById = new Map(categories.map((c: any) => [c.id, c]));
 
@@ -63,19 +63,17 @@ const washOf = (p: any) => {
   return { lead: words.slice(0, 2).join(' '), rest: words.slice(2).join(' ') };
 };
 
-// Issue ribbon — decorative, derived from the real date.
+// Masthead date — today's date, newspaper-style (paired with weather on the right).
 const nowD = new Date();
 const MONTHS_JP = ['睦月', '如月', '弥生', '卯月', '皐月', '水無月', '文月', '葉月', '長月', '神無月', '霜月', '師走'];
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAY_JP = ['日', '月', '火', '水', '木', '金', '土'];
+const WEEKDAY_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const KANJI_DIGITS = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 const kanjiYear = String(nowD.getFullYear()).split('').map((d) => KANJI_DIGITS[+d]).join('');
-const isoWeek = (() => {
-  const d = new Date(Date.UTC(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - y0.getTime()) / 86400000 + 1) / 7);
-})();
-const vol = String(Math.max(1, nowD.getFullYear() - 2025)).padStart(2, '0');
-const issue = String(isoWeek).padStart(2, '0');
+const kanjiDay = String(nowD.getDate()).split('').map((d) => KANJI_DIGITS[+d]).join('');
+const mastheadJp = `${kanjiYear}年 ${MONTHS_JP[nowD.getMonth()]} ${kanjiDay}日 ${WEEKDAY_JP[nowD.getDay()]}曜日`;
+const mastheadEn = `${WEEKDAY_EN[nowD.getDay()]}, ${nowD.getDate()} ${MONTHS_EN[nowD.getMonth()]} ${nowD.getFullYear()}`;
 
 const topCats = categories.slice(0, 9);
 const otherLocaleHref = `/${jp ? 'en' : 'ja'}/`;
@@ -148,6 +146,8 @@ const pageDesc = jp
       .ribbon { border-bottom: 1px solid var(--line); background: var(--surface); }
       .ribbon .wrap { padding: 10px 32px; display: flex; justify-content: space-between; font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.1em; text-transform: uppercase; }
       .ribbon .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--stamp); display: inline-block; margin-right: 10px; }
+      .ribbon-wx { display: inline-flex; align-items: center; }
+      .ribbon-wx .ribbon-wx-text { transition: opacity 0.22s ease; text-transform: none; }
 
       /* hero */
       .hero { padding-top: 48px; padding-bottom: 16px; position: relative; }
@@ -288,8 +288,15 @@ const pageDesc = jp
 
     <div class="ribbon">
       <div class="wrap">
-        <span>vol. {vol} · issue {issue} · {MONTHS_JP[nowD.getMonth()]} {kanjiYear}</span>
-        <span><span class="dot"></span>{jp ? '今週も、ゆっくり読もう' : 'read slowly this week'}</span>
+        <span>{jp ? mastheadJp : mastheadEn}</span>
+        <span class="ribbon-wx" data-wx={JSON.stringify(weather || [])} data-jp={jp ? '1' : '0'}>
+          <span class="dot"></span>
+          <span class="ribbon-wx-text">
+            {weather && weather.length > 0
+              ? `${weather[0].glyph} ${jp ? weather[0].ja : weather[0].en} ${weather[0].temp}° · ${jp ? weather[0].condJa : weather[0].condEn}`
+              : (jp ? '今週も、ゆっくり読もう' : 'read slowly this week')}
+          </span>
+        </span>
       </div>
     </div>
 
@@ -414,34 +421,6 @@ const pageDesc = jp
         </aside>
       </section>
 
-      <!-- Editor's reading list (recency-ranked stand-in until the admin pick tool) -->
-      {picks && picks.length > 0 && (
-        <>
-          <div class="sec-head">
-            <div>
-              <div class="sec-kicker">〜 {jp ? '今週のえらびもの' : 'picked this week'}</div>
-              <h2 class="sec">{jp ? '編集者の読みもの' : 'The editor’s reading list'}<span class="alt">{jp ? 'The editor’s reading list' : '編集者の読みもの'}</span></h2>
-            </div>
-          </div>
-          <ol class="editor-list">
-            {picks.map((pk: any, i: number) => (
-              <li>
-                <div class="num">{String(i + 1).padStart(2, '0')}</div>
-                <div>
-                  <div class="cat">{catLabel(pk.categoryId)} · {pk.readMins} min</div>
-                  <a href={read(pk.slug)}><h3>{title(pk)}</h3></a>
-                  <p class="ex">{(excerpt(pk) || '').slice(0, 120)}…</p>
-                  <a class="achip" href={`/${locale}/u/${pk.authorHandle}`}>
-                    <span class="ava" style={`width:26px;height:26px;font-size:11px;overflow:hidden;background:linear-gradient(135deg, ${tintOf(pk.authorHandle)}, #f2f0eb);`}>{pk.authorAvatarUrl ? <img src={pk.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(pk.authorName || '?')}</span>
-                    <span class="nm" style="font-size:12.5px;">{authorName(pk)}</span>
-                  </a>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
-
       <!-- Recently published (real) -->
       <div class="sec-head">
         <div>
@@ -552,6 +531,25 @@ const pageDesc = jp
         // (home-chrome.jsx), which has the session + backend client so a save
         // persists to post_saves and shows up on the Saved page. (Plain localStorage
         // here would never reach the backend — the cause of "saved posts vanish".)
+      })();
+
+      // Weather ribbon — cycle one city at a time (~6s). Data is SSR'd into a
+      // data-attr, so no fetch here; it just rotates the already-loaded list.
+      (function () {
+        const el = document.querySelector('.ribbon-wx');
+        const out = el && el.querySelector('.ribbon-wx-text');
+        if (!el || !out) return;
+        let cities = [];
+        try { cities = JSON.parse(el.getAttribute('data-wx') || '[]'); } catch (e) { return; }
+        if (!cities.length) return;
+        const jp = el.getAttribute('data-jp') === '1';
+        const fmt = (c) => `${c.glyph} ${jp ? c.ja : c.en} ${c.temp}° · ${jp ? c.condJa : c.condEn}`;
+        let i = 0;
+        setInterval(() => {
+          i = (i + 1) % cities.length;
+          out.style.opacity = '0';
+          setTimeout(() => { out.textContent = fmt(cities[i]); out.style.opacity = ''; }, 220);
+        }, 6000);
       })();
     </script>
   </body>
