@@ -24,6 +24,7 @@ import {
 } from '../db/queries/posts';
 import { translateFields, type Locale } from '../lib/openai';
 import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
+import { getUserById } from '../db/queries/users';
 import {
   togglePostLike,
   hasLikedPost,
@@ -352,9 +353,10 @@ app.post('/:id/comments', requireAuth, async (c) => {
     parentId = parent.parentId ?? parent.id;
   }
   const row = await createComment(d, post.id, c.var.user!.id, text, parentId);
+  const me = c.var.user!.id;
+  const author = await getUserById(d, me); // token has no handle/avatar — fetch for the response
   // Notify the post author of a new comment; if this is a reply, also notify the
   // parent comment's author (skip dupes + self-notifications).
-  const me = c.var.user!.id;
   await createNotification(d, { userId: post.authorId, type: 'comment', actorId: me, postId: post.id, commentId: row.id });
   if (parentId) {
     const parent = await getComment(d, parentId);
@@ -362,7 +364,14 @@ app.post('/:id/comments', requireAuth, async (c) => {
       await createNotification(d, { userId: parent.userId, type: 'reply', actorId: me, postId: post.id, commentId: row.id });
     }
   }
-  return c.json({ comment: publicComment({ ...row, authorName: c.var.user!.username, liked: false }) }, 201);
+  return c.json({ comment: publicComment({
+    ...row,
+    authorName: author?.displayName ?? c.var.user!.username,
+    authorNameJa: author?.displayNameJa ?? null,
+    authorHandle: author?.handle ?? null,
+    authorAvatarUrl: author?.avatarUrl ?? null,
+    liked: false,
+  }) }, 201);
 });
 
 // Delete a comment (its author or the post's owner).

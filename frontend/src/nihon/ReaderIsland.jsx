@@ -15,7 +15,11 @@ const readMode = () => { try { return localStorage.getItem("nihon.mode") || "lig
 const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 const toCommentView = (c) => ({
   id: c.id, parentId: c.parentId || null,
-  author: { slug: c.userId, en: c.authorName || "Reader", jp: c.authorName || "読者", initials: initials(c.authorName), tint: "rose" },
+  author: {
+    slug: c.userId, handle: c.authorHandle || null, avatarUrl: c.authorAvatarUrl || null,
+    en: c.authorName || "Reader", jp: c.authorNameJa || c.authorName || "読者",
+    initials: initials(c.authorName), tint: "rose",
+  },
   text: c.body, ts: c.createdAt, likes: c.likes, liked: c.liked, _real: true, userId: c.userId,
 });
 

@@ -220,6 +220,21 @@ export const userAffinity = pgTable('user_affinity', {
   index('user_affinity_user_idx').on(t.userId),
 ]);
 
+// Negative engagement events for the For You taste profile. When a user REVERSES
+// a positive (unlike, unsave) the original row is deleted, leaving no trace — so we
+// drop a timestamped negative here instead. base is a negative weight (e.g. −3
+// unlike, −2 unsave); computeAffinity folds it into the same decayed event stream,
+// so reversing engagement pushes that taste below baseline. Decays out with WINDOW.
+export const userSignals = pgTable('user_signals', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  postId: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  base: real('base').notNull(), // negative weight (−3 unlike, −2 unsave)
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('user_signals_user_idx').on(t.userId, t.createdAt),
+]);
+
 // In-app notification. type ∈ like | comment | reply | follow | post. actor is
 // who triggered it; post/comment are the target (nullable for follow). read_at
 // null = unread. Indexed by recipient + recency for the bell panel.

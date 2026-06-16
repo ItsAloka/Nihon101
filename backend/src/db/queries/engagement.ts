@@ -1,7 +1,15 @@
 import { eq, and, desc, sql } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, postLikes, postComments, commentLikes, postSaves, users } from '../schema';
+import { posts, postLikes, postComments, commentLikes, postSaves, userSignals, users } from '../schema';
 import { id as newId } from '../../lib/ids';
+import { maskProfanity } from '../../lib/profanity';
+
+/** Drop a negative taste signal when a user reverses a positive (unlike/unsave).
+ *  The original event row is deleted, so this is the only trace left for the For
+ *  You profile. Fire-and-forget weight; mirrors the +base values in computeAffinity. */
+function recordNegative(db: DB, postId: string, userId: string, base: number) {
+  return db.insert(userSignals).values({ id: newId('neg'), postId, userId, base, createdAt: Date.now() });
+}
 
 // ---- Post likes (toggle) -------------------------------------------------
 
@@ -15,6 +23,7 @@ export async function togglePostLike(db: DB, postId: string, userId: string) {
 
   if (existing) {
     await db.delete(postLikes).where(eq(postLikes.id, existing.id));
+    await recordNegative(db, postId, userId, -3); // unlike → strong negative taste signal
     await db.update(posts)
       .set({ likes: sql`GREATEST(${posts.likes} - 1, 0)` })
       .where(eq(posts.id, postId));
@@ -53,6 +62,7 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
 
   if (existing) {
     await db.delete(postSaves).where(eq(postSaves.id, existing.id));
+    await recordNegative(db, postId, userId, -2); // unsave → moderate negative taste signal
     await db.update(posts)
       .set({ saves: sql`GREATEST(${posts.saves} - 1, 0)` })
       .where(eq(posts.id, postId));
@@ -92,7 +102,12 @@ export async function savedPostIds(db: DB, userId: string): Promise<string[]> {
 
 // ---- Comments ------------------------------------------------------------
 
-export type CommentRow = typeof postComments.$inferSelect & { authorName: string | null };
+export type CommentRow = typeof postComments.$inferSelect & {
+  authorName: string | null;
+  authorNameJa: string | null;
+  authorHandle: string | null;
+  authorAvatarUrl: string | null;
+};
 
 /** List a post's comments (newest first) with author name and, when a viewer is
  * known, that viewer's per-comment liked state in one query. */
@@ -108,6 +123,9 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
       createdAt: postComments.createdAt,
       updatedAt: postComments.updatedAt,
       authorName: users.displayName,
+      authorNameJa: users.displayNameJa,
+      authorHandle: users.handle,
+      authorAvatarUrl: users.avatarUrl,
     })
     .from(postComments)
     .leftJoin(users, eq(postComments.userId, users.id))
@@ -192,7 +210,10 @@ export function publicComment(c: CommentRow & { liked?: boolean }) {
     userId: c.userId,
     parentId: c.parentId ?? null,
     authorName: c.authorName ?? null,
-    body: c.body,
+    authorNameJa: c.authorNameJa ?? null,
+    authorHandle: c.authorHandle ?? null,
+    authorAvatarUrl: c.authorAvatarUrl ?? null,
+    body: maskProfanity(c.body), // original kept in DB; masked only on the way out
     likes: c.likes,
     liked: !!c.liked,
     createdAt: c.createdAt,
