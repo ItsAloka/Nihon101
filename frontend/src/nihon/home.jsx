@@ -71,6 +71,32 @@ function maxWrap() { return {maxWidth:1320, margin:'0 auto', padding:'0 32px'}; 
 function IssueRibbon({p, lang}) {
   const d = new Date();
   const months_jp = ['睦月','如月','弥生','卯月','皐月','水無月','文月','葉月','長月','神無月','霜月','師走'];
+  const months_en = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const wd_jp = ['日','月','火','水','木','金','土'];
+  const wd_en = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const kanji = ['〇','一','二','三','四','五','六','七','八','九'];
+  const toKanji = (n) => String(n).split('').map(c => kanji[+c]).join('');
+  const masthead = lang==='jp'
+    ? `${toKanji(d.getFullYear())}年 ${months_jp[d.getMonth()]} ${toKanji(d.getDate())}日 ${wd_jp[d.getDay()]}曜日`
+    : `${wd_en[d.getDay()]}, ${d.getDate()} ${months_en[d.getMonth()]} ${d.getFullYear()}`;
+  // Live weather (Open-Meteo via /weather, KV-cached) — one city, rotating.
+  const [cities, setCities] = React.useState([]);
+  const [idx, setIdx] = React.useState(0);
+  React.useEffect(() => {
+    let alive = true;
+    fetch('/weather').then(r => r.ok ? r.json() : {cities:[]})
+      .then(j => { if (alive) setCities(j.cities || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  React.useEffect(() => {
+    if (cities.length < 2) return;
+    const t = setInterval(() => setIdx(i => (i + 1) % cities.length), 6000);
+    return () => clearInterval(t);
+  }, [cities]);
+  const wx = cities[idx];
+  const right = wx
+    ? `${wx.glyph} ${lang==='jp'?wx.ja:wx.en} ${wx.temp}° · ${lang==='jp'?wx.condJa:wx.condEn}`
+    : (lang==='jp' ? '今週も、ゆっくり読もう' : 'read slowly this week');
   return (
     <div style={{
       borderBottom:`1px solid ${p.line}`, background:p.surface,
@@ -78,10 +104,10 @@ function IssueRibbon({p, lang}) {
       <div style={{...maxWrap(), padding:'10px 32px', display:'flex', justifyContent:'space-between',
         fontFamily:'var(--fontMono)', fontSize:11, color:p.inkSoft, letterSpacing:'0.1em', textTransform:'uppercase',
       }}>
-        <span>vol. 02 · issue 14 · {months_jp[d.getMonth()]} 二〇二六</span>
-        <span style={{display:'inline-flex', alignItems:'center', gap:10}}>
+        <span>{masthead}</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:10, textTransform:'none'}}>
           <span style={{width:6, height:6, borderRadius:3, background:p.stamp, display:'inline-block'}}></span>
-          {lang==='jp' ? '今週、東京は晴れ' : 'this week in Tokyo: clear, cold'}
+          {right}
         </span>
       </div>
     </div>

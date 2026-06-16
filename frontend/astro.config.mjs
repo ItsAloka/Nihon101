@@ -33,6 +33,7 @@ export default defineConfig({
         '/feed': 'http://localhost:8787',
         '/notifications': 'http://localhost:8787',
         '/home': 'http://localhost:8787',
+        '/weather': 'http://localhost:8787',
       },
     },
   },

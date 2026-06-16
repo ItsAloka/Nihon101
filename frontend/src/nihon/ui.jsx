@@ -938,8 +938,8 @@ function Footer({p, lang}) {
           <Logo p={p} jp={lang==='jp'} size={32}/>
           <p style={{marginTop:14, fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, lineHeight:1.6, maxWidth:280}}>
             {lang==='jp'
-              ? '日本の今、昨日、いつかについて書く小さな雑誌。'
-              : 'A small magazine about Japan today, yesterday, and someday. Read slowly.'}
+              ? '日本についてのバイリンガルブログ。すべての記事を英語と日本語で読めます。'
+              : 'A bilingual blog about Japan — every story, in both English and 日本語.'}
           </p>
         </div>
         <FooterCol p={p} title={lang==='jp'?'読む':'Read'}
@@ -966,12 +966,7 @@ function Footer({p, lang}) {
       <div style={{borderTop:`1px solid ${p.line}`, padding:'18px 32px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:16, flexWrap:'wrap',
         fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em',
       }}>
-        <span>© 2026 nihon101 — {lang==='jp'?'丁寧に作りました':'made with care in Tokyo'}</span>
-        <span style={{display:'inline-flex', gap:16}}>
-          <a href="#/privacy" onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'privacy'});}} style={{color:p.inkFaint, textDecoration:'none'}}>{lang==='jp'?'プライバシー':'Privacy'}</a>
-          <a href="#/contact" onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'contact'});}} style={{color:p.inkFaint, textDecoration:'none'}}>{lang==='jp'?'お問い合わせ':'Contact'}</a>
-          <span>vol. 02 · issue 14</span>
-        </span>
+        <span>© 2026 nihon101</span>
       </div>
     </footer>
   );
