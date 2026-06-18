@@ -17,7 +17,12 @@ export const users = pgTable('users', {
   bioJa: text('bio_ja').notNull().default(''),           // JA bio (auto-translated at edit time, author-reviewable)
   location: text('location').notNull().default(''),
   avatarUrl: text('avatar_url'),              // R2 url via /media, null = initials
-  role: text('role').notNull().default('user'),
+  role: text('role').notNull().default('user'),  // 'user' | 'admin'
+  // Ban state mirrored onto the user row for a fast O(1) check at login/refresh;
+  // the full history (who/why/when) lives in `bans`. bannedUntil null + isBanned
+  // true = permanent; isBanned false = active.
+  isBanned: boolean('is_banned').notNull().default(false),
+  bannedUntil: ms('banned_until'),
   emailVerified: boolean('email_verified').notNull().default(false),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
@@ -110,6 +115,10 @@ export const posts = pgTable('posts', {
   coverLabel: text('cover_label').notNull().default(''),   // PHOTO tag on the cover
   coverCredit: text('cover_credit').notNull().default(''), // credit line under it
   status: text('status').notNull().default('draft'),   // 'draft' | 'published'
+  // Moderator hide: a published post can be hidden (drops from every public read)
+  // without losing its 'published' status, so unhiding restores it cleanly.
+  isHidden: boolean('is_hidden').notNull().default(false),
+  hiddenReason: text('hidden_reason').notNull().default(''),
   density: text('density').notNull().default('compact'), // line spacing
   score: real('score'),                            // optional review score 0–10
   tags: jsonb('tags').$type<string[]>().notNull().default([]),
@@ -149,6 +158,7 @@ export const postComments = pgTable('post_comments', {
   parentId: text('parent_id').references((): AnyPgColumn => postComments.id, { onDelete: 'cascade' }), // null = top-level; else the top-level comment it replies to
   body: text('body').notNull().default(''),
   likes: integer('likes').notNull().default(0),
+  isHidden: boolean('is_hidden').notNull().default(false), // moderator-hidden comment
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
 }, (t) => [
@@ -251,7 +261,90 @@ export const notifications = pgTable('notifications', {
   index('notifications_user_idx').on(t.userId, t.createdAt),
 ]);
 
+// ---- Moderation + admin (Phase 8) ----
+
+// A user-filed report against a post, comment, or another user. targetId is
+// polymorphic (resolved per targetType) so it can't be a real FK — every other
+// id column here is. Kept after the reporter deletes (set null) for the record.
+export const reports = pgTable('reports', {
+  id: text('id').primaryKey(),
+  reporterId: text('reporter_id').references(() => users.id, { onDelete: 'set null' }),
+  targetType: text('target_type').notNull(),       // 'post' | 'comment' | 'user'
+  targetId: text('target_id').notNull(),
+  reason: text('reason').notNull().default(''),    // short category, e.g. 'spam'
+  detail: text('detail').notNull().default(''),    // reporter's free-text
+  status: text('status').notNull().default('open'), // 'open' | 'resolved' | 'dismissed'
+  resolvedBy: text('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+  resolvedAt: ms('resolved_at'),
+  resolutionNote: text('resolution_note').notNull().default(''), // what the admin did / why
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('reports_status_idx').on(t.status, t.createdAt),
+  index('reports_target_idx').on(t.targetType, t.targetId),
+]);
+
+// Ban history. The live state is mirrored on users.isBanned/bannedUntil for the
+// hot login check; this is the audit trail (who issued, why, how long, when lifted).
+export const bans = pgTable('bans', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  issuedBy: text('issued_by').references(() => users.id, { onDelete: 'set null' }),
+  reason: text('reason').notNull().default(''),
+  duration: text('duration').notNull(),  // '24h' | '7d' | 'permanent'
+  expiresAt: ms('expires_at'),           // null = permanent
+  liftedAt: ms('lifted_at'),
+  liftedBy: text('lifted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('bans_user_idx').on(t.userId, t.createdAt),
+]);
+
+// Immutable audit log: one row per admin action (hide, ban, delete, pick edit…).
+export const adminActions = pgTable('admin_actions', {
+  id: text('id').primaryKey(),
+  actorId: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  action: text('action').notNull(),
+  targetType: text('target_type').notNull().default(''),
+  targetId: text('target_id').notNull().default(''),
+  detail: jsonb('detail').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('admin_actions_actor_idx').on(t.actorId, t.createdAt),
+  index('admin_actions_created_idx').on(t.createdAt),
+]);
+
+// Admin-curated home promotion. Each row pins a published post to a home slot
+// (section = 'hero' | 'feature' | 'picks', rank = order within it). Cascade so a
+// deleted post drops out of the curation automatically; home falls back to
+// recency when a section has no rows.
+export const featuredSlots = pgTable('featured_slots', {
+  id: text('id').primaryKey(),
+  section: text('section').notNull(),  // 'hero' | 'feature' | 'picks'
+  rank: integer('rank').notNull(),     // order within section (1-based)
+  postId: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  updatedAt: ms('updated_at').notNull(),
+}, (t) => [
+  uniqueIndex('featured_section_rank_idx').on(t.section, t.rank),
+  index('featured_post_idx').on(t.postId),
+]);
+
+// Singleton moderation config (one row, id = 'singleton'). reportThreshold = how
+// many DISTINCT reporters a target needs before its case surfaces in the admin
+// "needs action" queue (anti flood/abuse). autoHideThreshold = distinct reporters
+// at which the target is auto-hidden pending review (must be ≥ reportThreshold).
+export const adminSettings = pgTable('admin_settings', {
+  id: text('id').primaryKey(),               // always 'singleton'
+  reportThreshold: integer('report_threshold').notNull().default(3),
+  autoHideThreshold: integer('auto_hide_threshold').notNull().default(6),
+  updatedAt: ms('updated_at').notNull(),
+});
+
 export type User = typeof users.$inferSelect;
+export type AdminSettings = typeof adminSettings.$inferSelect;
+export type Report = typeof reports.$inferSelect;
+export type Ban = typeof bans.$inferSelect;
+export type AdminAction = typeof adminActions.$inferSelect;
+export type FeaturedSlot = typeof featuredSlots.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type Post = typeof posts.$inferSelect;

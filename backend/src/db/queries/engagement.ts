@@ -120,6 +120,7 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
       parentId: postComments.parentId,
       body: postComments.body,
       likes: postComments.likes,
+      isHidden: postComments.isHidden,
       createdAt: postComments.createdAt,
       updatedAt: postComments.updatedAt,
       authorName: users.displayName,
@@ -148,7 +149,7 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
 export async function createComment(db: DB, postId: string, userId: string, body: string, parentId: string | null = null) {
   const now = Date.now();
   const row = {
-    id: newId('cmt'), postId, userId, parentId, body, likes: 0, createdAt: now, updatedAt: now,
+    id: newId('cmt'), postId, userId, parentId, body, likes: 0, isHidden: false, createdAt: now, updatedAt: now,
   };
   await db.insert(postComments).values(row);
   await db.update(posts).set({ comments: sql`${posts.comments} + 1` }).where(eq(posts.id, postId));
@@ -204,18 +205,22 @@ export async function toggleCommentLike(db: DB, commentId: string, userId: strin
 }
 
 export function publicComment(c: CommentRow & { liked?: boolean }) {
+  // Moderator-hidden: keep the row (so replies stay threaded) but never emit the
+  // body or author identity — the frontend renders a "removed" placeholder.
+  const hidden = !!c.isHidden;
   return {
     id: c.id,
     postId: c.postId,
-    userId: c.userId,
+    userId: hidden ? '' : c.userId,
     parentId: c.parentId ?? null,
-    authorName: c.authorName ?? null,
-    authorNameJa: c.authorNameJa ?? null,
-    authorHandle: c.authorHandle ?? null,
-    authorAvatarUrl: c.authorAvatarUrl ?? null,
-    body: maskProfanity(c.body), // original kept in DB; masked only on the way out
-    likes: c.likes,
-    liked: !!c.liked,
+    authorName: hidden ? null : (c.authorName ?? null),
+    authorNameJa: hidden ? null : (c.authorNameJa ?? null),
+    authorHandle: hidden ? null : (c.authorHandle ?? null),
+    authorAvatarUrl: hidden ? null : (c.authorAvatarUrl ?? null),
+    body: hidden ? '' : maskProfanity(c.body), // original kept in DB; masked only on the way out
+    isHidden: hidden,
+    likes: hidden ? 0 : c.likes,
+    liked: !hidden && !!c.liked,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   };

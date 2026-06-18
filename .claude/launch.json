@@ -10,6 +10,12 @@
         "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev"
       ],
       "port": 4321
+    },
+    {
+      "name": "enui",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "4555", "--directory", "ui-mocks/enui"],
+      "port": 4555
     }
   ]
 }

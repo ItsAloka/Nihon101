@@ -37,7 +37,7 @@ import { eq, and, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, postSaves, postComments, tags, userAffinity, userSignals } from '../schema';
 import { id as newId } from '../../lib/ids';
-import { cardCols, publicPostCard, type PostCardRow } from './posts';
+import { cardCols, publicPostCard, notHidden, type PostCardRow } from './posts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -219,12 +219,12 @@ async function runCandidates(db: DB, where: SQL | undefined, limit: number, offs
 /** Newest published posts — the ranked-head pool, or (with offset) the
  *  chronological tail past the head for deep numbered pages. */
 export function feedCandidates(db: DB, opts: { poolSize?: number; offset?: number } = {}): Promise<FeedCard[]> {
-  return runCandidates(db, eq(posts.status, 'published'), opts.poolSize ?? 120, opts.offset ?? 0);
+  return runCandidates(db, and(eq(posts.status, 'published'), notHidden)!, opts.poolSize ?? 120, opts.offset ?? 0);
 }
 
 /** Total published posts — drives the page count for numbered pagination. */
 export async function publishedCount(db: DB): Promise<number> {
-  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(posts).where(eq(posts.status, 'published'));
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(posts).where(and(eq(posts.status, 'published'), notHidden));
   return row?.n ?? 0;
 }
 

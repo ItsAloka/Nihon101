@@ -1,7 +1,7 @@
 import { eq, and, sql, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users } from '../schema';
-import { cardCols, type PostCardRow } from './posts';
+import { cardCols, notHidden, type PostCardRow } from './posts';
 
 /* Bilingual search over published posts. Full-text first (websearch syntax: quoted
  * phrases, -exclusions) against the combined `posts.search` tsvector, ranked by
@@ -74,6 +74,7 @@ export async function searchPosts(db: DB, f: SearchFilter): Promise<SearchPage> 
 
   const base: (SQL | undefined)[] = [
     eq(posts.status, 'published'),
+    notHidden,
     f.authorId ? eq(posts.authorId, f.authorId) : undefined,
     f.categoryId ? eq(posts.categoryId, f.categoryId) : undefined,
     // posts.tags stores free-form display labels ("Makoto Shinkai"); the URL gives
@@ -190,7 +191,7 @@ export async function suggestPosts(db: DB, q: string, loc: Loc, limit = 6): Prom
   const fts = await db
     .select(cols)
     .from(posts)
-    .where(and(eq(posts.status, 'published'), sql`"posts"."search" @@ ${tsq}`))
+    .where(and(eq(posts.status, 'published'), notHidden, sql`"posts"."search" @@ ${tsq}`))
     .orderBy(sql`ts_rank("posts"."search", ${tsq}) DESC, "posts"."likes" DESC`)
     .limit(limit);
   if (fts.length) return fts;
@@ -204,6 +205,7 @@ export async function suggestPosts(db: DB, q: string, loc: Loc, limit = 6): Prom
     .from(posts)
     .where(and(
       eq(posts.status, 'published'),
+      notHidden,
       sql`(char_length(${needle}) >= 2 AND numnode(${tsq}) > 0 AND (
         strict_word_similarity(${needle}, ${title}) > 0.34
         OR "posts"."title_ja" ILIKE ${like} OR "posts"."title_en" ILIKE ${like}

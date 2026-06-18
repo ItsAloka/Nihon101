@@ -93,17 +93,31 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
   c.executionCtx.waitUntil(job);
 }
 
-/** Resolve the requester's id from the access token, or null if absent/invalid. */
-async function currentUserId(c: Context<AppEnv>): Promise<string | null> {
+/** Resolve the requester's id + role from the access token, or null if absent. */
+async function currentUser(c: Context<AppEnv>): Promise<{ id: string; role: string } | null> {
   const header = c.req.header('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return null;
   try {
     const claims = await verifyAccess(c.env.JWT_SECRET, token);
-    return claims.sub;
+    return { id: claims.sub, role: claims.role };
   } catch {
     return null;
   }
+}
+
+/** Just the requester's id (most callers don't need the role). */
+async function currentUserId(c: Context<AppEnv>): Promise<string | null> {
+  return (await currentUser(c))?.id ?? null;
+}
+
+/** A draft/hidden post is viewable only by its author or an admin; the public
+ *  gets a 404 (drafts) or a hidden marker (hidden). Returns the gate decision. */
+function viewerCanSeePrivate(
+  post: { authorId: string; status: string; isHidden: boolean },
+  viewer: { id: string; role: string } | null,
+): boolean {
+  return viewer != null && (viewer.id === post.authorId || viewer.role === 'admin');
 }
 
 function parseTags(input: unknown): string[] {
@@ -127,15 +141,15 @@ app.get('/', limits.publicRead, async (c) => {
   if (statusParam === 'draft') {
     const uid = await currentUserId(c);
     if (!uid || (authorId && authorId !== uid)) return c.json({ error: 'unauthorized' }, 401);
-    const rows = await listPosts(db(c), { categoryId, authorId: uid, status: 'draft' });
+    const rows = await listPosts(db(c), { categoryId, authorId: uid, status: 'draft', includeHidden: true });
     return c.json({ posts: rows.map(publicPost) });
   }
 
-  // 'mine' → all of the requester's posts (drafts + published), owner-only.
+  // 'mine' → all of the requester's posts (drafts + published + hidden), owner-only.
   if (statusParam === 'mine') {
     const uid = await currentUserId(c);
     if (!uid) return c.json({ error: 'unauthorized' }, 401);
-    const rows = await listPosts(db(c), { categoryId, authorId: uid });
+    const rows = await listPosts(db(c), { categoryId, authorId: uid, includeHidden: true });
     return c.json({ posts: rows.map(publicPost) });
   }
 
@@ -148,10 +162,13 @@ app.get('/', limits.publicRead, async (c) => {
 app.get('/slug/:slug', limits.publicRead, async (c) => {
   const post = await getPostWithAuthorBySlug(db(c), c.req.param('slug'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  const uid = await currentUserId(c);
-  if (post.status === 'draft' && uid !== post.authorId)
-    return c.json({ error: 'not_found' }, 404);
-  const liked = await hasLikedPost(db(c), post.id, uid);
+  const viewer = await currentUser(c);
+  const privileged = viewerCanSeePrivate(post, viewer);
+  if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
+  // Moderator-hidden: tell the public it was removed (don't leak the body) but let
+  // the author/admin still load it.
+  if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
+  const liked = await hasLikedPost(db(c), post.id, viewer?.id ?? null);
   return c.json({ post: { ...publicPost(post), liked } });
 });
 
@@ -168,10 +185,11 @@ app.get('/saved', requireAuth, async (c) => {
 app.get('/:id', limits.publicRead, async (c) => {
   const post = await getPostWithAuthor(db(c), c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  const uid = await currentUserId(c);
-  if (post.status === 'draft' && uid !== post.authorId)
-    return c.json({ error: 'not_found' }, 404);
-  const liked = await hasLikedPost(db(c), post.id, uid);
+  const viewer = await currentUser(c);
+  const privileged = viewerCanSeePrivate(post, viewer);
+  if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
+  if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
+  const liked = await hasLikedPost(db(c), post.id, viewer?.id ?? null);
   return c.json({ post: { ...publicPost(post), liked } });
 });
 
@@ -383,9 +401,10 @@ app.delete('/:id/comments/:cid', requireAuth, limits.comment, async (c) => {
   const d = db(c);
   const comment = await getComment(d, c.req.param('cid'));
   if (!comment || comment.postId !== c.req.param('id')) return c.json({ error: 'not_found' }, 404);
-  const post = await getPostById(d, comment.postId);
   const uid = c.var.user!.id;
-  if (comment.userId !== uid && post?.authorId !== uid) return c.json({ error: 'forbidden' }, 403);
+  // Only the comment's own author may delete it here. Moderating anyone else's
+  // comment goes through the admin route (/admin/comments/:id), not the post author.
+  if (comment.userId !== uid) return c.json({ error: 'forbidden' }, 403);
   await deleteComment(d, comment);
   return c.json({ ok: true });
 });

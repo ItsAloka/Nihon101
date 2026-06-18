@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Writers — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap section">
+    <div class="ex-kicker"><svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg> Writers</div>
+    <h1 class="ex">The people behind the stories.</h1>
+    <p class="ex-sub">Follow a few — their new stories land in your For You feed.</p>
+    <div class="list-bar"><div class="results-count" id="count"></div><div id="sort"></div></div>
+    <div class="wr-grid" id="grid"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('authors');
+    const E = ENUI;
+    let sort = 'top';
+    document.getElementById('count').textContent = String(E.AUTHORS.length).padStart(2, '0') + ' writers';
+
+    function render() {
+      document.getElementById('sort').innerHTML =
+        `<div class="sortbar"><button class="sort-pill${sort === 'top' ? ' on' : ''}" data-s="top">Most read</button><button class="sort-pill${sort === 'new' ? ' on' : ''}" data-s="new">Newest</button></div>`;
+      const list = E.AUTHORS.slice().sort((a, b) =>
+        sort === 'top' ? E.likesFor(b.handle) - E.likesFor(a.handle) : b.joinedAt - a.joinedAt);
+      document.getElementById('grid').innerHTML = list.map((a) => `
+        <article class="wr-card">
+          <a class="wr-ava" href="profile.html?handle=${a.handle}" style="background:linear-gradient(135deg, ${E.avaTint(a.handle)}, #f2f0eb)">${E.initials(a.displayName)}</a>
+          <a class="wr-name" href="profile.html?handle=${a.handle}">${E.esc(a.displayName)}</a>
+          <div class="wr-role">${E.esc(a.role)} · ${E.esc(a.location)}</div>
+          <div class="wr-stats">${E.postCountFor(a.handle)} stories · ${E.num(E.likesFor(a.handle))} likes</div>
+          <button class="follow-btn${E.isFollowing(a.handle) ? ' following' : ''}" data-f="${a.handle}">${E.isFollowing(a.handle) ? 'Following' : '+ Follow'}</button>
+        </article>`).join('');
+      document.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { sort = b.dataset.s; render(); });
+      document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => {
+        const now = E.toggleFollow(b.dataset.f);
+        b.classList.toggle('following', now); b.textContent = now ? 'Following' : '+ Follow';
+      });
+    }
+    render();
+  </script>
+</body>
+</html>

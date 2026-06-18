@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Category — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .banner { border-bottom: 1px solid var(--line); }
+    .banner .wrap { padding: 64px 32px 48px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; }
+    .banner .hanko { width: 96px; height: 96px; border-radius: 16%; border: 3px solid var(--stamp); color: var(--stamp); display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 700; font-size: 46px; transform: rotate(-6deg); flex: none; }
+    .banner h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5vw, 72px); letter-spacing: -0.025em; line-height: 1; color: var(--ink); }
+    .banner .blurb { font-family: var(--fontDisplay); font-style: italic; font-size: 20px; color: var(--inkSoft); margin-top: 12px; max-width: 640px; }
+    @media (max-width: 980px) { .banner .wrap { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="banner"><div class="wrap" id="banner"></div></div>
+  <div class="wrap section">
+    <div class="list-bar"><div class="results-count" id="count"></div><div id="sort"></div></div>
+    <div id="results"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('search');
+    const E = ENUI;
+    const cat = E.qs('cat') || E.CATS[0].id;
+    const c = E.catById[cat];
+    let sort = 'new';
+    const BLURB = {
+      culture: 'Ritual, craft, and the quiet habits that hold a place together.',
+      food: 'From counter ramen to the konbini sandwich — Japan, one bite at a time.',
+      travel: 'Trains, towns, and the corners the maps forget.',
+      language: 'The words that change how you see things once you know them.',
+      animation: 'Frames, studios, and the history of a homegrown art form.',
+      philosophy: 'Ideas you can live inside — ma, wabi-sabi, and the rest.',
+      history: 'Edo streets, Meiji change, and the long memory of cities.',
+      fashion: 'Indigo, denim, and the craft behind what people wear.',
+      news: 'What today actually feels like, in Japan, right now.',
+    };
+    document.getElementById('banner').innerHTML = `<div class="hanko">${c.kanji}</div><div><h1>${c.label}</h1><p class="blurb">${BLURB[cat] || ''}</p></div>`;
+
+    function render() {
+      const list = E.sortPosts(E.POSTS.filter((p) => p.categoryId === cat), sort);
+      document.getElementById('count').textContent = String(list.length).padStart(2, '0') + ' stories';
+      document.getElementById('sort').innerHTML = list.length
+        ? `<div class="sortbar"><button class="sort-pill${sort === 'new' ? ' on' : ''}" data-s="new">Recent</button><button class="sort-pill${sort === 'top' ? ' on' : ''}" data-s="top">Most liked</button></div>` : '';
+      document.getElementById('results').innerHTML = list.length ? E.grid(list)
+        : '<div class="empty"><div class="mu">無</div><div class="msg">No stories here yet.</div></div>';
+      document.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { sort = b.dataset.s; render(); });
+    }
+    render();
+  </script>
+</body>
+</html>

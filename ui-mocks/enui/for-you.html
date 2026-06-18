@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>For You — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap section">
+    <div class="results-count" style="margin-bottom:14px;display:flex;align-items:center;gap:8px"><span style="width:6px;height:6px;border-radius:3px;background:var(--stamp);display:inline-block"></span> Your feed</div>
+    <h1 class="ex">Japan, tuned to you.</h1>
+    <p class="ex-sub">Built from the writers you follow, what’s trending, and the topics you read.</p>
+
+    <div class="feed-banner" id="banner"></div>
+
+    <div class="sec-head" style="margin-top:24px"><div><div class="sec-kicker">〜 worth following</div><h2 class="sec">Who to follow</h2></div></div>
+    <div class="wr-grid" id="whotofollow" style="margin-bottom:48px"></div>
+
+    <div id="results"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('feed');
+    const E = ENUI;
+
+    function render() {
+      const follows = E.getSet(E.LS.follows);
+      const hasFollows = follows.size > 0;
+
+      document.getElementById('banner').innerHTML = hasFollows
+        ? `<span style="font-size:15px">Following <b>${follows.size}</b> writer${follows.size > 1 ? 's' : ''}. Their newest stories rise to the top of your feed.</span>`
+        : `<span style="font-size:15px">Follow a few writers and their new stories will land right here.</span><a class="btn-grad" href="writers.html">Find writers →</a>`;
+
+      // who to follow — unfollowed authors
+      const suggest = E.AUTHORS.filter((a) => !follows.has(a.handle)).slice(0, 4);
+      document.getElementById('whotofollow').innerHTML = suggest.map((a) => `
+        <article class="wr-card">
+          <a class="wr-ava" href="profile.html?handle=${a.handle}" style="background:linear-gradient(135deg, ${E.avaTint(a.handle)}, #f2f0eb)">${E.initials(a.displayName)}</a>
+          <a class="wr-name" href="profile.html?handle=${a.handle}">${E.esc(a.displayName)}</a>
+          <div class="wr-role">${E.esc(a.role)} · ${E.esc(a.location)}</div>
+          <button class="follow-btn" data-f="${a.handle}">+ Follow</button>
+        </article>`).join('') || '<p style="color:var(--inkSoft)">You follow everyone already.</p>';
+
+      // feed: followed authors' posts first (by recency), then trending fill
+      const followed = E.POSTS.filter((p) => follows.has(p.authorHandle));
+      const rest = E.POSTS.filter((p) => !follows.has(p.authorHandle));
+      const ordered = [...E.sortPosts(followed, 'new'), ...E.sortPosts(rest, 'trend')];
+
+      document.getElementById('results').innerHTML = `<div class="recent-grid">${ordered.map((p) => {
+        const reason = follows.has(p.authorHandle)
+          ? `<div class="reason"><span style="color:var(--accentDeep);font-weight:700">+</span> Because you follow ${E.esc(E.authorName(p))}</div>`
+          : `<div class="reason"><svg width="11" height="11" viewBox="0 0 24 24" style="fill:var(--stamp)"><path d="${E.HEART}"/></svg> Trending in ${E.catLabel(p.categoryId)}</div>`;
+        return `<div>${reason}${E.card(p)}</div>`;
+      }).join('')}</div>`;
+
+      document.querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { E.toggleFollow(b.dataset.f); render(); });
+    }
+    render();
+  </script>
+</body>
+</html>

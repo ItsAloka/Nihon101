@@ -1,0 +1,1 @@
+ALTER TABLE "reports" ADD COLUMN "resolution_note" text DEFAULT '' NOT NULL;

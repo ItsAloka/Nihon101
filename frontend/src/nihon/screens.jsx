@@ -566,10 +566,14 @@ function CommentComposer({ p, lang, currentUser, onSubmit, onCancel, autoFocus, 
   );
 }
 
-function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, onDelete, onRequireLogin }) {
+function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, onDelete, onReport, onRequireLogin }) {
   const [replying, setReplying] = React.useState(false);
+  const [confirmDel, setConfirmDel] = React.useState(false);
   const mine = currentUser && (c.userId===currentUser.id || c.author?.slug===currentUser.slug);
-  const canDelete = !!onDelete && (mine || onDelete.canModerate);
+  // Only the comment's own author can delete it from the public reader. Removing
+  // anyone else's comment goes through Report → admin panel (Hide/Delete).
+  const canDelete = !!onDelete && mine;
+  const canReport = !!onReport && !mine;
   const href = profileHref(lang, c.author?.handle);
   const nameEl = (
     <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink}}>
@@ -598,8 +602,14 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
               {lang==='jp'?'返信':'Reply'}
             </button>
           )}
+          {canReport && (
+            <button onClick={()=> currentUser ? onReport(c.id) : onRequireLogin()}
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
+              {lang==='jp'?'通報':'Report'}
+            </button>
+          )}
           {canDelete && (
-            <button onClick={()=>onDelete(c.id)}
+            <button onClick={()=>setConfirmDel(true)}
               style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
               {lang==='jp'?'削除':'Delete'}
             </button>
@@ -614,27 +624,96 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
           </div>
         )}
       </div>
+      {confirmDel && (
+        <div onClick={()=>setConfirmDel(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:60}}>
+          <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, borderRadius:18, padding:28, maxWidth:420, border:`1px solid ${p.line}`}}>
+            <h3 style={{fontFamily:'var(--fontDisplay)', fontSize:20, fontWeight:700, color:p.ink}}>{lang==='jp'?'このコメントを削除しますか？':'Delete this comment?'}</h3>
+            <p style={{color:p.inkSoft, fontSize:14.5, lineHeight:1.6, marginTop:10, fontFamily:'var(--fontBody)'}}>
+              {lang==='jp'?'この操作は取り消せません。コメントと返信が完全に削除されます。':"This can't be undone. The comment and its replies will be permanently removed."}
+            </p>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:22}}>
+              <button onClick={()=>setConfirmDel(false)} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'10px 18px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>{lang==='jp'?'キャンセル':'Cancel'}</button>
+              <button onClick={()=>{ setConfirmDel(false); onDelete(c.id); }} style={{appearance:'none', border:'none', background:p.stamp, color:'#fff', padding:'10px 18px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, fontWeight:700}}>{lang==='jp'?'削除する':'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, canModerate, currentUser, onRequireLogin }) {
+// A top-level comment + its replies behind a collapsible "View N replies" dropdown.
+function Thread({ p, lang, slug, c, replies, currentUser, onLike, onReply, onDelete, onReport, onRequireLogin }) {
+  const [open, setOpen] = React.useState(false);
+  const n = replies.length;
+  const item = (cm, isReply) => (
+    <CommentItem key={cm.id} p={p} lang={lang} slug={slug} c={cm} isReply={isReply} currentUser={currentUser}
+      onLike={onLike} onReply={onReply} onDelete={onDelete} onReport={onReport} onRequireLogin={onRequireLogin}/>
+  );
+  return (
+    <div>
+      {item(c, false)}
+      {n > 0 && (
+        <div style={{marginLeft:58, marginTop:12}}>
+          <button onClick={()=>setOpen(v=>!v)} style={{
+            appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:0,
+            display:'inline-flex', alignItems:'center', gap:7, color:p.stamp,
+            fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600,
+          }}>
+            <span style={{display:'inline-block', transform:`rotate(${open?90:0}deg)`, transition:'transform .18s ease', fontSize:11}}>▶</span>
+            {open
+              ? (lang==='jp' ? '返信を隠す' : 'Hide replies')
+              : (lang==='jp' ? `${n}件の返信を表示` : `View ${n} ${n===1?'reply':'replies'}`)}
+          </button>
+          {open && (
+            <div style={{marginTop:16, paddingLeft:22, borderLeft:`2px solid ${p.line}`, display:'flex', flexDirection:'column', gap:20}}>
+              {replies.map(r=>item(r, true))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onReport, canModerate, currentUser, onRequireLogin }) {
   // Tag onDelete with moderation capability so CommentItem can show Delete for
   // the post owner on any comment (not just their own).
   const del = React.useMemo(()=>{ if(!onDelete) return undefined; const f=(id)=>onDelete(id); f.canModerate=!!canModerate; return f; }, [onDelete, canModerate]);
+  const [sort, setSort] = React.useState('top'); // 'top' (most liked) | 'recent'
 
-  const topLevel = comments.filter(c=>!c.parentId).sort((a,b)=> b.ts - a.ts);
+  const cmp = sort==='top'
+    ? (a,b)=> (b.likes||0)-(a.likes||0) || b.ts - a.ts   // most liked, ties broken by newest
+    : (a,b)=> b.ts - a.ts;                                // newest first
+  const topLevel = comments.filter(c=>!c.parentId).sort(cmp);
   const repliesByParent = {};
   comments.filter(c=>c.parentId).forEach(c=>{ (repliesByParent[c.parentId] ||= []).push(c); });
-  Object.values(repliesByParent).forEach(arr=>arr.sort((a,b)=> a.ts - b.ts));
+  Object.values(repliesByParent).forEach(arr=>arr.sort((a,b)=> a.ts - b.ts)); // replies always chronological
+
+  const sortBtn = (key, label)=>(
+    <button onClick={()=>setSort(key)} style={{
+      appearance:'none', cursor:'pointer', border:'none', background: sort===key?p.surface:'transparent',
+      color: sort===key?p.ink:p.inkFaint, fontWeight: sort===key?600:500,
+      fontFamily:'var(--fontBody)', fontSize:13, padding:'6px 14px', borderRadius:999,
+      boxShadow: sort===key?`0 1px 2px color-mix(in oklab, ${p.ink} 12%, transparent)`:'none',
+    }}>{label}</button>
+  );
 
   return (
     <section style={{marginTop:56, paddingTop:8}}>
-      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:24}}>
-        <CommentIcon color={p.ink} size={22}/>
-        <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:28, letterSpacing:'-0.02em', color:p.ink}}>
-          {lang==='jp'?`コメント ${comments.length}`:`${comments.length} ${comments.length===1?'comment':'comments'}`}
-        </h2>
+      <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:24, justifyContent:'space-between', flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:12}}>
+          <CommentIcon color={p.ink} size={22}/>
+          <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:28, letterSpacing:'-0.02em', color:p.ink}}>
+            {lang==='jp'?`コメント ${comments.length}`:`${comments.length} ${comments.length===1?'comment':'comments'}`}
+          </h2>
+        </div>
+        {topLevel.length>1 && (
+          <div style={{display:'inline-flex', gap:2, padding:3, background:p.surface2, border:`1px solid ${p.line}`, borderRadius:999}}>
+            {sortBtn('top', lang==='jp'?'人気':'Top')}
+            {sortBtn('recent', lang==='jp'?'新着':'Recent')}
+          </div>
+        )}
       </div>
 
       {/* Top-level composer */}
@@ -664,18 +743,8 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, canM
         ) : topLevel.map((c)=>{
           const replies = repliesByParent[c.id] || [];
           return (
-            <div key={c.id}>
-              <CommentItem p={p} lang={lang} slug={slug} c={c} currentUser={currentUser}
-                onLike={onLike} onReply={onAdd} onDelete={del} onRequireLogin={onRequireLogin}/>
-              {replies.length>0 && (
-                <div style={{marginLeft:32, marginTop:20, paddingLeft:22, borderLeft:`2px solid ${p.line}`, display:'flex', flexDirection:'column', gap:20}}>
-                  {replies.map(r=>(
-                    <CommentItem key={r.id} p={p} lang={lang} slug={slug} c={r} isReply currentUser={currentUser}
-                      onLike={onLike} onReply={onAdd} onDelete={del} onRequireLogin={onRequireLogin}/>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Thread key={c.id} p={p} lang={lang} slug={slug} c={c} replies={replies} currentUser={currentUser}
+              onLike={onLike} onReply={onAdd} onDelete={del} onReport={onReport} onRequireLogin={onRequireLogin}/>
           );
         })}
       </div>

@@ -34,6 +34,8 @@ export default defineConfig({
         '/notifications': 'http://localhost:8787',
         '/home': 'http://localhost:8787',
         '/weather': 'http://localhost:8787',
+        '/admin': 'http://localhost:8787',
+        '/reports': 'http://localhost:8787',
       },
     },
   },

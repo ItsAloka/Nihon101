@@ -14,6 +14,8 @@ import search from './routes/search';
 import feed from './routes/feed';
 import notifications from './routes/notifications';
 import trending from './routes/trending';
+import admin from './routes/admin';
+import reports from './routes/reports';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
 import { recomputeWeatherCache } from './lib/weather';
@@ -73,6 +75,8 @@ app.route('/feed', feed);
 app.route('/notifications', notifications);
 app.route('/trending', trending);
 app.route('/weather', weather);
+app.route('/admin', admin);
+app.route('/reports', reports);
 
 export default {
   fetch: app.fetch,
