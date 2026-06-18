@@ -7,6 +7,7 @@
  * only ever READS KV — so the page never waits on an external call and, if Open-
  * Meteo is down, the ribbon just shows the last good values.
  * ========================================================================== */
+import { fetchWithTimeout } from './http';
 
 interface City { key: string; en: string; ja: string; lat: number; lon: number; }
 
@@ -65,7 +66,7 @@ export async function fetchWeather(): Promise<CityWeather[]> {
   const lat = CITIES.map((c) => c.lat).join(',');
   const lon = CITIES.map((c) => c.lon).join(',');
   const url = `${ENDPOINT}?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&timezone=Asia%2FTokyo`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, { timeoutMs: 8_000 });
   if (!res.ok) throw new Error(`weather_fetch_failed_${res.status}`);
   const data = await res.json();
   const arr = Array.isArray(data) ? data : [data];

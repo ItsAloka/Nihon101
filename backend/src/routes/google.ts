@@ -9,6 +9,7 @@ import { randomToken } from '../lib/crypto';
 import { startSession } from '../lib/session';
 import { uniqueHandle } from '../db/queries/users';
 import { limits } from '../middleware/rateLimit';
+import { fetchWithTimeout } from '../lib/http';
 
 const google = new Hono<AppEnv>();
 const STATE_COOKIE = 'n101_oauth';
@@ -54,7 +55,7 @@ google.get('/callback', limits.oauth, async (c) => {
   }
 
   // Exchange the auth code for tokens.
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+  const tokenRes = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -64,7 +65,9 @@ google.get('/callback', limits.oauth, async (c) => {
       redirect_uri: c.env.GOOGLE_REDIRECT_URI,
       grant_type: 'authorization_code',
     }),
-  });
+    timeoutMs: 10_000, // on the login request path — never hang the user on Google
+  }).catch(() => null);
+  if (!tokenRes) return c.redirect(`${c.env.FRONTEND_ORIGIN}/${locale}/login?error=google`);
   if (!tokenRes.ok) {
     console.error('[google] token exchange failed', tokenRes.status, await tokenRes.text());
     return c.redirect(`${c.env.FRONTEND_ORIGIN}/${locale}/login?error=google`);

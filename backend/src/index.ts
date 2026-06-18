@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from './types';
 import { closeDb } from './db/client';
 import auth from './routes/auth';
@@ -18,6 +19,7 @@ import admin from './routes/admin';
 import reports from './routes/reports';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
+import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
 import { recomputeWeatherCache } from './lib/weather';
 import weather from './routes/weather';
 
@@ -25,6 +27,16 @@ import weather from './routes/weather';
 export { RateLimiterDO } from './durable/RateLimiterDO';
 
 const app = new Hono<AppEnv>();
+
+// Correlation id: reuse Cloudflare's per-request `cf-ray` when present, else mint
+// one. Echoed back as X-Request-Id and stamped into every error log so one request
+// can be traced end-to-end. Stored on the context for handlers/onError.
+app.use('*', async (c, next) => {
+  const rid = c.req.header('cf-ray') || crypto.randomUUID();
+  c.set('requestId', rid);
+  await next();
+  c.header('X-Request-Id', rid);
+});
 
 app.use('*', async (c, next) => {
   const corsMw = cors({
@@ -60,6 +72,20 @@ app.use('*', async (c, next) => {
   }
 });
 
+// Consistent error envelope. A thrown HTTPException keeps its intended status; any
+// other (unexpected) error becomes a generic 500 — the message/stack is LOGGED with
+// the request id but NEVER sent to the client, so internals don't leak.
+app.onError((err, c) => {
+  const requestId = c.var.requestId ?? '';
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.message || 'error', requestId }, err.status);
+  }
+  console.error(JSON.stringify({ level: 'error', requestId, path: c.req.path, method: c.req.method, msg: err instanceof Error ? err.message : String(err) }));
+  return c.json({ error: 'internal_error', requestId }, 500);
+});
+
+app.notFound((c) => c.json({ error: 'not_found', requestId: c.var.requestId ?? '' }, 404));
+
 app.get('/', (c) => c.json({ ok: true, service: 'nihon101-api' }));
 
 app.route('/auth', auth);
@@ -81,16 +107,25 @@ app.route('/reports', reports);
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: AppEnv['Bindings']) {
-    // Per minute: recompute every published post's momentum trend score, then
-    // bake the top-20 cards to KV for the zero-Postgres hot path.
+    // Every 5 min: rescore the active set's momentum trend score, then bake the
+    // top-20 cards to KV for the zero-Postgres hot path.
     const { db, pool } = standaloneDb(env);
     try {
       // Trending needs the DB; weather is a throttled external fetch (≈ every
       // 30 min) baked to the same KV. Run both; weather failures are swallowed.
-      await Promise.all([
+      const tasks: Promise<unknown>[] = [
         recomputeTrendingCache(db, env.TRENDING_KV),
         recomputeWeatherCache(env.TRENDING_KV),
-      ]);
+      ];
+      // Hourly: retire stale low-signal "watching" reports (< threshold distinct
+      // reporters, untouched for 30d) so single-report cases don't accumulate.
+      if (new Date().getUTCMinutes() === 0) {
+        tasks.push((async () => {
+          const { reportThreshold } = await getSettings(db);
+          await dismissStaleWatchingReports(db, reportThreshold, Date.now() - 30 * 24 * 60 * 60 * 1000);
+        })().catch(() => {}));
+      }
+      await Promise.all(tasks);
     } finally {
       await pool.end();
     }

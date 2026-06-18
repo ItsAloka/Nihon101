@@ -57,10 +57,21 @@ async function req(path, opts = {}) {
   return data;
 }
 
+// Current page locale, so the backend mails verification in the right language.
+const pageLocale = () => (typeof location !== 'undefined' && location.pathname.startsWith('/en')) ? 'en' : 'ja';
+
 async function register(email, password, displayName) {
-  const d = await req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, displayName }) });
+  const d = await req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, displayName, locale: pageLocale() }) });
   accessToken = d.access;
   return d.user;
+}
+// Confirm an email-verification token (from the emailed link). Public — no session.
+function verifyEmail(token) {
+  return req('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) });
+}
+// Re-send the verification email to the signed-in user (needs a live session).
+function resendVerification() {
+  return req('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ locale: pageLocale() }) });
 }
 async function login(email, password) {
   const d = await req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
@@ -105,5 +116,5 @@ async function uploadAvatar(blob) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, refresh, logout, googleStartUrl, updateProfile, uploadAvatar };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification };
 }

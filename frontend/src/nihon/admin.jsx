@@ -311,6 +311,15 @@ function Reports({ loc, api, onChange }) {
     if (!ok) return;
     run(k.targetId + "dm", () => api("/admin/reports/dismiss-target", { method: "POST", body: JSON.stringify({ targetType: k.targetType, targetId: k.targetId, note: ok.note }) }), T("却下しました。", "Dismissed.")(loc));
   };
+  const clearStale = async () => {
+    const ok = await confirmDialog({
+      loc, confirmLabel: T("一括却下", "Dismiss all")(loc),
+      title: T("古い監視案件を一括却下", "Clear stale watching cases")(loc),
+      message: T("30日以上動きのない、しきい値未満の通報をまとめて却下します。", "Dismisses all below-threshold reports untouched for 30+ days.")(loc),
+    });
+    if (!ok) return;
+    run("clearStale", () => api("/admin/reports/dismiss-watching", { method: "POST", body: JSON.stringify({ olderThanDays: 30 }) }), T("古い案件を却下しました。", "Stale cases cleared.")(loc));
+  };
   const doBan = (authorId, reason, duration) => run(authorId + "ban", () => api(`/admin/users/${authorId}/ban`, { method: "POST", body: JSON.stringify({ reason, duration }) }), T("BANしました。", "User banned.")(loc));
 
   const renderCase = (k) => {
@@ -386,9 +395,14 @@ function Reports({ loc, api, onChange }) {
 
                 {data.watching?.length > 0 && (
                   <div style={{ marginTop: 18 }}>
-                    <button className="adm-btn" onClick={() => setShowWatching((v) => !v)}>
-                      {showWatching ? "▾" : "▸"} {T("監視中", "Watching")(loc)} · {data.watching.length} {T("（しきい値未満）", "(below threshold)")(loc)}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <button className="adm-btn" onClick={() => setShowWatching((v) => !v)}>
+                        {showWatching ? "▾" : "▸"} {T("監視中", "Watching")(loc)} · {data.watching.length} {T("（しきい値未満）", "(below threshold)")(loc)}
+                      </button>
+                      <button className="adm-btn" disabled={busy === "clearStale"} onClick={clearStale} title={T("30日以上動きのない案件を一括却下", "Dismiss cases untouched for 30+ days")(loc)}>
+                        {T("古い案件を一括却下", "Clear stale")(loc)}
+                      </button>
+                    </div>
                     {showWatching && <div style={{ marginTop: 12, opacity: 0.92 }}>{data.watching.map(renderCase)}</div>}
                   </div>
                 )}

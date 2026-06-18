@@ -38,6 +38,8 @@ const HALF_LIFE = 24 * HOUR;   // a recent event loses half its weight every 24h
 const WINDOW = 72 * HOUR;      // only engagement inside this window counts as "recent"
 const RECENT = 24 * HOUR;      // the "is it accelerating?" sub-window (last 24h)
 const WEIGHT = 1.0;            // how hard momentum lifts a post above its all-time floor
+const FRESH = 14 * 24 * HOUR;  // age-decay only reorders posts younger than this; older
+                               // ones are only rescored when they get fresh engagement
 
 /** Recompute trend_score for EVERY published post:
  *    floor    = (likes + 2·comments + 0.5·saves) / (age_h + 2)^1.4        (all-time)
@@ -56,6 +58,7 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
   const now = Date.now();
   const since = now - WINDOW;
   const recentSince = now - RECENT;
+  const freshSince = now - FRESH;
   const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${HALF_LIFE}.0)`);
   await db.execute(sql`
     WITH ev AS (
@@ -84,7 +87,16 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
             * (1 + COALESCE(vel.recent_v, 0) / (vel.v + 1))
             / power(vel.reads + 2, 0.15),
           0)
-    FROM (SELECT id FROM posts WHERE status = 'published' AND is_hidden = false AND published_at IS NOT NULL) pub
+    FROM (
+      SELECT id FROM posts
+      WHERE status = 'published' AND is_hidden = false AND published_at IS NOT NULL
+        -- Only rescore posts whose ranking can actually move this run: those young
+        -- enough that age-decay reorders them, OR any post with engagement in WINDOW
+        -- (so an old post resurfacing on a fresh burst still gets picked up). Older,
+        -- quiet posts keep their last (near-zero, rank-stable) floor instead of being
+        -- rewritten every run — bounds the per-run UPDATE to the active set, not 50k rows.
+        AND (published_at > ${freshSince} OR id IN (SELECT post_id FROM vel))
+    ) pub
     LEFT JOIN vel ON vel.post_id = pub.id
     WHERE posts.id = pub.id
   `);
@@ -103,13 +115,22 @@ export function listTrending(db: DB, limit: number, offset = 0): Promise<PostCar
     .offset(offset) as Promise<PostCardRow[]>;
 }
 
-/** Count of posts eligible for the Trending list (for pagination). */
+// Cap trending pagination depth — the list is "hot right now", not an archive; past
+// this nobody pages. Bounds both the count and (since no deeper page is linked) the
+// OFFSET scan on the trending page.
+const TRENDING_COUNT_CAP = 1000;
+
+/** Count of posts eligible for the Trending list (for pagination), bounded so the
+ *  count is O(cap) not O(corpus). */
 export async function countTrending(db: DB): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
+  const capped = db
+    .select({ one: sql`1` })
     .from(posts)
-    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore)));
-  return row?.n ?? 0;
+    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore)))
+    .limit(TRENDING_COUNT_CAP + 1)
+    .as('capped');
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(capped);
+  return Math.min(row?.n ?? 0, TRENDING_COUNT_CAP);
 }
 
 /* ----------------------------------------------------------------------------

@@ -3,14 +3,14 @@
  * target) while still open, so a double-tap doesn't spam the queue. */
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
-import { getDb } from '../db/client';
+import { getDb, standaloneDb } from '../db/client';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { getPostById } from '../db/queries/posts';
 import { getComment as getCommentRow } from '../db/queries/engagement';
 import { getUserById } from '../db/queries/users';
 import {
-  createReport, existingOpenReport, getSettings, countDistinctReporters,
+  createReport, existingOpenReport, getSettingsCached, countTrustedDistinctReporters,
   setPostHidden, setCommentHidden, logAdminAction, type TargetType,
 } from '../db/queries/admin';
 
@@ -54,29 +54,40 @@ app.post('/', requireAuth, limits.report, async (c) => {
 
   await createReport(db, { reporterId: me.id, targetType, targetId, reason, detail });
 
-  // Auto-hide pending review: once enough DISTINCT people flag the same post or
-  // comment, take it off the public site immediately (reversible, logged) so abuse
-  // doesn't stay live while the queue waits for an admin. Users aren't auto-hidden.
+  // Auto-hide pending review: once enough TRUSTED, DISTINCT people flag the same
+  // post/comment, take it off the public site (reversible, logged) so abuse doesn't
+  // stay live while the queue waits for an admin. Runs in the background so the
+  // report POST stays fast; counts only aged + email-verified reporters so a wall
+  // of throwaway accounts can't force a takedown. Users aren't auto-hidden.
   if (targetType === 'post' || targetType === 'comment') {
-    const { autoHideThreshold } = await getSettings(db);
-    const distinct = await countDistinctReporters(db, targetType, targetId);
-    if (distinct >= autoHideThreshold) {
-      if (targetType === 'post') {
-        const p = await getPostById(db, targetId);
-        if (p && !p.isHidden) {
-          await setPostHidden(db, targetId, true, `auto-hidden: flagged by ${distinct} people, pending review`);
-          await logAdminAction(db, { actorId: null, action: 'auto_hide_post', targetType, targetId, detail: { distinctReporters: distinct, threshold: autoHideThreshold } });
-        }
-      } else {
-        const cm = await getCommentRow(db, targetId);
-        if (cm && !cm.isHidden) {
-          await setCommentHidden(db, targetId, true);
-          await logAdminAction(db, { actorId: null, action: 'auto_hide_comment', targetType, targetId, detail: { distinctReporters: distinct, threshold: autoHideThreshold } });
-        }
-      }
-    }
+    c.executionCtx.waitUntil(autoHideCheck(c.env, targetType, targetId));
   }
   return c.json({ ok: true, reported: true }, 201);
 });
+
+async function autoHideCheck(env: AppEnv['Bindings'], targetType: 'post' | 'comment', targetId: string): Promise<void> {
+  // Own pool — outlives the request, so it can't use the request pool (closed by
+  // the cleanup middleware once the response is sent).
+  const { db, pool } = standaloneDb(env);
+  try {
+    const { autoHideThreshold } = await getSettingsCached(db, env.TRENDING_KV);
+    const distinct = await countTrustedDistinctReporters(db, targetType, targetId);
+    if (distinct < autoHideThreshold) return;
+    if (targetType === 'post') {
+      const p = await getPostById(db, targetId);
+      if (p && !p.isHidden) {
+        await setPostHidden(db, targetId, true, `auto-hidden: flagged by ${distinct} trusted people, pending review`);
+        await logAdminAction(db, { actorId: null, action: 'auto_hide_post', targetType, targetId, detail: { trustedReporters: distinct, threshold: autoHideThreshold } });
+      }
+    } else {
+      const cm = await getCommentRow(db, targetId);
+      if (cm && !cm.isHidden) {
+        await setCommentHidden(db, targetId, true);
+        await logAdminAction(db, { actorId: null, action: 'auto_hide_comment', targetType, targetId, detail: { trustedReporters: distinct, threshold: autoHideThreshold } });
+      }
+    }
+  } catch { /* best-effort; the report is already queued for an admin */ }
+  finally { try { await pool.end(); } catch { /* noop */ } }
+}
 
 export default app;

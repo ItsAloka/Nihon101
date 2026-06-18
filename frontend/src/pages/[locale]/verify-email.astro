@@ -1,0 +1,33 @@
+---
+// Landing page for the emailed verification link (/{locale}/verify-email?token=…).
+// SSR shell + a tiny client island that confirms the token. noindex — transient.
+import Shell from "../../layouts/Shell.astro";
+import VerifyEmail from "../../nihon/VerifyEmail.jsx";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+const pageTitle = jp ? "メール確認 — nihon101" : "Verify email — nihon101";
+---
+<Shell locale={locale} title={pageTitle} description="" canonicalPath={`/${locale}/verify-email`} active="">
+  <div class="wrap section">
+    <VerifyEmail client:only="react" locale={locale} />
+  </div>
+
+  <style is:global>
+    .vfy { max-width: 460px; margin: 48px auto; text-align: center; font-family: var(--fontBody); color: var(--ink); }
+    .vfy-mark { width: 64px; height: 64px; margin: 0 auto 20px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+      font-size: 30px; line-height: 1; border: 1px solid var(--line); color: var(--inkSoft); }
+    .vfy-mark.ok { color: #2e7d32; border-color: color-mix(in oklab, #2e7d32 45%, var(--line)); }
+    .vfy-mark.invalid, .vfy-mark.error, .vfy-mark.missing { color: var(--stamp); border-color: color-mix(in oklab, var(--stamp) 45%, var(--line)); }
+    .vfy-h { font-family: var(--fontDisplay); font-weight: 600; letter-spacing: -0.01em; font-size: 26px; margin: 0 0 10px; }
+    .vfy-p { color: var(--inkSoft); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+    .vfy-actions { margin-top: 8px; }
+    .vfy-note { color: var(--inkSoft); font-size: 14px; }
+    .vfy-btn { appearance: none; cursor: pointer; display: inline-block; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+      border-radius: 999px; padding: 10px 20px; font-family: var(--fontBody); font-size: 14px; text-decoration: none; transition: border-color .15s, background .15s; }
+    .vfy-btn:hover { border-color: var(--stamp); }
+    .vfy-btn.primary { background: var(--stamp); color: #fff; border-color: var(--stamp); }
+    .vfy-btn:disabled { opacity: .5; cursor: default; }
+  </style>
+</Shell>

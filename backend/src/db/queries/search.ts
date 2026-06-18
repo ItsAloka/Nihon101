@@ -33,6 +33,13 @@ export interface SearchPage {
 
 const DEFAULT_LIMIT = 12;
 const MAX_LIMIT = 50;
+// Cap how far we count/paginate. An exact count(*) over a large filtered set is the
+// slow half of every search; past this many matches nobody pages anyway (≈83 pages
+// at 12/page) and SEO doesn't need deeper. So we count at most COUNT_CAP+1 rows
+// (subquery LIMIT) — O(cap), not O(matches) — and cap total there, which also bounds
+// OFFSET depth since no deeper page is ever linked. Result sets under the cap stay
+// exact (the common case at any realistic catalog size).
+const COUNT_CAP = 1000;
 
 /** The active locale's title column — what trigram fallback + suggestions match. */
 function titleCol(loc: Loc): SQL {
@@ -148,7 +155,19 @@ function browseOrder(sort: SearchSort | undefined): SQL {
 async function run(db: DB, conds: (SQL | undefined)[], order: SQL, limit: number, page: number): Promise<SearchPage> {
   const where = and(...conds.filter((c): c is SQL => !!c));
 
-  const [items, [{ total }]] = await Promise.all([
+  // Bounded count: count rows of an inner query that stops at COUNT_CAP+1, so the
+  // planner never scans the whole matching set. Same leftJoin as the items query —
+  // the WHERE can reference author columns (author-name search), so the inner query
+  // must see them too.
+  const capped = db
+    .select({ one: sql`1` })
+    .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
+    .where(where)
+    .limit(COUNT_CAP + 1)
+    .as('capped');
+
+  const [items, [{ total: rawTotal }]] = await Promise.all([
     db
       .select(cardCols)
       .from(posts)
@@ -157,15 +176,10 @@ async function run(db: DB, conds: (SQL | undefined)[], order: SQL, limit: number
       .orderBy(order)
       .limit(limit)
       .offset(page * limit) as Promise<PostCardRow[]>,
-    // Same leftJoin as the items query: the WHERE can now reference author columns
-    // (author-name search), so the count must see them too or it would error.
-    db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(posts)
-      .leftJoin(users, eq(posts.authorId, users.id))
-      .where(where),
+    db.select({ total: sql<number>`count(*)::int` }).from(capped),
   ]);
 
+  const total = Math.min(rawTotal, COUNT_CAP);
   return { items, total, nextPage: (page + 1) * limit < total ? page + 1 : null };
 }
 

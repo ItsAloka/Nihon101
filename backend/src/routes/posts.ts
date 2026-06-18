@@ -396,7 +396,7 @@ app.post('/:id/comments', requireAuth, limits.comment, async (c) => {
   }) }, 201);
 });
 
-// Delete a comment (its author or the post's owner).
+// Delete a comment (its author only — post owners moderate via the admin route).
 app.delete('/:id/comments/:cid', requireAuth, limits.comment, async (c) => {
   const d = db(c);
   const comment = await getComment(d, c.req.param('cid'));

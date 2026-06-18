@@ -30,9 +30,14 @@ tag = "v1"
 new_classes = ["RateLimiterDO"]
 
 [triggers]
-# Per minute: recompute momentum trend_score for all posts + bake the top-20 to KV.
-crons = ["* * * * *"]
+# Every 5 min: rescore momentum for the ACTIVE set (recent + freshly-engaged posts,
+# not the whole corpus) + bake the top-20 to KV. Minute-0 also ages out stale reports.
+crons = ["*/5 * * * *"]
 
+# In prod, set DB_POOLED = "true" here once Hyperdrive / Neon's pooler is in front
+# (and point DATABASE_URL at it) so the Worker reuses one per-isolate pool instead
+# of opening one per request. Left unset locally → direct Docker Postgres. See
+# db/client.ts.
 [vars]
 FRONTEND_ORIGIN = "http://localhost:4321"
 RESEND_FROM = "Nihon101 <no-reply@nihon101.com>"

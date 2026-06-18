@@ -70,6 +70,21 @@ export const passwordResets = pgTable('password_resets', {
   index('ix_pr_user').on(t.userId),
 ]);
 
+// Email-verification tokens. Same shape/lifecycle as password resets: opaque token
+// emailed, only its sha256(+pepper) hash stored, single-use, expiring. Consuming one
+// flips users.email_verified true (which the auto-hide trust gate depends on).
+export const emailVerifications = pgTable('email_verifications', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: ms('expires_at').notNull(),
+  usedAt: ms('used_at'),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('ux_ev_hash').on(t.tokenHash),
+  index('ix_ev_user').on(t.userId),
+]);
+
 // ---- Blog: categories + posts (bilingual) ----
 
 export const categories = pgTable('categories', {
