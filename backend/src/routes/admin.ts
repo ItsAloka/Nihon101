@@ -1,7 +1,7 @@
 /* Admin + moderation API. Everything here is gated by requireAdmin (valid access
  * token + role=admin). Each state change writes an audit row. Mounted at /admin. */
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
+import { isNotNull } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAdmin } from '../middleware/requireAdmin';
@@ -10,21 +10,24 @@ import { getUserById, getUserByHandle } from '../db/queries/users';
 import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
 import { getComment, deleteComment } from '../db/queries/engagement';
 import {
-  createReport, listReports, getReportById, countReportsForTarget, resolveReport,
-  resolveReportsForTarget, dismissReportsForTarget, reportsAgainstUser, openReportCount, getDisplayNamesByIds,
-  listReportCases, listReportsForTarget, getSettings, updateSettings, type ReportCase,
+  createReport, listReports, getReportById, resolveReport,
+  resolveReportsForTarget, dismissReportsForTarget, dismissStaleWatchingReports,
+  reportsAgainstUser, getDisplayNamesByIds,
+  listReportCases, listReportsForTarget, resolveReportTargets, countOpenReportsForTargets,
+  getSettings, updateSettings, invalidateSettingsCache, type ReportCase,
   applyBan, liftBan, listUserBans,
   setPostHidden, setCommentHidden,
   logAdminAction, listAdminActions,
   searchUsersAdmin, setUserRole, adminStats,
   listFeatured, setFeatured, searchPostsAdmin,
-  type ReportStatus, type BanDuration, type TargetType, type FeaturedSection,
+  type ReportStatus, type BanDuration, type FeaturedSection,
 } from '../db/queries/admin';
 
 const app = new Hono<AppEnv>();
 app.use('*', requireAdmin);
 
 const REPORT_STATUSES: ReportStatus[] = ['open', 'resolved', 'dismissed'];
+const TARGET_TYPES = new Set(['post', 'comment', 'user']);
 const DURATIONS: BanDuration[] = ['24h', '7d', 'permanent'];
 const SECTIONS: FeaturedSection[] = ['hero', 'feature', 'picks'];
 const SECTION_CAP: Record<FeaturedSection, number> = { hero: 3, feature: 1, picks: 6 };
@@ -35,34 +38,6 @@ app.get('/stats', async (c) => c.json(await adminStats(getDb(c))));
 
 /* ───────────── reports ───────────── */
 
-// Best-effort context for a report's target so the queue row is actionable.
-async function resolveReportTarget(db: ReturnType<typeof getDb>, type: string, id: string) {
-  const out = {
-    postSlug: null as string | null, postTitle: null as string | null, cover: null as string | null,
-    excerpt: null as string | null, handle: null as string | null,
-    authorId: null as string | null, authorName: null as string | null, authorAvatarUrl: null as string | null,
-    isHidden: false,
-  };
-  if (type === 'user') {
-    const u = await getUserById(db, id);
-    if (u) { out.handle = u.handle; out.authorId = u.id; out.authorName = u.displayName; out.authorAvatarUrl = u.avatarUrl ?? null; out.isHidden = !!u.isBanned; }
-  } else if (type === 'post') {
-    const p = await getPostById(db, id);
-    if (p) {
-      out.postSlug = p.slug; out.postTitle = p.titleEn || p.titleJa; out.cover = p.cover ?? null; out.authorId = p.authorId; out.isHidden = !!p.isHidden;
-      const a = await getUserById(db, p.authorId); if (a) { out.authorName = a.displayName; out.handle = a.handle; out.authorAvatarUrl = a.avatarUrl ?? null; }
-    }
-  } else if (type === 'comment') {
-    const cm = await getComment(db, id);
-    if (cm) {
-      out.excerpt = cm.body ? cm.body.slice(0, 160) : null; out.authorId = cm.userId; out.isHidden = !!cm.isHidden;
-      const a = await getUserById(db, cm.userId); if (a) { out.authorName = a.displayName; out.handle = a.handle; out.authorAvatarUrl = a.avatarUrl ?? null; }
-      const p = await getPostById(db, cm.postId); if (p) { out.postSlug = p.slug; out.postTitle = p.titleEn || p.titleJa; }
-    }
-  }
-  return out;
-}
-
 app.get('/reports', async (c) => {
   const db = getDb(c);
   const sp = c.req.query('status');
@@ -71,14 +46,13 @@ app.get('/reports', async (c) => {
   // OPEN reports are returned GROUPED into one case per target, split by the
   // distinct-reporter threshold: "needs action" (≥ threshold) vs "watching"
   // (below — a lone/abusive reporter stays out of the way). Resolved/dismissed
-  // are returned as a flat history list (keyset-paginated).
+  // are returned as a flat history list (keyset-paginated). Target context is
+  // batch-resolved (fixed query count) rather than per-row.
   if (status === 'open') {
     const { reportThreshold } = await getSettings(db);
     const cases = await listReportCases(db, 'open');
-    const withCtx = await Promise.all(cases.map(async (k: ReportCase) => ({
-      ...k,
-      target: await resolveReportTarget(db, k.targetType, k.targetId),
-    })));
+    const ctx = await resolveReportTargets(db, cases);
+    const withCtx = cases.map((k: ReportCase) => ({ ...k, target: ctx.get(`${k.targetType}:${k.targetId}`)! }));
     return c.json({
       mode: 'cases' as const,
       threshold: reportThreshold,
@@ -91,14 +65,18 @@ app.get('/reports', async (c) => {
   const beforeMs = Number.isFinite(before) && before > 0 ? before : null;
   const rows = await listReports(db, status, 50, beforeMs);
   const nameIds = Array.from(new Set(rows.flatMap((r) => [r.reporterId, r.resolvedBy]).filter((v): v is string => !!v)));
-  const names = await getDisplayNamesByIds(db, nameIds);
-  const reports = await Promise.all(rows.map(async (r) => ({
+  const [names, ctx, dupes] = await Promise.all([
+    getDisplayNamesByIds(db, nameIds),
+    resolveReportTargets(db, rows),
+    countOpenReportsForTargets(db, rows),
+  ]);
+  const reports = rows.map((r) => ({
     ...r,
     reporterName: r.reporterId ? names.get(r.reporterId) ?? null : null,
     resolverName: r.resolvedBy ? names.get(r.resolvedBy) ?? null : null,
-    dupeCount: await countReportsForTarget(db, r.targetType, r.targetId),
-    target: await resolveReportTarget(db, r.targetType, r.targetId),
-  })));
+    dupeCount: dupes.get(`${r.targetType}:${r.targetId}`) ?? 0,
+    target: ctx.get(`${r.targetType}:${r.targetId}`)!,
+  }));
   return c.json({ mode: 'list' as const, reports, nextBefore: rows.length === 50 ? rows[rows.length - 1].createdAt : null });
 });
 
@@ -108,7 +86,7 @@ app.get('/reports/by-target', async (c) => {
   const db = getDb(c);
   const targetType = c.req.query('targetType') || '';
   const targetId = c.req.query('targetId') || '';
-  if (!targetType || !targetId) return c.json({ error: 'invalid_target' }, 400);
+  if (!TARGET_TYPES.has(targetType) || !targetId) return c.json({ error: 'invalid_target' }, 400);
   const statusQ = c.req.query('status');
   const status = REPORT_STATUSES.includes(statusQ as ReportStatus) ? (statusQ as ReportStatus) : 'open';
   const reports = await listReportsForTarget(db, targetType, targetId, status);
@@ -129,6 +107,21 @@ app.post('/reports/dismiss-target', async (c) => {
   return c.json({ ok: true, dismissed: n });
 });
 
+/* Bulk-clear stale low-signal "watching" cases on demand (the manual counterpart
+ *  to the hourly cron sweep). body.olderThanDays > 0 limits to cases that haven't
+ *  moved in that long; omit/0 clears every sub-threshold case now. */
+app.post('/reports/dismiss-watching', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const { reportThreshold } = await getSettings(db);
+  const body = (await c.req.json().catch(() => null)) as { olderThanDays?: unknown } | null;
+  const days = Number(body?.olderThanDays);
+  const cutoff = Number.isFinite(days) && days > 0 ? Date.now() - days * DAY : Date.now() + 1;
+  const n = await dismissStaleWatchingReports(db, reportThreshold, cutoff, actor.id, 'dismissed: low-signal case cleared by admin');
+  await logAdminAction(db, { actorId: actor.id, action: 'dismiss_watching', targetType: 'report', targetId: '', detail: { dismissed: n, olderThanDays: days > 0 ? days : 0 } });
+  return c.json({ ok: true, dismissed: n });
+});
+
 /* Moderation settings (report threshold + auto-hide threshold). */
 app.get('/settings', async (c) => c.json(await getSettings(getDb(c))));
 app.put('/settings', async (c) => {
@@ -144,6 +137,7 @@ app.put('/settings', async (c) => {
   // auto-hide must never be below the surface threshold.
   const autoHideThreshold = Math.max(reportThreshold, clamp(body?.autoHideThreshold, cur.autoHideThreshold));
   const next = await updateSettings(db, { reportThreshold, autoHideThreshold });
+  await invalidateSettingsCache(c.env.TRENDING_KV); // hot-path report POST reads the cache
   await logAdminAction(db, { actorId: actor.id, action: 'update_settings', targetType: 'settings', targetId: '', detail: { ...next } });
   return c.json(next);
 });
@@ -303,9 +297,11 @@ type MediaRef = { type: 'post' | 'user'; id: string; title: string };
 async function collectReferencedKeys(db: ReturnType<typeof getDb>): Promise<Map<string, MediaRef>> {
   const map = new Map<string, MediaRef>();
   const add = (url: string | null, ref: MediaRef) => { const k = keyFromUrl(url); if (k && !map.has(k)) map.set(k, ref); };
+  // Only rows that actually carry a media URL — most users have no avatar and many
+  // posts no cover, so this keeps the scan from loading the whole users/posts tables.
   const [ps, us] = await Promise.all([
-    db.select({ id: posts.id, title: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover }).from(posts),
-    db.select({ id: users.id, handle: users.handle, avatarUrl: users.avatarUrl }).from(users),
+    db.select({ id: posts.id, title: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover }).from(posts).where(isNotNull(posts.cover)),
+    db.select({ id: users.id, handle: users.handle, avatarUrl: users.avatarUrl }).from(users).where(isNotNull(users.avatarUrl)),
   ]);
   for (const p of ps) add(p.cover, { type: 'post', id: p.id, title: p.title || p.titleJa });
   for (const u of us) add(u.avatarUrl, { type: 'user', id: u.id, title: u.handle });

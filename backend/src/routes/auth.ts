@@ -3,12 +3,12 @@ import { eq, and, isNull, ne } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import bcrypt from 'bcryptjs';
 import type { AppEnv } from '../types';
-import { users, refreshTokens, passwordResets, googleLinks } from '../db/schema';
+import { users, refreshTokens, passwordResets, googleLinks, emailVerifications } from '../db/schema';
 import { id } from '../lib/ids';
 import { randomToken, hashToken } from '../lib/crypto';
 import { signAccess } from '../lib/tokens';
 import { clearRefreshCookie, readRefreshCookie } from '../lib/cookies';
-import { sendEmail, resetEmailHtml } from '../lib/mail';
+import { sendEmail, resetEmailHtml, verifyEmailHtml } from '../lib/mail';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { startSession, revokeFamily } from '../lib/session';
@@ -17,12 +17,26 @@ import { uniqueHandle, handleTaken, HANDLE_RE } from '../db/queries/users';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const auth = new Hono<AppEnv>();
 
+/** Password policy, enforced server-side everywhere a password is set (register,
+ *  change, reset). 8–72 chars (bcrypt silently truncates past 72 bytes, so a longer
+ *  "password" would hash the same as its prefix — a real footgun). Strength: either
+ *  a 12+ char passphrase, or 8+ chars spanning ≥2 character classes, so "12345678"
+ *  and "aaaaaaaa" are rejected but real passwords aren't nagged. Returns true if ok. */
+export function validPassword(pw: unknown): pw is string {
+  const p = String(pw ?? '');
+  if (p.length < 8 || p.length > 72) return false;
+  if (p.length >= 12) return true;
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter((re) => re.test(p)).length;
+  return classes >= 2;
+}
+
 const db = (c: any) => getDb(c);
 const now = () => Date.now();
 
 type PublicUser = {
   id: string; email: string; displayName: string; displayNameJa: string; role: string;
   handle: string; bio: string; bioJa: string; location: string; avatarUrl: string | null;
+  emailVerified: boolean;
 };
 const publicUser = (u: any): PublicUser => ({
   id: u.id,
@@ -35,7 +49,36 @@ const publicUser = (u: any): PublicUser => ({
   bioJa: u.bioJa,
   location: u.location,
   avatarUrl: u.avatarUrl,
+  emailVerified: !!u.emailVerified,
 });
+
+/** Mint a fresh single-use verification token (one pending per user — old ones
+ *  cleared) and store only its hash. Returns the verification URL to email. The DB
+ *  writes are synchronous (on the request pool, still open); the slow/failure-prone
+ *  email send is left to the caller to defer via waitUntil. */
+async function createVerificationLink(c: any, userId: string, loc: 'ja' | 'en'): Promise<string> {
+  await db(c).delete(emailVerifications).where(eq(emailVerifications.userId, userId));
+  const raw = randomToken();
+  await db(c).insert(emailVerifications).values({
+    id: id('ev'),
+    userId,
+    tokenHash: await hashToken(raw, c.env.REFRESH_PEPPER),
+    expiresAt: now() + 24 * 60 * 60 * 1000, // 24h
+    usedAt: null,
+    createdAt: now(),
+  });
+  return `${c.env.FRONTEND_ORIGIN}/${loc}/verify-email?token=${raw}`;
+}
+
+/** Fire the verification email in the background (no DB — just the network call), so
+ *  a mail outage can't break register/resend. */
+function emailVerification(c: any, to: string, link: string, loc: 'ja' | 'en'): void {
+  const { subject, html } = verifyEmailHtml(link, loc);
+  c.executionCtx.waitUntil(
+    sendEmail({ apiKey: c.env.RESEND_API_KEY, from: c.env.RESEND_FROM, to, subject, html })
+      .catch((e: unknown) => console.error('[verify] send failed', e)),
+  );
+}
 
 /** Ban gate, self-healing. Permanent (bannedUntil null) or still-in-window →
  *  blocked. An expired timed ban auto-lifts (clears the mirrored user-row flag) so
@@ -50,12 +93,13 @@ async function enforceBan(c: any, u: any): Promise<{ banned: boolean; until: num
 
 // ---------------------------------------------------------------- register
 auth.post('/register', limits.register, async (c) => {
-  const { email, password, displayName } = await c.req.json().catch(() => ({}));
+  const { email, password, displayName, locale } = await c.req.json().catch(() => ({}));
   const mail = String(email ?? '').trim().toLowerCase();
   const name = String(displayName ?? '').trim();
+  const loc: 'ja' | 'en' = locale === 'en' ? 'en' : 'ja';
 
   if (!EMAIL_RE.test(mail)) return c.json({ error: 'invalid_email' }, 400);
-  if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
+  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
 
   const [existing] = await db(c).select().from(users).where(eq(users.email, mail));
   if (existing) return c.json({ error: 'email_taken' }, 409);
@@ -75,6 +119,11 @@ auth.post('/register', limits.register, async (c) => {
   });
 
   const [u] = await db(c).select().from(users).where(eq(users.id, userId));
+  // Email verification — token written now, email sent in the background so signup
+  // stays instant and a mail outage can't block account creation. The user is signed
+  // in immediately; emailVerified flips once they click the link.
+  const link = await createVerificationLink(c, userId, loc);
+  emailVerification(c, mail, link, loc);
   await startSession(c, userId);
   const access = await signAccess(c.env.JWT_SECRET, u!);
   return c.json({ access, user: publicUser(u) }, 201);
@@ -241,7 +290,7 @@ auth.patch('/me', requireAuth, limits.profile, async (c) => {
 auth.post('/change-password', requireAuth, limits.profile, async (c) => {
   const sess = c.get('user')!;
   const { current, password } = await c.req.json().catch(() => ({}));
-  if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
+  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
 
   const [u] = await db(c).select().from(users).where(eq(users.id, sess.id));
   if (!u) return c.json({ error: 'unauthorized' }, 401);
@@ -279,6 +328,7 @@ auth.delete('/me', requireAuth, async (c) => {
   const sess = c.get('user')!;
   await db(c).delete(refreshTokens).where(eq(refreshTokens.userId, sess.id));
   await db(c).delete(passwordResets).where(eq(passwordResets.userId, sess.id));
+  await db(c).delete(emailVerifications).where(eq(emailVerifications.userId, sess.id));
   await db(c).delete(googleLinks).where(eq(googleLinks.userId, sess.id));
   await db(c).delete(users).where(eq(users.id, sess.id));
   clearRefreshCookie(c);
@@ -321,7 +371,7 @@ auth.post('/forgot', limits.forgot, async (c) => {
 // ------------------------------------------------------------------- reset
 auth.post('/reset', limits.reset, async (c) => {
   const { token, password } = await c.req.json().catch(() => ({}));
-  if (String(password ?? '').length < 8) return c.json({ error: 'weak_password' }, 400);
+  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
   if (!token) return c.json({ error: 'invalid_token' }, 400);
 
   const tokenHash = await hashToken(String(token), c.env.REFRESH_PEPPER);
@@ -345,6 +395,31 @@ auth.post('/reset', limits.reset, async (c) => {
     .set({ revokedAt: now() })
     .where(and(eq(refreshTokens.userId, pr.userId), isNull(refreshTokens.revokedAt)));
 
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------------- verify email (public)
+auth.post('/verify-email', limits.reset, async (c) => {
+  const { token } = await c.req.json().catch(() => ({}));
+  if (!token) return c.json({ error: 'invalid_token' }, 400);
+  const tokenHash = await hashToken(String(token), c.env.REFRESH_PEPPER);
+  const [ev] = await db(c).select().from(emailVerifications).where(eq(emailVerifications.tokenHash, tokenHash));
+  if (!ev || ev.usedAt || ev.expiresAt < now()) return c.json({ error: 'invalid_token' }, 400);
+
+  await db(c).update(users).set({ emailVerified: true, updatedAt: now() }).where(eq(users.id, ev.userId));
+  await db(c).update(emailVerifications).set({ usedAt: now() }).where(eq(emailVerifications.id, ev.id));
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------ resend verification (authed)
+auth.post('/resend-verification', requireAuth, limits.forgot, async (c) => {
+  const sess = c.get('user')!;
+  const [u] = await db(c).select().from(users).where(eq(users.id, sess.id));
+  if (!u) return c.json({ error: 'not_found' }, 404);
+  if (u.emailVerified) return c.json({ ok: true, alreadyVerified: true });
+  const loc: 'ja' | 'en' = (await c.req.json().catch(() => ({})))?.locale === 'en' ? 'en' : 'ja';
+  const link = await createVerificationLink(c, u.id, loc);
+  emailVerification(c, u.email, link, loc);
   return c.json({ ok: true });
 });
 

@@ -3,6 +3,8 @@
  * locales are saved and SSR'd. Casual, youthful register (this is a friendly
  * magazine, not a legal notice). HTML structure is preserved verbatim. */
 
+import { fetchWithTimeout } from './http';
+
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const MODEL = 'gpt-5-mini'; // cheaper than 4.1, more natural casual JP for blog prose
 
@@ -48,10 +50,12 @@ export async function translateFields(
     ],
   };
 
-  const res = await fetch(OPENAI_URL, {
+  const res = await fetchWithTimeout(OPENAI_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(payload),
+    timeoutMs: 30_000, // LLM calls are slow; one retry over a transient 5xx/429
+    retries: 1,
   });
   if (!res.ok) throw new Error(`openai_${res.status}`);
 

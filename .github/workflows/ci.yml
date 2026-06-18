@@ -1,0 +1,73 @@
+name: CI
+
+# Quality gate — must stay green to merge. Runs the backend test suite against a
+# real Postgres (pgvector image, matching local dev + Neon), typechecks both
+# packages, builds the frontend, and scans the whole history for committed secrets.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend — typecheck + tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16 # stock postgres:16 + the `vector` extension (0009)
+        env:
+          POSTGRES_USER: nihon101
+          POSTGRES_PASSWORD: nihon101
+          POSTGRES_DB: nihon101
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nihon101"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://nihon101:nihon101@localhost:5432/nihon101
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Audit dependencies (advisory)
+        run: bun audit
+        continue-on-error: true # surfaces CVEs as a visible check without blocking; Dependabot patches
+      - run: bun run db:migrate
+      - run: bun run typecheck
+      - run: bun test
+
+  frontend:
+    name: Frontend — build (typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Audit dependencies (advisory)
+        run: bun audit
+        continue-on-error: true
+      - run: bun run build
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so a secret in any past commit fails the build
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

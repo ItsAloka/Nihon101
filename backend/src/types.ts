@@ -10,6 +10,10 @@ export type AppBindings = {
 
 export type AppVars = {
   DATABASE_URL: string;
+  // "true" in prod (behind Hyperdrive / Neon pooler): reuse ONE per-isolate pool
+  // across requests instead of opening+closing one per request. Unset in local dev
+  // (direct Docker Postgres) → per-request pool. See db/client.ts.
+  DB_POOLED?: string;
   JWT_SECRET: string;
   REFRESH_PEPPER: string;
   FRONTEND_ORIGIN: string;
@@ -32,5 +36,6 @@ export type AppEnv = {
   Bindings: AppBindings & AppVars;
   Variables: {
     user?: SessionUser;
+    requestId?: string;
   };
 };

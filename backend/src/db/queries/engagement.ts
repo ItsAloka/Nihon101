@@ -21,23 +21,29 @@ export async function togglePostLike(db: DB, postId: string, userId: string) {
     .from(postLikes)
     .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
 
+  // The counter is a denormalized cache of the post_likes rows, so a concurrent
+  // double-tap must never +2 (or 500 on the UNIQUE index) — only adjust it when the
+  // row actually changed. ON CONFLICT/affected-rowcount makes the toggle idempotent:
+  // the row mutation and the increment agree even when two requests race.
+  let liked: boolean;
   if (existing) {
-    await db.delete(postLikes).where(eq(postLikes.id, existing.id));
-    await recordNegative(db, postId, userId, -3); // unlike → strong negative taste signal
-    await db.update(posts)
-      .set({ likes: sql`GREATEST(${posts.likes} - 1, 0)` })
-      .where(eq(posts.id, postId));
+    const del = await db.delete(postLikes).where(eq(postLikes.id, existing.id)).returning({ id: postLikes.id });
+    if (del.length) {
+      await recordNegative(db, postId, userId, -3); // unlike → strong negative taste signal
+      await db.update(posts).set({ likes: sql`GREATEST(${posts.likes} - 1, 0)` }).where(eq(posts.id, postId));
+    }
+    liked = false;
   } else {
-    await db.insert(postLikes).values({
-      id: newId('plike'), postId, userId, createdAt: Date.now(),
-    });
-    await db.update(posts)
-      .set({ likes: sql`${posts.likes} + 1` })
-      .where(eq(posts.id, postId));
+    const ins = await db.insert(postLikes)
+      .values({ id: newId('plike'), postId, userId, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .returning({ id: postLikes.id });
+    if (ins.length) await db.update(posts).set({ likes: sql`${posts.likes} + 1` }).where(eq(posts.id, postId));
+    liked = true;
   }
 
   const [row] = await db.select({ likes: posts.likes }).from(posts).where(eq(posts.id, postId));
-  return { liked: !existing, likes: row?.likes ?? 0 };
+  return { liked, likes: row?.likes ?? 0 };
 }
 
 /** Whether a user has liked a post (null user → false). */
@@ -60,23 +66,26 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
     .from(postSaves)
     .where(and(eq(postSaves.postId, postId), eq(postSaves.userId, userId)));
 
+  // Same race-safe pattern as likes: only move the counter when the row truly changed.
+  let saved: boolean;
   if (existing) {
-    await db.delete(postSaves).where(eq(postSaves.id, existing.id));
-    await recordNegative(db, postId, userId, -2); // unsave → moderate negative taste signal
-    await db.update(posts)
-      .set({ saves: sql`GREATEST(${posts.saves} - 1, 0)` })
-      .where(eq(posts.id, postId));
+    const del = await db.delete(postSaves).where(eq(postSaves.id, existing.id)).returning({ id: postSaves.id });
+    if (del.length) {
+      await recordNegative(db, postId, userId, -2); // unsave → moderate negative taste signal
+      await db.update(posts).set({ saves: sql`GREATEST(${posts.saves} - 1, 0)` }).where(eq(posts.id, postId));
+    }
+    saved = false;
   } else {
-    await db.insert(postSaves).values({
-      id: newId('psave'), postId, userId, createdAt: Date.now(),
-    });
-    await db.update(posts)
-      .set({ saves: sql`${posts.saves} + 1` })
-      .where(eq(posts.id, postId));
+    const ins = await db.insert(postSaves)
+      .values({ id: newId('psave'), postId, userId, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .returning({ id: postSaves.id });
+    if (ins.length) await db.update(posts).set({ saves: sql`${posts.saves} + 1` }).where(eq(posts.id, postId));
+    saved = true;
   }
 
   const [row] = await db.select({ saves: posts.saves }).from(posts).where(eq(posts.id, postId));
-  return { saved: !existing, saves: row?.saves ?? 0 };
+  return { saved, saves: row?.saves ?? 0 };
 }
 
 /** Whether a user has saved a post (null user → false). */
@@ -186,18 +195,16 @@ export async function toggleCommentLike(db: DB, commentId: string, userId: strin
     .from(commentLikes)
     .where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)));
 
+  // Race-safe: adjust the cached count only when the like row actually changed.
   if (existing) {
-    await db.delete(commentLikes).where(eq(commentLikes.id, existing.id));
-    await db.update(postComments)
-      .set({ likes: sql`GREATEST(${postComments.likes} - 1, 0)` })
-      .where(eq(postComments.id, commentId));
+    const del = await db.delete(commentLikes).where(eq(commentLikes.id, existing.id)).returning({ id: commentLikes.id });
+    if (del.length) await db.update(postComments).set({ likes: sql`GREATEST(${postComments.likes} - 1, 0)` }).where(eq(postComments.id, commentId));
   } else {
-    await db.insert(commentLikes).values({
-      id: newId('clike'), commentId, userId, createdAt: Date.now(),
-    });
-    await db.update(postComments)
-      .set({ likes: sql`${postComments.likes} + 1` })
-      .where(eq(postComments.id, commentId));
+    const ins = await db.insert(commentLikes)
+      .values({ id: newId('clike'), commentId, userId, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .returning({ id: commentLikes.id });
+    if (ins.length) await db.update(postComments).set({ likes: sql`${postComments.likes} + 1` }).where(eq(postComments.id, commentId));
   }
 
   const [row] = await db.select({ likes: postComments.likes }).from(postComments).where(eq(postComments.id, commentId));

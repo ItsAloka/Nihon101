@@ -1,0 +1,17 @@
+# Cloudflare Pages security headers for the HTML site (nihon101.com).
+# The API (api.nihon101.com) sets its own deny-all CSP in the Worker; this governs
+# the rendered pages, where the real XSS surface is (user-authored post bodies —
+# sanitized at write, with this CSP as the second layer).
+#
+# NOTE on script-src 'unsafe-inline': Astro emits a few per-request inline scripts
+# (define:vars, is:inline) and inline <style> from define:vars, and a static
+# _headers file can't carry a per-response nonce. So inline is allowed, but every
+# EXTERNAL origin is still locked down (no third-party script/frame/connect can be
+# injected). To drop 'unsafe-inline' later, move to Astro's nonce-based CSP.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://api.nihon101.com https://i.ytimg.com https://*.ytimg.com; connect-src 'self' https://api.nihon101.com; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), browsing-topics=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload

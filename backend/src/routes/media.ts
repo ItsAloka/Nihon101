@@ -14,22 +14,47 @@ const EXT: Record<string, string> = {
   'image/webp': 'webp', 'image/avif': 'avif',
 };
 
+/** Sniff the real image type from the leading bytes — the client-supplied MIME is
+ *  untrusted, so we never let it decide what we store. Returns the canonical ext
+ *  the bytes actually are, or null if they're not one of our allowed formats. A
+ *  non-image (HTML, script, polyglot) renamed to .png is rejected here. */
+export function sniffExt(b: Uint8Array): string | null {
+  const u32 = (i: number) => b[i] !== undefined;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'png';
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'gif'; // GIF8
+  // RIFF....WEBP
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'webp';
+  // ISO-BMFF "ftyp" box at offset 4 with an AVIF/HEIF brand at offset 8.
+  if (u32(11) && b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    if (brand === 'avif' || brand === 'avis' || brand === 'mif1' || brand === 'heic' || brand === 'heix') return 'avif';
+  }
+  return null;
+}
+
 // Upload one image. Returns a public URL pointing back at GET /media/:key.
 app.post('/', requireAuth, limits.upload, async (c) => {
   const form = await c.req.formData().catch(() => null);
   // Workers/DOM File typings clash here, so treat the entry structurally.
   const file = form?.get('file') as unknown as
-    { type: string; size: number; stream: () => ReadableStream } | string | null;
-  if (!file || typeof file === 'string' || typeof file.stream !== 'function')
+    { type: string; size: number; arrayBuffer: () => Promise<ArrayBuffer> } | string | null;
+  if (!file || typeof file === 'string' || typeof file.arrayBuffer !== 'function')
     return c.json({ error: 'no_file' }, 400);
 
-  const ext = EXT[file.type];
-  if (!ext) return c.json({ error: 'unsupported_type' }, 415);
+  if (!EXT[file.type]) return c.json({ error: 'unsupported_type' }, 415);
   if (file.size > MAX_BYTES) return c.json({ error: 'too_large' }, 413);
 
+  // Read once (already capped at 8MB) and trust the BYTES, not the declared type.
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.byteLength > MAX_BYTES) return c.json({ error: 'too_large' }, 413);
+  const ext = sniffExt(buf);
+  if (!ext) return c.json({ error: 'not_an_image' }, 415);
+  const contentType = Object.keys(EXT).find((m) => EXT[m] === ext) || 'application/octet-stream';
+
   const key = `${c.var.user!.id}/${crypto.randomUUID()}.${ext}`;
-  await c.env.MEDIA.put(key, file.stream(), {
-    httpMetadata: { contentType: file.type, cacheControl: 'public, max-age=31536000, immutable' },
+  await c.env.MEDIA.put(key, buf, {
+    httpMetadata: { contentType, cacheControl: 'public, max-age=31536000, immutable' },
   });
 
   const url = `${new URL(c.req.url).origin}/media/${key}`;

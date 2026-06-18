@@ -153,14 +153,29 @@ export async function openReportCount(db: DB): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Distinct people who currently have an OPEN report against a target. This is
- *  the value the threshold compares against — one user spamming the same target
- *  counts ONCE, so a single troll can't trip the trigger. */
-export async function countDistinctReporters(db: DB, targetType: string, targetId: string): Promise<number> {
+/** Account age (ms) a reporter must clear before their flag counts toward the
+ *  AUTOMATED auto-hide. Auto-hide is the only no-human-in-the-loop takedown, so it
+ *  weighs only reporters who are BOTH email-verified AND not brand-new — a wall of
+ *  throwaway accounts can't force-hide content. The surface/queue threshold still
+ *  counts everyone (see listReportCases). */
+const TRUST_MIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Distinct TRUSTED (email-verified + aged) people with an OPEN report against a
+ *  target. This — not the raw count — is what auto-hide compares to its threshold,
+ *  so sockpuppet floods can't trip the automated takedown. */
+export async function countTrustedDistinctReporters(db: DB, targetType: string, targetId: string): Promise<number> {
+  const cutoff = now() - TRUST_MIN_AGE_MS;
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${reports.reporterId})::int` })
     .from(reports)
-    .where(and(eq(reports.targetType, targetType), eq(reports.targetId, targetId), eq(reports.status, 'open')));
+    .innerJoin(users, eq(users.id, reports.reporterId))
+    .where(and(
+      eq(reports.targetType, targetType),
+      eq(reports.targetId, targetId),
+      eq(reports.status, 'open'),
+      eq(users.emailVerified, true),
+      lt(users.createdAt, cutoff),
+    ));
   return row?.n ?? 0;
 }
 
@@ -198,6 +213,140 @@ export async function listReportCases(db: DB, status: ReportStatus = 'open', lim
   return rows as ReportCase[];
 }
 
+/** Auto-clear stale low-signal "watching" cases: open reports whose target has
+ *  FEWER than `threshold` distinct reporters AND whose newest report is older than
+ *  `cutoff`. Without this, single-report cases that never reach the threshold pile
+ *  up forever. Run hourly from the cron (resolverId null = system); also exposed as
+ *  a manual admin sweep. Returns the number of reports dismissed. */
+export async function dismissStaleWatchingReports(
+  db: DB, threshold: number, cutoff: number, resolverId: string | null = null,
+  note = 'auto-dismissed: stale low-signal report',
+): Promise<number> {
+  const stale = await db
+    .select({ targetType: reports.targetType, targetId: reports.targetId })
+    .from(reports)
+    .where(eq(reports.status, 'open'))
+    .groupBy(reports.targetType, reports.targetId)
+    .having(and(
+      sql`count(distinct ${reports.reporterId}) < ${threshold}`,
+      sql`max(${reports.createdAt}) < ${cutoff}`,
+    ));
+  let n = 0;
+  for (const s of stale) {
+    const res = await db
+      .update(reports)
+      .set({ status: 'dismissed', resolvedBy: resolverId, resolvedAt: now(), resolutionNote: note.slice(0, 500) })
+      .where(and(eq(reports.targetType, s.targetType), eq(reports.targetId, s.targetId), eq(reports.status, 'open')))
+      .returning({ id: reports.id });
+    n += res.length;
+  }
+  return n;
+}
+
+/** Display context for one report target (post/comment/user) shown in the queue. */
+export interface ReportTargetCtx {
+  postSlug: string | null; postTitle: string | null; cover: string | null;
+  excerpt: string | null; handle: string | null;
+  authorId: string | null; authorName: string | null; authorAvatarUrl: string | null;
+  isHidden: boolean;
+}
+const emptyTargetCtx = (): ReportTargetCtx => ({
+  postSlug: null, postTitle: null, cover: null, excerpt: null, handle: null,
+  authorId: null, authorName: null, authorAvatarUrl: null, isHidden: false,
+});
+const ctxKey = (type: string, id: string) => `${type}:${id}`;
+
+/** Batch-resolve display context for a set of report targets in a FIXED number of
+ *  queries (replaces the per-row N+1). Returns a map keyed `${targetType}:${id}`;
+ *  every input target is present (empty ctx if the row is gone). */
+export async function resolveReportTargets(
+  db: DB, targets: { targetType: string; targetId: string }[],
+): Promise<Map<string, ReportTargetCtx>> {
+  const out = new Map<string, ReportTargetCtx>();
+  const postIds = new Set<string>();
+  const commentIds = new Set<string>();
+  const userTargetIds = new Set<string>();
+  for (const t of targets) {
+    out.set(ctxKey(t.targetType, t.targetId), emptyTargetCtx());
+    if (t.targetType === 'post') postIds.add(t.targetId);
+    else if (t.targetType === 'comment') commentIds.add(t.targetId);
+    else if (t.targetType === 'user') userTargetIds.add(t.targetId);
+  }
+  if (!out.size) return out;
+
+  // 1) the reported posts + comments themselves.
+  const [postRows, commentRows] = await Promise.all([
+    postIds.size
+      ? db.select({ id: posts.id, slug: posts.slug, titleEn: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover, authorId: posts.authorId, isHidden: posts.isHidden })
+          .from(posts).where(inArray(posts.id, [...postIds]))
+      : Promise.resolve([] as { id: string; slug: string; titleEn: string; titleJa: string; cover: string | null; authorId: string; isHidden: boolean }[]),
+    commentIds.size
+      ? db.select({ id: postComments.id, body: postComments.body, userId: postComments.userId, postId: postComments.postId, isHidden: postComments.isHidden })
+          .from(postComments).where(inArray(postComments.id, [...commentIds]))
+      : Promise.resolve([] as { id: string; body: string; userId: string; postId: string; isHidden: boolean }[]),
+  ]);
+
+  // 2) every user we must display (target users + post/comment authors) and every
+  //    parent post a reported comment lives under, in one round each.
+  const needUserIds = new Set<string>(userTargetIds);
+  for (const p of postRows) needUserIds.add(p.authorId);
+  for (const cm of commentRows) needUserIds.add(cm.userId);
+  const parentPostIds = new Set<string>(commentRows.map((cm) => cm.postId).filter((pid) => !postIds.has(pid)));
+
+  const [userRows, parentPostRows] = await Promise.all([
+    needUserIds.size
+      ? db.select({ id: users.id, handle: users.handle, displayName: users.displayName, avatarUrl: users.avatarUrl, isBanned: users.isBanned })
+          .from(users).where(inArray(users.id, [...needUserIds]))
+      : Promise.resolve([] as { id: string; handle: string; displayName: string; avatarUrl: string | null; isBanned: boolean }[]),
+    parentPostIds.size
+      ? db.select({ id: posts.id, slug: posts.slug, titleEn: posts.titleEn, titleJa: posts.titleJa })
+          .from(posts).where(inArray(posts.id, [...parentPostIds]))
+      : Promise.resolve([] as { id: string; slug: string; titleEn: string; titleJa: string }[]),
+  ]);
+  const userById = new Map(userRows.map((u) => [u.id, u]));
+  const parentById = new Map<string, { slug: string; titleEn: string; titleJa: string }>();
+  for (const p of parentPostRows) parentById.set(p.id, p);
+  for (const p of postRows) parentById.set(p.id, p); // a reported post can itself be a comment's parent
+
+  // 3) stitch.
+  for (const p of postRows) {
+    const ctx = out.get(ctxKey('post', p.id))!;
+    ctx.postSlug = p.slug; ctx.postTitle = p.titleEn || p.titleJa; ctx.cover = p.cover ?? null;
+    ctx.authorId = p.authorId; ctx.isHidden = !!p.isHidden;
+    const a = userById.get(p.authorId);
+    if (a) { ctx.authorName = a.displayName; ctx.handle = a.handle; ctx.authorAvatarUrl = a.avatarUrl ?? null; }
+  }
+  for (const cm of commentRows) {
+    const ctx = out.get(ctxKey('comment', cm.id))!;
+    ctx.excerpt = cm.body ? cm.body.slice(0, 160) : null; ctx.authorId = cm.userId; ctx.isHidden = !!cm.isHidden;
+    const a = userById.get(cm.userId);
+    if (a) { ctx.authorName = a.displayName; ctx.handle = a.handle; ctx.authorAvatarUrl = a.avatarUrl ?? null; }
+    const pp = parentById.get(cm.postId);
+    if (pp) { ctx.postSlug = pp.slug; ctx.postTitle = pp.titleEn || pp.titleJa; }
+  }
+  for (const uid of userTargetIds) {
+    const ctx = out.get(ctxKey('user', uid))!;
+    const u = userById.get(uid);
+    if (u) { ctx.handle = u.handle; ctx.authorId = u.id; ctx.authorName = u.displayName; ctx.authorAvatarUrl = u.avatarUrl ?? null; ctx.isHidden = !!u.isBanned; }
+  }
+  return out;
+}
+
+/** Open-report counts (the dupe badge) for many targets in one query. Map keyed
+ *  `${targetType}:${id}`. */
+export async function countOpenReportsForTargets(db: DB, targets: { targetType: string; targetId: string }[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const ids = [...new Set(targets.map((t) => t.targetId))];
+  if (!ids.length) return map;
+  const rows = await db
+    .select({ targetType: reports.targetType, targetId: reports.targetId, n: sql<number>`count(*)::int` })
+    .from(reports)
+    .where(and(eq(reports.status, 'open'), inArray(reports.targetId, ids)))
+    .groupBy(reports.targetType, reports.targetId);
+  for (const r of rows) map.set(ctxKey(r.targetType, r.targetId), r.n);
+  return map;
+}
+
 /** Dismiss every OPEN report against a target (admin judged the case harmless). */
 export async function dismissReportsForTarget(db: DB, targetType: string, targetId: string, resolverId: string, note = ''): Promise<number> {
   const res = await db
@@ -211,6 +360,11 @@ export async function dismissReportsForTarget(db: DB, targetType: string, target
 /* ---------------- moderation settings (singleton) ---------------- */
 
 const SETTINGS_ID = 'singleton';
+// Defaults for a fresh install. autoHide ≥ report always. autoHide is the count of
+// TRUSTED reporters (countTrustedDistinctReporters), so it sits higher than the
+// surface threshold to stay conservative about no-human takedowns.
+const DEFAULT_REPORT_THRESHOLD = 3;
+const DEFAULT_AUTO_HIDE_THRESHOLD = 8;
 export interface ModSettings { reportThreshold: number; autoHideThreshold: number; }
 
 /** Read the singleton config, lazily creating it with defaults on first access. */
@@ -218,9 +372,32 @@ export async function getSettings(db: DB): Promise<ModSettings> {
   const [row] = await db.select().from(adminSettings).where(eq(adminSettings.id, SETTINGS_ID));
   if (row) return { reportThreshold: row.reportThreshold, autoHideThreshold: row.autoHideThreshold };
   await db.insert(adminSettings)
-    .values({ id: SETTINGS_ID, reportThreshold: 3, autoHideThreshold: 6, updatedAt: now() })
+    .values({ id: SETTINGS_ID, reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, updatedAt: now() })
     .onConflictDoNothing();
-  return { reportThreshold: 3, autoHideThreshold: 6 };
+  return { reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD };
+}
+
+const SETTINGS_KV_KEY = 'mod:settings';
+const SETTINGS_KV_TTL = 60; // seconds — short; PUT also invalidates immediately.
+
+/** Settings read for the hot path (public report POST): KV-cached so a flood of
+ *  reports doesn't re-read the singleton row on every flag. Falls back to the DB
+ *  (and warms KV). updateSettings's route invalidates via invalidateSettingsCache. */
+export async function getSettingsCached(db: DB, kv: KVNamespace | undefined): Promise<ModSettings> {
+  if (kv) {
+    try {
+      const raw = await kv.get(SETTINGS_KV_KEY);
+      if (raw) return JSON.parse(raw) as ModSettings;
+    } catch { /* miss/parse → live read */ }
+  }
+  const s = await getSettings(db);
+  if (kv) { try { await kv.put(SETTINGS_KV_KEY, JSON.stringify(s), { expirationTtl: SETTINGS_KV_TTL }); } catch { /* noop */ } }
+  return s;
+}
+
+/** Drop the cached settings so the next read reflects an admin edit at once. */
+export async function invalidateSettingsCache(kv: KVNamespace | undefined): Promise<void> {
+  if (kv) { try { await kv.delete(SETTINGS_KV_KEY); } catch { /* noop */ } }
 }
 
 /** Update the singleton config. Caller clamps/validates first. */
