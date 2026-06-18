@@ -68,6 +68,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history so a secret in any past commit fails the build
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
