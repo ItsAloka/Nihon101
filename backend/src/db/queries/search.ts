@@ -43,6 +43,29 @@ function tsConfig(loc: Loc): string {
   return loc === 'ja' ? 'simple' : 'english';
 }
 
+/** Posts whose author resembles the query — handle / display name (EN or JA),
+ *  substring or one typo. Folded into the FTS pass so typing a writer's name
+ *  ("yuki", "堀") surfaces THEIR posts instead of an empty results page. Author
+ *  hits carry zero ts_rank, so they sort after genuine title/body matches.
+ *  Wildcards are escaped and sub-2-char needles ignored so a stray "%" or a lone
+ *  letter can't match-all. */
+function authorMatch(q: string): SQL {
+  if (q.length < 2) return sql`false`;
+  const esc = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const like = `%${esc}%`;
+  return sql`("users"."handle" ILIKE ${like} OR "users"."display_name" ILIKE ${like} OR "users"."display_name_ja" ILIKE ${like}
+    OR similarity("users"."display_name", ${q}) > 0.3 OR similarity("users"."display_name_ja", ${q}) > 0.3)`;
+}
+
+/** Rank prefix that floats true title matches (in the active locale) above mere
+ *  body / author / fuzzy hits: exact title → starts-with → contains → (caller's
+ *  relevance). Cheap booleans, evaluated on the already-filtered result set. */
+function titleBoost(q: string, loc: Loc): SQL {
+  const esc = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const t = titleCol(loc);
+  return sql`(lower(${t}) = lower(${q})) DESC, (${t} ILIKE ${`${esc}%`}) DESC, (${t} ILIKE ${`%${esc}%`}) DESC`;
+}
+
 export async function searchPosts(db: DB, f: SearchFilter): Promise<SearchPage> {
   const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(f.limit ?? DEFAULT_LIMIT)));
   const page = Math.max(0, Math.trunc(f.page ?? 0));
@@ -62,23 +85,34 @@ export async function searchPosts(db: DB, f: SearchFilter): Promise<SearchPage> 
 
   if (q) {
     const tsq = sql`websearch_to_tsquery(${tsConfig(loc)}, ${q})`;
-    const fts = await run(db, [...base, sql`"posts"."search" @@ ${tsq}`], rankOrder(f.sort, tsq), limit, page);
+    // Pass 1 — full-text OR author match. Folding the author in here means typing a
+    // writer's name ("yuki") surfaces their posts, not an empty Posts tab.
+    const fts = await run(
+      db,
+      [...base, sql`("posts"."search" @@ ${tsq} OR ${authorMatch(q)})`],
+      rankOrder(f.sort, tsq, q, loc),
+      limit,
+      page,
+    );
     if (fts.total > 0) return fts;
-    // Fallback for what FTS misses — crucially Japanese, which `to_tsvector` can't
-    // word-segment, so a sub-title query like 火曜日 never matches the tsvector.
-    // Substring (ILIKE) is exact + reliable for JA and index-accelerated by the
-    // gin_trgm_ops indexes on the titles; trigram word_similarity adds typo/partial
-    // tolerance for the Latin scripts.
-    const title = titleCol(loc);
+    // Pass 2 — typo/partial fallback. Two guards stop it flooding: `numnode(tsq) > 0`
+    // drops pure-stopword queries ("the", "of", "a") that would otherwise ILIKE-match
+    // the whole table; `char_length >= 2` skips lone letters. JA is the reason ILIKE
+    // exists at all — `to_tsvector` can't word-segment Japanese, so a sub-title query
+    // like 火曜日 never hits the tsvector (substring is exact + index-accelerated by
+    // the gin_trgm_ops title indexes). `strict_word_similarity` (word-boundary aware,
+    // 0.34) adds typo tolerance for the Latin scripts without the noise plain
+    // word_similarity let through ("rame" ≉ "Rain"). Fuzz title + tags + author so a
+    // misspelt tag or writer name resolves too.
     const like = '%' + q.replace(/[\\%_]/g, '\\$&') + '%';
     return run(
       db,
-      [...base, sql`(
-        word_similarity(${q}, ${title}) > 0.3
+      [...base, sql`(char_length(${q}) >= 2 AND numnode(${tsq}) > 0 AND (
+        ${fuzz(q)} > 0.34
         OR "posts"."title_ja" ILIKE ${like} OR "posts"."title_en" ILIKE ${like}
         OR "posts"."excerpt_ja" ILIKE ${like} OR "posts"."excerpt_en" ILIKE ${like}
-      )`],
-      sql`word_similarity(${q}, ${title}) DESC, "posts"."published_at" DESC`,
+      ))`],
+      sql`${titleBoost(q, loc)}, ${fuzz(q)} DESC, "posts"."published_at" DESC`,
       limit,
       page,
     );
@@ -86,10 +120,23 @@ export async function searchPosts(db: DB, f: SearchFilter): Promise<SearchPage> 
   return run(db, base, browseOrder(f.sort), limit, page);
 }
 
-/** Relevance = FTS rank with a gentle engagement boost; explicit sorts win. */
-function rankOrder(sort: SearchSort | undefined, tsq: SQL): SQL {
+/** Word-boundary-aware typo/partial score across the fields a reader is likeliest
+ *  to mean: either title, the tag labels, or the author's name (EN or JA). */
+function fuzz(q: string): SQL {
+  const tagsText = sql`translate(coalesce("posts"."tags"::text, ''), '[]",', '    ')`;
+  return sql`GREATEST(
+    strict_word_similarity(${q}, "posts"."title_en"),
+    strict_word_similarity(${q}, "posts"."title_ja"),
+    strict_word_similarity(${q}, ${tagsText}),
+    strict_word_similarity(${q}, coalesce("users"."display_name", '')),
+    strict_word_similarity(${q}, coalesce("users"."display_name_ja", ''))
+  )`;
+}
+
+/** Relevance = title boost, then FTS rank with a gentle engagement boost; explicit sorts win. */
+function rankOrder(sort: SearchSort | undefined, tsq: SQL, q: string, loc: Loc): SQL {
   if (sort && sort !== 'relevance') return browseOrder(sort);
-  return sql`(ts_rank("posts"."search", ${tsq}) * (1 + ln(1 + "posts"."likes") * 0.05)) DESC, "posts"."published_at" DESC`;
+  return sql`${titleBoost(q, loc)}, (ts_rank("posts"."search", ${tsq}) * (1 + ln(1 + "posts"."likes") * 0.05)) DESC, "posts"."published_at" DESC`;
 }
 
 function browseOrder(sort: SearchSort | undefined): SQL {
@@ -109,7 +156,13 @@ async function run(db: DB, conds: (SQL | undefined)[], order: SQL, limit: number
       .orderBy(order)
       .limit(limit)
       .offset(page * limit) as Promise<PostCardRow[]>,
-    db.select({ total: sql<number>`count(*)::int` }).from(posts).where(where),
+    // Same leftJoin as the items query: the WHERE can now reference author columns
+    // (author-name search), so the count must see them too or it would error.
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(posts)
+      .leftJoin(users, eq(posts.authorId, users.id))
+      .where(where),
   ]);
 
   return { items, total, nextPage: (page + 1) * limit < total ? page + 1 : null };
@@ -141,7 +194,9 @@ export async function suggestPosts(db: DB, q: string, loc: Loc, limit = 6): Prom
     .orderBy(sql`ts_rank("posts"."search", ${tsq}) DESC, "posts"."likes" DESC`)
     .limit(limit);
   if (fts.length) return fts;
-  // Same JA-aware fallback as searchPosts: substring (ILIKE) + trigram on titles.
+  // Same JA-aware fallback as searchPosts, same guards: numnode + length stop
+  // stopword/lone-letter floods; strict_word_similarity trims Latin typo noise; ILIKE
+  // is the JA substring workhorse. Boost exact/prefix titles to the top of the dropdown.
   const title = titleCol(loc);
   const like = '%' + needle.replace(/[\\%_]/g, '\\$&') + '%';
   return db
@@ -149,9 +204,12 @@ export async function suggestPosts(db: DB, q: string, loc: Loc, limit = 6): Prom
     .from(posts)
     .where(and(
       eq(posts.status, 'published'),
-      sql`(word_similarity(${needle}, ${title}) > 0.3 OR "posts"."title_ja" ILIKE ${like} OR "posts"."title_en" ILIKE ${like})`,
+      sql`(char_length(${needle}) >= 2 AND numnode(${tsq}) > 0 AND (
+        strict_word_similarity(${needle}, ${title}) > 0.34
+        OR "posts"."title_ja" ILIKE ${like} OR "posts"."title_en" ILIKE ${like}
+      ))`,
     ))
-    .orderBy(sql`word_similarity(${needle}, ${title}) DESC, "posts"."likes" DESC`)
+    .orderBy(sql`${titleBoost(needle, loc)}, strict_word_similarity(${needle}, ${title}) DESC, "posts"."likes" DESC`)
     .limit(limit);
 }
 
