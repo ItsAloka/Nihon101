@@ -2,6 +2,7 @@ import { eq, and, desc, sql, count, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { users, posts, follows } from '../schema';
 import { slugify } from './categories';
+import { notHidden } from './posts';
 
 const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
 
@@ -68,7 +69,7 @@ export function listTopAuthors(db: DB, limit = 15) {
       likes: sql<number>`coalesce(sum(${posts.likes}), 0)::int`,
     })
     .from(users)
-    .innerJoin(posts, and(eq(posts.authorId, users.id), eq(posts.status, 'published')))
+    .innerJoin(posts, and(eq(posts.authorId, users.id), eq(posts.status, 'published'), notHidden))
     .groupBy(users.id)
     .orderBy(desc(score))
     .limit(limit);
@@ -115,8 +116,8 @@ export function listAuthors(
     ? sql`GREATEST(similarity(${users.displayName}, ${needle}), similarity(coalesce(${users.displayNameJa}, ''), ${needle}), similarity(${users.handle}, ${needle})) DESC, ${score} DESC`
     : sort === 'new' ? desc(users.createdAt) : desc(score);
   const where = needle
-    ? and(eq(posts.status, 'published'), authorNameMatch(needle))
-    : eq(posts.status, 'published');
+    ? and(eq(posts.status, 'published'), notHidden, authorNameMatch(needle))
+    : and(eq(posts.status, 'published'), notHidden);
   return db
     .select({
       id: users.id,
@@ -156,13 +157,13 @@ export async function countAuthors(db: DB, q?: string): Promise<number> {
     const [row] = await db
       .select({ n: sql<number>`count(distinct ${posts.authorId})::int` })
       .from(posts)
-      .where(eq(posts.status, 'published'));
+      .where(and(eq(posts.status, 'published'), notHidden));
     return row?.n ?? 0;
   }
   const [row] = await db
     .select({ n: sql<number>`count(distinct ${users.id})::int` })
     .from(users)
     .innerJoin(posts, eq(posts.authorId, users.id))
-    .where(and(eq(posts.status, 'published'), authorNameMatch(needle)));
+    .where(and(eq(posts.status, 'published'), notHidden, authorNameMatch(needle)));
   return row?.n ?? 0;
 }

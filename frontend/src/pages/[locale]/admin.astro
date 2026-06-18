@@ -1,0 +1,60 @@
+---
+// Admin console (SSR shell + client island). The page is role-gated on the client:
+// the island bootstraps the session from the refresh cookie, and anyone who isn't
+// an admin sees a "not authorized" panel. noindex — never in search results.
+import Shell from "../../layouts/Shell.astro";
+import AdminConsole from "../../nihon/admin.jsx";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+const pageTitle = jp ? "管理パネル — nihon101" : "Admin — nihon101";
+---
+<Shell locale={locale} title={pageTitle} description="" canonicalPath={`/${locale}/admin`} active="">
+  <div class="wrap section">
+    <AdminConsole client:only="react" locale={locale} />
+  </div>
+
+  <style is:global>
+    .adm { font-family: var(--fontBody); color: var(--ink); }
+    .adm-h { font-family: var(--fontDisplay); font-weight: 600; letter-spacing: -0.01em; }
+    .adm-kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--inkFaint); }
+    .adm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 24px; border-bottom: 1px solid var(--line); }
+    .adm-tab { appearance: none; border: none; background: transparent; cursor: pointer; padding: 10px 14px; font-family: var(--fontBody);
+      font-size: 14px; color: var(--inkSoft); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .adm-tab:hover { color: var(--ink); }
+    .adm-tab.on { color: var(--ink); border-bottom-color: var(--stamp); font-weight: 600; }
+    .adm-tab .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--stamp);
+      color: #fff; font-family: var(--fontMono); font-size: 10px; line-height: 18px; text-align: center; }
+    .adm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .adm-stat { border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--surface); }
+    .adm-stat .n { font-family: var(--fontDisplay); font-weight: 600; font-size: 30px; }
+    .adm-stat .l { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+    .adm-stat.alert .n { color: var(--stamp); }
+    .adm-card { border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; background: var(--surface); margin-bottom: 12px; }
+    .adm-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+    .adm-muted { color: var(--inkSoft); font-size: 13px; }
+    .adm-mono { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); }
+    .adm-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-family: var(--fontMono); font-size: 10px; letter-spacing: 0.04em;
+      text-transform: uppercase; border: 1px solid var(--line); color: var(--inkSoft); }
+    .adm-pill.red { color: var(--stamp); border-color: color-mix(in oklab, var(--stamp) 40%, var(--line)); }
+    .adm-pill.ok { color: #2e7d32; border-color: color-mix(in oklab, #2e7d32 40%, var(--line)); }
+    .adm-btn { appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+      border-radius: 999px; padding: 7px 14px; font-family: var(--fontBody); font-size: 13px; transition: border-color .15s, background .15s; }
+    .adm-btn:hover { border-color: var(--stamp); }
+    .adm-btn.primary { background: var(--stamp); color: #fff; border-color: var(--stamp); }
+    .adm-btn.danger { color: var(--stamp); border-color: color-mix(in oklab, var(--stamp) 45%, var(--line)); }
+    .adm-btn.danger:hover { background: var(--stamp); color: #fff; }
+    .adm-btn:disabled { opacity: .5; cursor: default; }
+    .adm-in { width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+      color: var(--ink); font-family: var(--fontBody); font-size: 14px; outline: none; }
+    .adm-in:focus { border-color: var(--stamp); }
+    .adm-search { max-width: 440px; margin-bottom: 16px; }
+    .adm-empty { padding: 40px 0; text-align: center; color: var(--inkSoft); }
+    .adm-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+    .adm-col-h { font-family: var(--fontMono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--inkFaint); margin-bottom: 8px; }
+    .adm-link { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+    .adm-link:hover { border-bottom-color: var(--stamp); }
+    @media (max-width: 820px) { .adm-stats, .adm-grid3 { grid-template-columns: 1fr; } }
+  </style>
+</Shell>

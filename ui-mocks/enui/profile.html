@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Profile — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <section class="pf-hero" id="hero"></section>
+  <main class="wrap section">
+    <div class="list-bar"><div class="results-count" id="count"></div><div id="sort"></div></div>
+    <div id="results"></div>
+  </main>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('profile');
+    const E = ENUI;
+    const handle = E.qs('handle') || E.AUTHORS[0].handle;
+    const a = E.authorByHandle[handle];
+    let sort = 'new';
+
+    if (!a) {
+      document.getElementById('hero').innerHTML = '<div class="wrap"><h1 class="ex">Writer not found.</h1></div>';
+    } else {
+      const tint = E.avaTint(a.handle);
+      document.getElementById('hero').style.background = `linear-gradient(135deg, color-mix(in oklab, ${tint} 40%, var(--bg)), var(--bg))`;
+      document.getElementById('hero').innerHTML = `<div class="wrap">
+        <div class="pf-avatar" style="background:linear-gradient(135deg, ${tint}, color-mix(in oklab, ${tint} 50%, var(--surface2)))">${E.initials(a.displayName)}</div>
+        <div>
+          <div class="pf-kicker">${E.esc(a.role)} · ${E.esc(a.location)} · @${a.handle}</div>
+          <h1 class="pf-name">${E.esc(a.displayName)}</h1>
+          <p class="pf-bio">${E.esc(a.bio)}</p>
+          <div class="pf-stats">
+            <span><strong>${E.postCountFor(a.handle)}</strong> published</span><span>·</span>
+            <span><strong>${E.num(E.likesFor(a.handle))}</strong> likes</span><span>·</span>
+            <span><strong id="followerN">${E.num(a.followers)}</strong> followers</span><span>·</span>
+            <span><strong>${E.num(a.following)}</strong> following</span><span>·</span>
+            <span>joined ${E.dateFmt(a.joinedAt)}</span>
+          </div>
+        </div>
+        <div><button class="pf-follow${E.isFollowing(a.handle) ? ' following' : ''}" id="followBtn">${E.isFollowing(a.handle) ? 'Following' : '+ Follow'}</button></div>
+      </div>`;
+
+      document.getElementById('followBtn').onclick = function () {
+        const now = E.toggleFollow(a.handle);
+        this.classList.toggle('following', now); this.textContent = now ? 'Following' : '+ Follow';
+        document.getElementById('followerN').textContent = E.num(a.followers + (now ? 1 : 0));
+      };
+
+      render();
+    }
+
+    function render() {
+      const list = E.sortPosts(E.POSTS.filter((p) => p.authorHandle === handle), sort);
+      document.getElementById('count').textContent = String(list.length).padStart(2, '0') + ' stories';
+      document.getElementById('sort').innerHTML = list.length
+        ? `<div class="sortbar"><button class="sort-pill${sort === 'new' ? ' on' : ''}" data-s="new">Recent</button><button class="sort-pill${sort === 'top' ? ' on' : ''}" data-s="top">Most liked</button></div>` : '';
+      document.getElementById('results').innerHTML = list.length
+        ? E.grid(list, { hideAuthor: true })
+        : '<div class="empty"><div class="msg">No stories yet.</div></div>';
+      document.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { sort = b.dataset.s; render(); });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Saved — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap section">
+    <div class="results-count" style="margin-bottom:14px">Saved</div>
+    <h1 class="ex" style="margin-bottom:32px">For later.</h1>
+    <div id="results"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('saved');
+    const E = ENUI;
+    function render() {
+      const set = E.getSet(E.LS.saved);
+      const list = E.POSTS.filter((p) => set.has(p.slug));
+      document.getElementById('results').innerHTML = list.length === 0
+        ? '<div class="empty"><div class="mu">空</div><div class="msg">Nothing saved yet. Bookmark a piece to read it later.</div></div>'
+        : E.grid(list);
+    }
+    render();
+    window.addEventListener('enui:saved', render);
+  </script>
+</body>
+</html>

@@ -37,6 +37,17 @@ const publicUser = (u: any): PublicUser => ({
   avatarUrl: u.avatarUrl,
 });
 
+/** Ban gate, self-healing. Permanent (bannedUntil null) or still-in-window →
+ *  blocked. An expired timed ban auto-lifts (clears the mirrored user-row flag) so
+ *  the next auth succeeds without an admin action. Called on login + refresh, so a
+ *  ban issued mid-session ends it within one 15-min access-token cycle. */
+async function enforceBan(c: any, u: any): Promise<{ banned: boolean; until: number | null }> {
+  if (!u.isBanned) return { banned: false, until: null };
+  if (u.bannedUntil == null || u.bannedUntil > now()) return { banned: true, until: u.bannedUntil ?? null };
+  await db(c).update(users).set({ isBanned: false, bannedUntil: null, updatedAt: now() }).where(eq(users.id, u.id));
+  return { banned: false, until: null };
+}
+
 // ---------------------------------------------------------------- register
 auth.post('/register', limits.register, async (c) => {
   const { email, password, displayName } = await c.req.json().catch(() => ({}));
@@ -81,6 +92,9 @@ auth.post('/login', limits.login, async (c) => {
     : await bcrypt.compare('x', '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinv');
   if (!u || !ok) return c.json({ error: 'invalid_credentials' }, 401);
 
+  const ban = await enforceBan(c, u);
+  if (ban.banned) return c.json({ error: 'banned', bannedUntil: ban.until }, 403);
+
   await startSession(c, u.id);
   const access = await signAccess(c.env.JWT_SECRET, u);
   return c.json({ access, user: publicUser(u) });
@@ -112,6 +126,15 @@ auth.post('/refresh', limits.refresh, async (c) => {
   if (!u) {
     clearRefreshCookie(c);
     return c.json({ error: 'no_session' }, 401);
+  }
+
+  // A ban issued mid-session ends it here: burn the family so the refresh token
+  // can't be reused, and force the cookie clear.
+  const ban = await enforceBan(c, u);
+  if (ban.banned) {
+    await revokeFamily(c, row.familyId);
+    clearRefreshCookie(c);
+    return c.json({ error: 'banned', bannedUntil: ban.until }, 403);
   }
 
   // Rotate: new token in same family, old marked replaced + revoked.

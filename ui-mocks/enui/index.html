@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>nihon101 — slow stories from Japan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <div class="ribbon"><div class="wrap">
+    <span>Wednesday, 17 June 2026 · Issue 01</span>
+    <span class="ribbon-wx"><span class="dot"></span><span class="ribbon-wx-text" id="wx">☔ Tokyo 24° · rainy season</span></span>
+  </div></div>
+
+  <section class="wrap hero"><div class="hero-carousel" id="hero"></div>
+    <div class="hero-controls" id="hero-controls"></div>
+  </section>
+
+  <div class="wrap">
+    <section class="second-grid" id="second"></section>
+
+    <div class="sec-head">
+      <div><div class="sec-kicker">〜 all writers · all topics</div>
+        <h2 class="sec">Recently published</h2></div>
+      <a class="see-all" href="explore.html">See all →</a>
+    </div>
+    <div id="recent"></div>
+
+    <div class="sec-head">
+      <div><div class="sec-kicker">〜 meet the people</div>
+        <h2 class="sec">Writers in residence</h2></div>
+    </div>
+    <div class="author-grid" id="authors-home"></div>
+
+    <section class="newsletter">
+      <div class="nl-hanko">便</div>
+      <div class="nl-inner" aria-hidden="true">
+        <div class="k">a slow weekly letter</div>
+        <h2>One letter, every Sunday morning.</h2>
+        <p>No urgency, no push. Three pieces from the week, and one small Japanese word we’ve been thinking about.</p>
+        <div class="nl-form"><input type="email" disabled placeholder="you@somewhere.jp" /><button class="btn" disabled>Subscribe</button></div>
+      </div>
+      <div class="coming-soon"><span class="pill"><span class="dot"></span>Coming soon</span></div>
+    </section>
+  </div>
+
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('home');
+    const E = ENUI;
+    const byNew = E.sortPosts(E.POSTS, 'new');
+    const heroPosts = E.sortPosts(E.POSTS, 'trend').slice(0, 3);
+    const featured = byNew[3];
+    const recent = byNew.slice(0, 6);
+
+    // hero carousel
+    document.getElementById('hero').innerHTML = heroPosts.map((p, i) => {
+      const words = p.titleEn.split(' ');
+      const lead = words.slice(0, 2).join(' '), rest = words.slice(2).join(' ');
+      const read = 'article.html?slug=' + p.slug;
+      return `<div class="hero-slide${i === 0 ? ' active' : ''}"><div class="hero-grid">
+        <div>
+          <div class="hero-meta"><a class="chip" href="category.html?cat=${p.categoryId}"><span class="kanji">${E.catKanji(p.categoryId)}</span>${E.catLabel(p.categoryId)}</a><span class="hero-kicker">cover story · ${p.readMins} min</span></div>
+          <h1 class="hero-h"><span class="wash">${E.esc(lead)}</span>${rest ? ' ' + E.esc(rest) : ''}</h1>
+          <p class="hero-excerpt">${E.esc(p.excerptEn)}</p>
+          <div class="hero-cta">
+            <a class="achip" href="profile.html?handle=${p.authorHandle}">${E.avatar(p.authorHandle, E.authorName(p), 44, 18)}<span><span class="nm">${E.esc(E.authorName(p))}</span><br><span class="dt">${E.dateFmt(p.publishedAt)}</span></span></a>
+            <a class="read-btn" href="${read}">Read the story →</a>
+            <button class="hero-save" data-slug="${p.slug}" aria-label="Save"><svg width="18" height="18" viewBox="0 0 24 24"><path d="${E.BOOKMARK}"/></svg></button>
+          </div>
+        </div>
+        <div class="hero-photo">${E.photo(p, 520, read, { hanko: true })}<div class="tategaki">日本の物語 · stories from japan</div></div>
+      </div></div>`;
+    }).join('');
+
+    document.getElementById('hero-controls').innerHTML =
+      `<div class="hero-dots">${heroPosts.map((_, i) => `<button class="hero-dot${i === 0 ? ' on' : ''}"></button>`).join('')}</div>
+       <div class="hero-arrows"><button class="hero-prev"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 12H5M11 5l-7 7 7 7"/></svg></button><button class="hero-next"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M5 12h14M13 5l7 7-7 7"/></svg></button></div>`;
+
+    // hero carousel logic + save
+    (function () {
+      const slides = [...document.querySelectorAll('.hero-slide')], dots = [...document.querySelectorAll('.hero-dot')];
+      let i = 0, timer;
+      function show(n) { i = (n + slides.length) % slides.length; slides.forEach((s, k) => s.classList.toggle('active', k === i)); dots.forEach((d, k) => d.classList.toggle('on', k === i)); }
+      function start() { stop(); if (slides.length > 1) timer = setInterval(() => show(i + 1), 5000); }
+      function stop() { if (timer) clearInterval(timer); }
+      document.querySelector('.hero-next')?.addEventListener('click', () => { show(i + 1); start(); });
+      document.querySelector('.hero-prev')?.addEventListener('click', () => { show(i - 1); start(); });
+      dots.forEach((d, k) => d.addEventListener('click', () => { show(k); start(); }));
+      const hero = document.querySelector('.hero'); hero.addEventListener('mouseenter', stop); hero.addEventListener('mouseleave', start);
+      start();
+      document.querySelectorAll('.hero-save').forEach((b) => {
+        const slug = b.getAttribute('data-slug');
+        if (E.isSaved(slug)) b.classList.add('on');
+        b.addEventListener('click', () => b.classList.toggle('on', E.toggleSaved(slug)));
+      });
+    })();
+
+    // secondary feature + topics rail
+    document.getElementById('second').innerHTML = `
+      <div class="feature-card">
+        ${E.photo(featured, 340, 'article.html?slug=' + featured.slug)}
+        <div class="body">
+          <div class="cmeta"><a class="chip" href="category.html?cat=${featured.categoryId}"><span class="kanji">${E.catKanji(featured.categoryId)}</span>${E.catLabel(featured.categoryId)}</a><span class="hero-kicker">also featured</span></div>
+          <a href="article.html?slug=${featured.slug}"><h3>${E.esc(featured.titleEn)}</h3></a>
+          <p>${E.esc(featured.excerptEn)}</p>
+          <a class="achip" href="profile.html?handle=${featured.authorHandle}">${E.avatar(featured.authorHandle, E.authorName(featured), 32, 13)}<span><span class="nm">${E.esc(E.authorName(featured))}</span><br><span class="dt">${E.dateFmt(featured.publishedAt)}</span></span></a>
+        </div>
+      </div>
+      <aside class="rail"><div class="rail-kicker">〜 Topics</div>
+        <ul>${E.CATS.map((c) => `<li><a class="cat" href="category.html?cat=${c.id}"><span><span class="kj">${c.kanji}</span>${c.label}</span><span class="ct">${String(E.POSTS.filter((p) => p.categoryId === c.id).length).padStart(2, '0')}</span></a></li>`).join('')}</ul>
+        <a class="make-topic" href="#"><span class="hanko">新</span><span class="tx"><span class="t1">Make a topic</span><br><span class="t2">Start writing under a topic of your own.</span></span></a>
+      </aside>`;
+
+    document.getElementById('recent').innerHTML = E.grid(recent);
+
+    // writers in residence (top by likes)
+    const topAuthors = E.AUTHORS.slice().sort((a, b) => E.likesFor(b.handle) - E.likesFor(a.handle));
+    document.getElementById('authors-home').innerHTML = topAuthors.map((a) =>
+      `<a class="author-card" href="profile.html?handle=${a.handle}">
+        <span class="ava" style="background:linear-gradient(135deg, ${E.avaTint(a.handle)}, #f2f0eb)">${E.initials(a.displayName)}</span>
+        <span><span class="nm">${E.esc(a.displayName)}</span><br><span class="rl">${E.esc(a.location)}</span></span>
+        <span class="pc">${String(E.postCountFor(a.handle)).padStart(2, '0')} pieces</span>
+      </a>`).join('');
+
+    // weather ribbon cycle
+    (function () {
+      const cities = ['☔ Tokyo 24° · rainy season', '☁ Kyoto 23° · overcast', '🌧 Osaka 25° · showers', '⛅ Sapporo 19° · breezy'];
+      const el = document.getElementById('wx'); let i = 0;
+      setInterval(() => { i = (i + 1) % cities.length; el.style.opacity = '0'; setTimeout(() => { el.textContent = cities[i]; el.style.opacity = ''; }, 220); }, 6000);
+    })();
+  </script>
+</body>
+</html>

@@ -461,6 +461,11 @@ function AvatarMenu({ p, lang, user, onClose, onLogout }) {
           {item(<><span style={{display:'inline-flex',width:18}}><PencilIcon color={p.inkSoft}/></span>{lang==='jp'?'記事を書く':'Write a story'}</>, ()=>window.__nihon_go({name:'compose'}))}
           {item(<><span style={{display:'inline-flex',width:18}}><BookmarkIcon color={p.inkSoft} size={15}/></span>{lang==='jp'?'保存した記事':'Saved'}</>, ()=>window.__nihon_go({name:'saved'}))}
         </div>
+        {user.role==='admin' && (
+          <div style={{borderTop:`1px solid ${p.line}`, marginTop:6, paddingTop:6}}>
+            {item(<><span style={{display:'inline-flex',width:18}}>🛡️</span><span style={{fontWeight:600}}>{lang==='jp'?'管理パネル':'Admin'}</span></>, ()=>{ window.location.href = `/${lang==='jp'?'ja':'en'}/admin`; })}
+          </div>
+        )}
         <div style={{borderTop:`1px solid ${p.line}`, marginTop:6, paddingTop:6}}>
           {item(<span style={{color:p.stamp}}>{lang==='jp'?'ログアウト':'Sign out'}</span>, onLogout)}
         </div>

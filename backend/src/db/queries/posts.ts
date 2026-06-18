@@ -8,6 +8,11 @@ export type PostRow = typeof posts.$inferSelect;
 export type PostStatus = 'draft' | 'published';
 export type PostDensity = 'compact' | 'normal' | 'relaxed';
 
+/** A publicly-visible post = published AND not moderator-hidden. Use this on every
+ *  public list surface (home, trending, search, feed, profile) so a hidden post
+ *  disappears everywhere at once. Owner/admin paths opt out explicitly. */
+export const notHidden = eq(posts.isHidden, false);
+
 export interface NewPostInput {
   authorId: string;
   categoryId: string;
@@ -58,6 +63,8 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     coverLabel: input.coverLabel,
     coverCredit: input.coverCredit,
     status: input.status,
+    isHidden: false,
+    hiddenReason: '',
     density: input.density,
     score: input.score,
     tags: input.tags,
@@ -131,7 +138,7 @@ export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {
     .select(cardCols)
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
-    .where(eq(posts.status, 'published'))
+    .where(and(eq(posts.status, 'published'), notHidden))
     .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
     .limit(limit) as Promise<PostCardRow[]>;
 }
@@ -144,7 +151,7 @@ export async function listCardsByIds(db: DB, ids: string[]): Promise<PostCardRow
     .select(cardCols)
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
-    .where(and(inArray(posts.id, ids), eq(posts.status, 'published')))) as PostCardRow[];
+    .where(and(inArray(posts.id, ids), eq(posts.status, 'published'), notHidden))) as PostCardRow[];
   const byId = new Map(rows.map((r) => [r.id, r]));
   return ids.map((id) => byId.get(id)).filter((r): r is PostCardRow => !!r);
 }
@@ -153,6 +160,7 @@ export interface ListPostsFilter {
   categoryId?: string;
   authorId?: string;
   status?: PostStatus;
+  includeHidden?: boolean; // owner/admin views pass true; public reads exclude hidden
 }
 
 export function listPosts(db: DB, f: ListPostsFilter): Promise<PostWithAuthor[]> {
@@ -160,6 +168,7 @@ export function listPosts(db: DB, f: ListPostsFilter): Promise<PostWithAuthor[]>
     f.categoryId ? eq(posts.categoryId, f.categoryId) : undefined,
     f.authorId ? eq(posts.authorId, f.authorId) : undefined,
     f.status ? eq(posts.status, f.status) : undefined,
+    f.includeHidden ? undefined : notHidden,
   ].filter(Boolean);
   return db
     .select({ ...getTableColumns(posts), ...authorCols })
@@ -222,6 +231,7 @@ export function publicPostCard(p: PostCardRow) {
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,
     status: p.status,
+    isHidden: p.isHidden,
     density: p.density,
     score: p.score,
     tags: (p.tags ?? []) as string[],
@@ -260,6 +270,8 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,
     status: p.status,
+    isHidden: p.isHidden,
+    hiddenReason: p.hiddenReason,
     density: p.density,
     score: p.score,
     tags,

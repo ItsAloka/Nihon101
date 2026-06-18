@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Explore — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <div class="wrap section">
+    <div class="ex-kicker"><svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg> Explore</div>
+    <h1 class="ex">Everything we’ve published, slowly.</h1>
+    <p class="ex-sub">Search by title, writer, or topic. Or just scroll.</p>
+
+    <form class="ex-search" id="exform" onsubmit="return false">
+      <svg width="20" height="20" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="text" id="exq" placeholder="kissaten, komorebi, snow…" autocomplete="off" />
+    </form>
+
+    <div class="cat-strip" id="catstrip"></div>
+    <div class="list-bar"><div class="results-count" id="count"></div><div id="sort"></div></div>
+    <div id="results"></div>
+    <div id="pager"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('search');
+    const E = ENUI;
+    let state = { q: E.qs('q'), cat: E.qs('cat'), sort: E.qs('sort') || (E.qs('q') ? 'relevance' : 'new'), page: 0 };
+    const PER = 9;
+    document.getElementById('exq').value = state.q;
+
+    function render() {
+      // cat strip
+      document.getElementById('catstrip').innerHTML =
+        `<button class="cat-pill${state.cat ? '' : ' on'}" data-cat="">All</button>` +
+        E.CATS.map((c) => `<button class="cat-pill${state.cat === c.id ? ' on' : ''}" data-cat="${c.id}"><span class="kj">${c.kanji}</span>${c.label}</button>`).join('');
+
+      let list = E.searchPosts(state.q, state.cat);
+      const sortOpts = state.q
+        ? [['relevance', 'Relevant'], ['new', 'Recent'], ['top', 'Most liked']]
+        : [['new', 'Recent'], ['top', 'Most liked']];
+      const sortKey = state.sort === 'relevance' ? null : state.sort;
+      if (sortKey) list = E.sortPosts(list, sortKey);
+
+      const total = list.length;
+      document.getElementById('count').textContent = String(total).padStart(2, '0') + ' results' + (state.q ? ` · “${state.q}”` : '');
+      document.getElementById('sort').innerHTML = total ? `<div class="sortbar">${sortOpts.map(([v, l]) => `<button class="sort-pill${state.sort === v ? ' on' : ''}" data-sort="${v}">${l}</button>`).join('')}</div>` : '';
+
+      const pages = Math.ceil(total / PER);
+      if (state.page >= pages) state.page = 0;
+      const slice = list.slice(state.page * PER, state.page * PER + PER);
+      document.getElementById('results').innerHTML = total === 0
+        ? '<div class="empty"><div class="mu">無</div><div class="msg">Nothing here. Try another word.</div></div>'
+        : E.grid(slice);
+      document.getElementById('pager').innerHTML = pager(state.page, pages);
+      wire();
+    }
+
+    function pager(page, pages) {
+      if (pages <= 1) return '';
+      let h = '<nav class="pager">';
+      if (page > 0) h += `<button data-pg="${page - 1}">‹ Prev</button>`;
+      for (let n = 0; n < pages; n++) h += `<button class="${n === page ? 'on' : ''}" data-pg="${n}">${n + 1}</button>`;
+      if (page < pages - 1) h += `<button data-pg="${page + 1}">Next ›</button>`;
+      return h + '</nav>';
+    }
+
+    function wire() {
+      document.querySelectorAll('[data-cat]').forEach((b) => b.onclick = () => { state.cat = b.dataset.cat; state.page = 0; sync(); render(); });
+      document.querySelectorAll('[data-sort]').forEach((b) => b.onclick = () => { state.sort = b.dataset.sort; state.page = 0; sync(); render(); });
+      document.querySelectorAll('[data-pg]').forEach((b) => b.onclick = () => { state.page = +b.dataset.pg; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    }
+    function sync() {
+      const u = new URLSearchParams();
+      if (state.q) u.set('q', state.q);
+      if (state.cat) u.set('cat', state.cat);
+      u.set('sort', state.sort);
+      history.replaceState(null, '', '?' + u.toString());
+    }
+
+    let t;
+    document.getElementById('exq').addEventListener('input', (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => { state.q = e.target.value.trim(); if (state.q && state.sort === 'new') state.sort = 'relevance'; if (!state.q && state.sort === 'relevance') state.sort = 'new'; state.page = 0; sync(); render(); }, 150);
+    });
+    render();
+  </script>
+</body>
+</html>

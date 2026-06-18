@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-mode="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reader — nihon101</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="site-header"></div>
+  <article class="reader" id="reader"></article>
+  <div class="wrap">
+    <div class="sec-head"><div><div class="sec-kicker">〜 keep reading</div><h2 class="sec">More like this</h2></div></div>
+    <div id="more"></div>
+  </div>
+  <div id="site-footer"></div>
+
+  <script src="data.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    ENUI.mount('home');
+    const E = ENUI;
+    const slug = E.qs('slug');
+    const p = E.POSTS.find((x) => x.slug === slug) || E.POSTS[0];
+
+    document.getElementById('reader').innerHTML = `
+      <div class="rd-cat"><a class="chip" href="category.html?cat=${p.categoryId}"><span class="kanji">${E.catKanji(p.categoryId)}</span>${E.catLabel(p.categoryId)}</a></div>
+      <h1>${E.esc(p.titleEn)}</h1>
+      <div class="rd-by">
+        <a class="achip" href="profile.html?handle=${p.authorHandle}">${E.avatar(p.authorHandle, E.authorName(p), 44, 18)}<span><span class="nm">${E.esc(E.authorName(p))}</span><br><span class="dt">${E.dateFmt(p.publishedAt)} · ${p.readMins} min read</span></span></a>
+        <div class="stats" style="display:flex;gap:14px">
+          <span class="stat heart" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--fontMono);font-size:12.5px;color:var(--inkSoft)"><svg width="15" height="15" viewBox="0 0 24 24" style="fill:var(--stamp)"><path d="${E.HEART}"/></svg>${E.num(p.likes)}</span>
+          <span class="stat chat" style="display:inline-flex;align-items:center;gap:5px;font-family:var(--fontMono);font-size:12.5px;color:var(--inkSoft)"><svg width="15" height="15" viewBox="0 0 24 24" style="fill:none;stroke:var(--inkFaint);stroke-width:2"><path d="${E.CHAT}"/></svg>${E.num(p.comments)}</span>
+        </div>
+      </div>
+      <div class="rd-cover">${E.photo(p, 420, '#', { hanko: true })}</div>
+      <div class="rd-actions">
+        <button class="rd-act" id="like"><svg viewBox="0 0 24 24"><path d="${E.HEART}"/></svg> <span>Like</span></button>
+        <button class="rd-act${E.isSaved(p.slug) ? ' on' : ''}" id="save"><svg viewBox="0 0 24 24"><path d="${E.BOOKMARK}"/></svg> <span>${E.isSaved(p.slug) ? 'Saved' : 'Save'}</span></button>
+        <button class="rd-act"><svg viewBox="0 0 24 24"><path d="${E.CHAT}"/></svg> <span>Comment</span></button>
+      </div>
+      <div class="rd-body">${p.bodyEn.map((par) => `<p>${E.esc(par)}</p>`).join('')}</div>`;
+
+    document.getElementById('like').onclick = function () { this.classList.toggle('on'); };
+    document.getElementById('save').onclick = function () {
+      const now = E.toggleSaved(p.slug);
+      this.classList.toggle('on', now); this.querySelector('span').textContent = now ? 'Saved' : 'Save';
+    };
+
+    const more = E.POSTS.filter((x) => x.categoryId === p.categoryId && x.slug !== p.slug).slice(0, 3);
+    document.getElementById('more').innerHTML = E.grid(more.length ? more : E.sortPosts(E.POSTS, 'trend').slice(0, 3));
+  </script>
+</body>
+</html>

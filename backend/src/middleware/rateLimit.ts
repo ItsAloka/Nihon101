@@ -148,6 +148,7 @@ export const limits = {
   save:         rateLimit({ bucket: 'save',      limit: 60, windowSec: 60,   by: 'user' }),
   read:         rateLimit({ bucket: 'read-ping', limit: 120,windowSec: 60,   by: 'user' }),
   follow:       rateLimit({ bucket: 'follow',    limit: 30, windowSec: 60,   by: 'user' }),
+  report:       rateLimit({ bucket: 'report',    limit: 20, windowSec: 3600, by: 'user' }),
   profile:      rateLimit({ bucket: 'profile',   limit: 20, windowSec: 3600, by: 'user' }),
   upload:       rateLimit({ bucket: 'upload',    limit: 30, windowSec: 3600, by: 'user' }),
   translate:    rateLimit({ bucket: 'translate', limit: 30, windowSec: 3600, by: 'user' }),  // external DeepL+OpenAI cost

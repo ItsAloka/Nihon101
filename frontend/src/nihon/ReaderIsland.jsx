@@ -107,6 +107,25 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
     if (navigator.share) navigator.share({ url }).catch(() => {});
     else navigator.clipboard?.writeText(url).catch(() => {});
   };
+  // Moderation reporting. Opening sets the target ({type,id}); ReportModal collects
+  // a reason + optional note and POSTs to /reports. `reportedIds` tracks what's been
+  // flagged this session so the buttons can flip to "Reported". Server dedups too.
+  const [reportTarget, setReportTarget] = React.useState(null);
+  const [reportedIds, setReportedIds] = React.useState(() => new Set());
+  const openReportPost = () => { if (!user) return requireLogin(); setReportTarget({ type: "post", id: postId }); };
+  const openReportComment = (cid) => { if (!user) return requireLogin(); setReportTarget({ type: "comment", id: cid }); };
+  const submitReport = async (reason, detail) => {
+    const tgt = reportTarget;
+    const res = await fetch(window.N101_API.API_BASE + "/reports", {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + window.N101_API.getAccessToken() },
+      body: JSON.stringify({ targetType: tgt.type, targetId: tgt.id, reason, detail }),
+    });
+    if (!res.ok) throw new Error("report_failed");
+    setReportedIds((s) => new Set(s).add(tgt.id));
+    setReportTarget(null);
+  };
+  const reported = reportedIds.has(postId);
   const onAddComment = async (_slug, text, parentId) => {
     try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => [...prev, toCommentView(c)]); } catch {}
   };
@@ -183,6 +202,10 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
             <button onClick={onShare} style={pill({ padding: "10px 16px", gap: 8, fontSize: 13 })}>
               <ShareIcon color={p.ink} /> {lang === "jp" ? "共有" : "Share"}
             </button>
+            <button onClick={openReportPost} disabled={reported} title={lang === "jp" ? "通報" : "Report"}
+              style={pill({ padding: "10px 16px", gap: 8, fontSize: 13, color: reported ? p.stamp : p.ink })}>
+              ⚑ {reported ? (lang === "jp" ? "通報済み" : "Reported") : (lang === "jp" ? "通報" : "Report")}
+            </button>
           </div>
         </div>
       )}
@@ -190,8 +213,15 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
       <div id="comments">
         <CommentSection p={p} lang={lang} slug={slug} comments={comments}
           onAdd={onAddComment} onLike={onLikeComment} onDelete={onDeleteComment}
+          onReport={openReportComment}
           canModerate={isOwner} currentUser={user} onRequireLogin={requireLogin} />
       </div>
+
+      {reportTarget && (
+        <ReportModal p={p} lang={lang} target={reportTarget}
+          alreadyReported={reportedIds.has(reportTarget.id)}
+          onClose={() => setReportTarget(null)} onSubmit={submitReport} />
+      )}
 
       {!isOwner && (
         <div aria-hidden={!floatOn} style={{ position: "fixed", left: "50%", bottom: 24, transform: `translateX(-50%) translateY(${floatOn ? "0" : "16px"})`, opacity: floatOn ? 1 : 0, pointerEvents: floatOn ? "auto" : "none", transition: "opacity .25s ease, transform .25s ease", zIndex: 45, display: "flex", alignItems: "center", gap: 2, background: p.surface, border: `1px solid ${p.line}`, borderRadius: 999, boxShadow: `0 20px 44px -18px color-mix(in oklab, ${p.ink} 40%, transparent)`, padding: "6px 8px" }}>
@@ -227,6 +257,67 @@ function DeleteModal({ p, lang, busy, onCancel, onConfirm }) {
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 22 }}>
           <button disabled={busy} onClick={onCancel} style={{ appearance: "none", border: `1px solid ${p.line}`, background: p.surface, padding: "10px 18px", borderRadius: 999, cursor: "pointer", fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 600, color: p.ink }}>{lang === "jp" ? "キャンセル" : "Cancel"}</button>
           <button disabled={busy} onClick={onConfirm} style={{ appearance: "none", border: "none", background: p.stamp, color: "#fff", padding: "10px 18px", borderRadius: 999, cursor: "pointer", fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 700 }}>{lang === "jp" ? "削除する" : "Delete"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Reason categories (mirror the backend allow-list) + bilingual labels.
+const REPORT_REASONS = [
+  ["spam", "スパム", "Spam"],
+  ["harassment", "嫌がらせ", "Harassment"],
+  ["hate", "ヘイト", "Hate speech"],
+  ["sexual", "性的", "Sexual content"],
+  ["violence", "暴力", "Violence"],
+  ["misinformation", "誤情報", "Misinformation"],
+  ["other", "その他", "Other"],
+];
+
+function ReportModal({ p, lang, target, alreadyReported, onClose, onSubmit }) {
+  const [reason, setReason] = React.useState("spam");
+  const [detail, setDetail] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const isComment = target.type === "comment";
+  const submit = async () => {
+    setBusy(true); setErr("");
+    try { await onSubmit(reason, detail.trim().slice(0, 1000)); }
+    catch (e) { setErr(lang === "jp" ? "通報に失敗しました。" : "Couldn't submit the report."); setBusy(false); }
+  };
+  const chip = (key, jp, en) => (
+    <button key={key} onClick={() => setReason(key)} style={{
+      appearance: "none", cursor: "pointer", borderRadius: 999, padding: "8px 14px",
+      fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: reason === key ? 600 : 500,
+      border: `1px solid ${reason === key ? p.stamp : p.line}`,
+      background: reason === key ? `color-mix(in oklab, ${p.stamp} 12%, ${p.surface})` : p.surface,
+      color: reason === key ? p.stamp : p.ink,
+    }}>{lang === "jp" ? jp : en}</button>
+  );
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: p.surface, borderRadius: 20, padding: 28, width: "100%", maxWidth: 460, border: `1px solid ${p.line}`, boxShadow: `0 30px 60px -24px color-mix(in oklab, ${p.ink} 45%, transparent)` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 18 }}>⚑</span>
+          <h3 style={{ fontFamily: "var(--fontDisplay)", fontSize: 21, fontWeight: 700, color: p.ink }}>
+            {isComment ? (lang === "jp" ? "コメントを通報" : "Report comment") : (lang === "jp" ? "記事を通報" : "Report post")}
+          </h3>
+        </div>
+        <p style={{ color: p.inkSoft, fontSize: 14, lineHeight: 1.6, marginBottom: 18, fontFamily: "var(--fontBody)" }}>
+          {lang === "jp" ? "理由を選んでください。モデレーターが確認します。" : "Pick a reason. A moderator will review this."}
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+          {REPORT_REASONS.map(([k, jp, en]) => chip(k, jp, en))}
+        </div>
+        <textarea value={detail} onChange={(e) => setDetail(e.target.value)} maxLength={1000}
+          placeholder={lang === "jp" ? "詳細（任意）" : "Add details (optional)"}
+          style={{ width: "100%", minHeight: 84, resize: "vertical", padding: "12px 14px", borderRadius: 12, border: `1px solid ${p.line}`, background: p.surface, color: p.ink, fontFamily: "var(--fontBody)", fontSize: 14, outline: "none", boxSizing: "border-box" }} />
+        {err && <div style={{ color: p.stamp, fontSize: 13, marginTop: 10, fontFamily: "var(--fontBody)" }}>{err}</div>}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+          <button disabled={busy} onClick={onClose} style={{ appearance: "none", border: `1px solid ${p.line}`, background: p.surface, padding: "10px 18px", borderRadius: 999, cursor: "pointer", fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 600, color: p.ink }}>{lang === "jp" ? "キャンセル" : "Cancel"}</button>
+          <button disabled={busy} onClick={submit} style={{ appearance: "none", border: "none", background: p.stamp, color: "#fff", padding: "10px 20px", borderRadius: 999, cursor: "pointer", fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 700, opacity: busy ? 0.6 : 1 }}>
+            {busy ? "…" : (lang === "jp" ? "通報する" : "Submit report")}
+          </button>
         </div>
       </div>
     </div>
