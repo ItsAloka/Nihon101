@@ -243,7 +243,6 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
     { label: lang==='jp' ? 'おすすめ' : 'For You',  route: {name:'feed'} },
     { label: lang==='jp' ? '探す' : 'Explore',         route: {name:'search'} },
     { label: lang==='jp' ? '人気' : 'Trending',        route: {name:'trending'} },
-    { label: lang==='jp' ? '書く人' : 'Writers',        route: {name:'authors'} },
     { label: lang==='jp' ? 'はじめに' : 'About',        route: {name:'about'} },
   ];
   const [notifOpen, setNotifOpen] = React.useState(false);
@@ -951,7 +950,6 @@ function Footer({p, lang}) {
           items={[
             {label:'Today', route:{name:'home'}},
             {label:'Explore', route:{name:'search'}},
-            {label:'Writers', route:{name:'authors'}},
             {label:'Saved', route:{name:'saved'}},
           ]} lang={lang} />
         <FooterCol p={p} title={lang==='jp'?'雑誌について':'Magazine'}
