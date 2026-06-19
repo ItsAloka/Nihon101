@@ -1,0 +1,6 @@
+# Test config. Coverage floor is a ratchet: it fails CI if coverage drops below the
+# current baseline (≈33% funcs / 44% lines), so tests can't silently rot as the
+# codebase grows. Raise these as coverage improves — never lower to make a build pass.
+[test]
+coverage = true
+coverageThreshold = { line = 0.42, function = 0.30 }

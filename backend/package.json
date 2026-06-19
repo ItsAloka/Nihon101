@@ -7,8 +7,9 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "drizzle-kit generate && bun run scripts/normalize-journal.ts",
     "db:migrate": "drizzle-kit migrate",
+    "db:verify": "bun run scripts/verify-migrations.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
