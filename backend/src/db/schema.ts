@@ -85,6 +85,37 @@ export const emailVerifications = pgTable('email_verifications', {
   index('ix_ev_user').on(t.userId),
 ]);
 
+// Login OTP (second factor for email+password logins). A 6-digit code is mailed
+// at login; only its sha256(+pepper) hash is stored. One pending per user (old
+// rows cleared on issue). Single-use, short-lived, attempt-capped. Google logins
+// and trusted devices skip this entirely.
+export const loginOtps = pgTable('login_otps', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  expiresAt: ms('expires_at').notNull(),
+  usedAt: ms('used_at'),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('ix_login_otps_user').on(t.userId),
+]);
+
+// "Remember this device" tokens. After passing OTP a user can mark the device
+// trusted for 30 days; the opaque token rides in an HttpOnly cookie, only its
+// hash is stored, and a live match lets that device skip OTP on next login.
+export const trustedDevices = pgTable('trusted_devices', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  userAgent: text('user_agent'),
+  expiresAt: ms('expires_at').notNull(),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('ux_td_hash').on(t.tokenHash),
+  index('ix_td_user').on(t.userId),
+]);
+
 // ---- Blog: categories + posts (bilingual) ----
 
 export const categories = pgTable('categories', {

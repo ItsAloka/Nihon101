@@ -53,6 +53,30 @@ export function resetEmailHtml(link: string, locale: 'ja' | 'en'): { subject: st
   };
 }
 
+export function loginOtpHtml(code: string, locale: 'ja' | 'en'): { subject: string; html: string } {
+  const codeBox = `<p style="font-family:monospace;font-size:32px;font-weight:700;letter-spacing:0.3em;color:#1A1817;margin:18px 0">${code}</p>`;
+  if (locale === 'ja') {
+    return {
+      subject: `Nihon101 — ログインコード ${code}`,
+      html: `<div style="font-family:sans-serif;color:#1A1817">
+        <h2 style="font-weight:600">ログインコード</h2>
+        <p>下のコードを入力してログインを完了してください。10分間有効です。</p>
+        ${codeBox}
+        <p style="color:#5C544C;font-size:13px">心当たりがない場合は、このメールを無視してください。誰かがあなたのパスワードを入力した可能性があります。</p>
+      </div>`,
+    };
+  }
+  return {
+    subject: `Nihon101 — Your login code ${code}`,
+    html: `<div style="font-family:sans-serif;color:#1A1817">
+      <h2 style="font-weight:600">Your login code</h2>
+      <p>Enter the code below to finish signing in. It expires in 10 minutes.</p>
+      ${codeBox}
+      <p style="color:#5C544C;font-size:13px">If you didn't try to sign in, ignore this email — someone may have entered your password.</p>
+    </div>`,
+  };
+}
+
 export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: string; html: string } {
   if (locale === 'ja') {
     return {

@@ -73,10 +73,23 @@ function verifyEmail(token) {
 function resendVerification() {
   return req('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ locale: pageLocale() }) });
 }
+// Returns either { user } (logged in) or { otpRequired:true, pending } when a
+// second-factor code was mailed. The caller drives the OTP step from `pending`.
 async function login(email, password) {
-  const d = await req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+  const d = await req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, locale: pageLocale() }) });
+  if (d.otpRequired) return { otpRequired: true, pending: d.pending };
+  accessToken = d.access;
+  return { user: d.user };
+}
+// Finish the OTP step. `remember` trusts this device for 30 days (skips OTP next time).
+async function verifyOtp(pending, code, remember) {
+  const d = await req('/auth/login/verify-otp', { method: 'POST', body: JSON.stringify({ pending, code, remember: !!remember }) });
   accessToken = d.access;
   return d.user;
+}
+// Mail a fresh code for the same pending login.
+function resendOtp(pending) {
+  return req('/auth/login/resend-otp', { method: 'POST', body: JSON.stringify({ pending, locale: pageLocale() }) });
 }
 // Single-flight: concurrent callers (app boot + a data fetch's 401 retry) must
 // share ONE /auth/refresh, or the second one replays a rotated token and the
@@ -116,5 +129,5 @@ async function uploadAvatar(blob) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification };
 }

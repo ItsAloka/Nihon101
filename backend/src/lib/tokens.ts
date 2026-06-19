@@ -28,3 +28,21 @@ export async function signAccess(
 export async function verifyAccess(secret: string, token: string): Promise<AccessClaims> {
   return (await verify(token, secret, 'HS256')) as AccessClaims;
 }
+
+export const OTP_TICKET_TTL_SEC = 10 * 60; // 10 min — the OTP step must complete inside this
+
+/** Sign a short-lived ticket that ties the OTP-verify step to a user without
+ *  starting a session yet. purpose='otp' so it can't be replayed as an access token. */
+export async function signOtpTicket(secret: string, userId: string): Promise<string> {
+  return sign({ sub: userId, purpose: 'otp', exp: Math.floor(Date.now() / 1000) + OTP_TICKET_TTL_SEC }, secret, 'HS256');
+}
+
+/** Verify an OTP ticket; returns the user id or null on invalid/expired/wrong-purpose. */
+export async function verifyOtpTicket(secret: string, token: string): Promise<string | null> {
+  try {
+    const claims = (await verify(token, secret, 'HS256')) as { sub: string; purpose?: string };
+    return claims.purpose === 'otp' ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}

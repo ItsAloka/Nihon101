@@ -32,6 +32,9 @@ const AUTH_ERRORS = {
   weak_password: ['Password must be at least 8 characters.', 'パスワードは8文字以上で入力してください。'],
   email_taken: ['That email is already registered.', 'このメールアドレスは登録済みです。'],
   invalid_credentials: ['Wrong email or password.', 'メールアドレスかパスワードが違います。'],
+  invalid_code: ['That code is wrong. Check your email and try again.', 'コードが違います。メールを確認してもう一度お試しください。'],
+  otp_expired: ['That code expired. Sign in again to get a new one.', 'コードの有効期限が切れました。もう一度ログインしてください。'],
+  too_many_attempts: ['Too many tries. Sign in again to get a new code.', '試行回数が上限に達しました。もう一度ログインしてください。'],
 };
 const authError = (code, lang) => T(lang, ...(AUTH_ERRORS[code] || ['Something went wrong. Try again.', '問題が発生しました。もう一度お試しください。']));
 
@@ -43,6 +46,10 @@ function LoginModal({ p, lang, onLogin, onClose }) {
   const [showPw, setShowPw] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [otpStep, setOtpStep] = React.useState(false); // login mailed a code; collecting it
+  const [pending, setPending] = React.useState('');    // ticket tying the code to this login
+  const [code, setCode] = React.useState('');
+  const [remember, setRemember] = React.useState(false);
   const isReg = mode === 'register';
 
   const submit = async (e) => {
@@ -51,14 +58,40 @@ function LoginModal({ p, lang, onLogin, onClose }) {
     setErr(''); setBusy(true);
     try {
       const api = window.N101_API;
-      const u = isReg
-        ? await api.register(email.trim(), password, name.trim())
-        : await api.login(email.trim(), password);
-      onLogin(api.toAppUser(u, window.__currentUser));
+      if (isReg) {
+        const u = await api.register(email.trim(), password, name.trim());
+        onLogin(api.toAppUser(u, window.__currentUser));
+        return;
+      }
+      const r = await api.login(email.trim(), password);
+      if (r.otpRequired) { setPending(r.pending); setOtpStep(true); setBusy(false); return; }
+      onLogin(api.toAppUser(r.user, window.__currentUser));
     } catch (ex) {
       setErr(authError(ex.code, lang));
       setBusy(false);
     }
+  };
+
+  const submitOtp = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setErr(''); setBusy(true);
+    try {
+      const api = window.N101_API;
+      const u = await api.verifyOtp(pending, code.trim(), remember);
+      onLogin(api.toAppUser(u, window.__currentUser));
+    } catch (ex) {
+      // An expired/used ticket means start over from the password step.
+      if (ex.code === 'otp_expired' || ex.code === 'too_many_attempts') { setOtpStep(false); setCode(''); }
+      setErr(authError(ex.code, lang));
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    setErr('');
+    try { await window.N101_API.resendOtp(pending); setErr(T(lang, 'New code sent — check your email.', '新しいコードを送信しました。メールを確認してください。')); }
+    catch (ex) { setErr(authError(ex.code, lang)); }
   };
 
   return (
@@ -84,13 +117,41 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             </span>
           </div>
           <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:26, color:p.ink, letterSpacing:'-0.02em', lineHeight:1.1}}>
-            {isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Welcome back','おかえりなさい')}
+            {otpStep ? T(lang,'Enter your code','コードを入力') : isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Welcome back','おかえりなさい')}
           </h2>
           <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, marginTop:6}}>
-            {isReg ? T(lang,'Join to write, like, and share.','登録して、書いて、共有しよう。') : T(lang,'Sign in to write, like, and share.','ログインして、書いて、共有しよう。')}
+            {otpStep ? T(lang,'We emailed you a 6-digit code.','6桁のコードをメールで送信しました。') : isReg ? T(lang,'Join to write, like, and share.','登録して、書いて、共有しよう。') : T(lang,'Sign in to write, like, and share.','ログインして、書いて、共有しよう。')}
           </p>
         </div>
 
+        {otpStep ? (
+          <div style={{padding:'24px 32px 32px'}}>
+            <form onSubmit={submitOtp}>
+              <label style={fieldLabel(p)}>{T(lang,'6-digit code','6桁のコード')}</label>
+              <input value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))}
+                inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="000000"
+                style={{...fieldInput(p), letterSpacing:'0.4em', fontFamily:'var(--fontMono)', fontSize:20, textAlign:'center'}}/>
+
+              <label style={{display:'flex', alignItems:'center', gap:9, marginTop:14, cursor:'pointer',
+                fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft}}>
+                <input type="checkbox" checked={remember} onChange={(e)=>setRemember(e.target.checked)} style={{width:16, height:16, accentColor:p.accentDeep}}/>
+                {T(lang,'Trust this device for 30 days','このデバイスを30日間記憶する')}
+              </label>
+
+              {err && <div style={{marginTop:12, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{err}</div>}
+
+              <button type="submit" disabled={busy || code.length<6}
+                style={{...gradStyle(p), width:'100%', justifyContent:'center', marginTop:20, opacity:(busy||code.length<6)?0.6:1}}>
+                {busy ? T(lang,'Verifying…','確認中…') : T(lang,'Verify & sign in','確認してログイン')}
+              </button>
+            </form>
+            <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+              {T(lang,"Didn't get it? ",'届きませんか？ ')}
+              <button onClick={resend} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer',
+                fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0}}>{T(lang,'Resend code','コードを再送')}</button>
+            </p>
+          </div>
+        ) : (
         <div style={{padding:'24px 32px 32px'}}>
           {/* tabs */}
           <div style={{display:'flex', gap:24, marginBottom:20}}>
@@ -160,6 +221,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             }}>{isReg ? T(lang,'Sign in','ログイン') : T(lang,'Create one','登録する')}</button>
           </p>
         </div>
+        )}
       </div>
     </div>
   );

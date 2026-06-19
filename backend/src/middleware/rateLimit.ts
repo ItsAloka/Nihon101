@@ -131,6 +131,8 @@ export const limits = {
   // ---- AUTH — exact (Durable Object), per IP ----
   login:        rateLimit({ bucket: 'login',    limit: 10,  windowSec: 60,   by: 'ip', store: 'do' }),  // credential brute-force
   register:     rateLimit({ bucket: 'register', limit: 5,   windowSec: 3600, by: 'ip', store: 'do' }),  // mass signup
+  otpVerify:    rateLimit({ bucket: 'otp-vfy',  limit: 20,  windowSec: 300,  by: 'ip', store: 'do' }),  // 6-digit code guessing
+  otpResend:    rateLimit({ bucket: 'otp-rs',   limit: 5,   windowSec: 600,  by: 'ip' }),               // code-email bombing
 
   // ---- AUTH-adjacent — KV, per IP (high volume / not credential-guessing) ----
   refresh:      rateLimit({ bucket: 'refresh',  limit: 60,  windowSec: 60,   by: 'ip' }),   // token rotation
