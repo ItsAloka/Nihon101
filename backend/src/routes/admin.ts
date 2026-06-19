@@ -10,7 +10,7 @@ import { getUserById, getUserByHandle } from '../db/queries/users';
 import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
 import { getComment, deleteComment } from '../db/queries/engagement';
 import {
-  createReport, listReports, getReportById, resolveReport,
+  createReport, listReports, getReportById, resolveReport, reopenReport,
   resolveReportsForTarget, dismissReportsForTarget, dismissStaleWatchingReports,
   reportsAgainstUser, getDisplayNamesByIds,
   listReportCases, listReportsForTarget, resolveReportTargets, countOpenReportsForTargets,
@@ -148,9 +148,16 @@ app.patch('/reports/:id', async (c) => {
   const body = (await c.req.json().catch(() => null)) as { status?: unknown; note?: unknown } | null;
   const status = body?.status;
   const note = typeof body?.note === 'string' ? body.note : '';
-  if (status !== 'resolved' && status !== 'dismissed') return c.json({ error: 'status must be resolved or dismissed' }, 400);
+  if (status !== 'resolved' && status !== 'dismissed' && status !== 'open') return c.json({ error: 'status must be resolved, dismissed, or open' }, 400);
   const report = await getReportById(db, c.req.param('id'));
   if (!report) return c.json({ error: 'not_found' }, 404);
+  // Reopen a closed report back into the queue (does NOT unhide its target).
+  if (status === 'open') {
+    const ok = await reopenReport(db, report.id);
+    if (!ok) return c.json({ error: 'not_closed' }, 409);
+    await logAdminAction(db, { actorId: actor.id, action: 'reopen_report', targetType: 'report', targetId: report.id, detail: { note } });
+    return c.json({ ok: true });
+  }
   const ok = await resolveReport(db, report.id, actor.id, status, note);
   if (!ok) return c.json({ error: 'already_closed' }, 409);
   await logAdminAction(db, { actorId: actor.id, action: status === 'resolved' ? 'resolve_report' : 'dismiss_report', targetType: 'report', targetId: report.id, detail: { note } });

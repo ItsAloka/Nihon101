@@ -105,6 +105,17 @@ export async function resolveReport(db: DB, id: string, resolverId: string, stat
   return res.length > 0;
 }
 
+/** Reopen a CLOSED report — flip it back to the Open queue and clear the
+ *  resolution stamp. Returns false if it wasn't actually closed (already open). */
+export async function reopenReport(db: DB, id: string): Promise<boolean> {
+  const res = await db
+    .update(reports)
+    .set({ status: 'open', resolvedBy: null, resolvedAt: null, resolutionNote: '' })
+    .where(and(eq(reports.id, id), inArray(reports.status, ['resolved', 'dismissed'])))
+    .returning({ id: reports.id });
+  return res.length > 0;
+}
+
 /** Resolve every OPEN report against a target (called when an admin hides/deletes
  *  it, so acting on the content clears its queue entries). Optional note records
  *  what the admin did, stamped onto every report in the case. */
