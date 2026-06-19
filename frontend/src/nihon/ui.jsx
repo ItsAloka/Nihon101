@@ -301,7 +301,8 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
         {currentUser && (
           <div style={{position:'relative', flexShrink:0}}>
             <button onClick={()=>{ setNotifOpen(v=>!v); setMenuOpen(false); }}
-              title="Notifications" style={iconBtn(p)}>
+              title="Notifications" aria-label={lang==='jp'?'お知らせ':'Notifications'}
+              aria-haspopup="menu" aria-expanded={notifOpen} style={iconBtn(p)}>
               <BellIcon color={p.ink}/>
               {unread>0 && <span style={badgeStyle(p)}>{unread}</span>}
             </button>
@@ -330,6 +331,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
             </button>
             <div style={{position:'relative', flexShrink:0}}>
               <button onClick={()=>{ setMenuOpen(v=>!v); setNotifOpen(false); }}
+                aria-label={lang==='jp'?'アカウントメニュー':'Account menu'} aria-haspopup="menu" aria-expanded={menuOpen}
                 style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:0, borderRadius:'50%'}}>
                 <Avatar user={currentUser} p={p} size={38} ring/>
               </button>
@@ -360,6 +362,11 @@ function badgeStyle(p) {
 
 // ------- Notifications dropdown -------
 function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const list = notifs || [];
   const hasUnread = list.some(n=>!n.read);
   const actionBtn = (label, fn, danger) => (
@@ -371,8 +378,8 @@ function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
   );
   return (
     <>
-      <div onClick={onClose} style={{position:'fixed', inset:0, zIndex:40}}></div>
-      <div style={{
+      <div onClick={onClose} aria-hidden="true" style={{position:'fixed', inset:0, zIndex:40}}></div>
+      <div role="menu" aria-label={lang==='jp'?'お知らせ':'Notifications'} style={{
         position:'absolute', top:'calc(100% + 12px)', right:0, width:360, zIndex:41,
         background:p.surface, border:`1px solid ${p.line}`, borderRadius:18,
         boxShadow:`0 30px 60px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
@@ -398,7 +405,9 @@ function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
               {lang==='jp'?'まだお知らせはありません。':'Nothing yet — go write something!'}
             </div>
           ) : list.map((n,i)=>(
-            <div key={i} onClick={()=>{ if(n.route) window.__nihon_go(n.route); onClose(); }}
+            <div key={i} role="menuitem" tabIndex={0}
+              onClick={()=>{ if(n.route) window.__nihon_go(n.route); onClose(); }}
+              onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); if(n.route) window.__nihon_go(n.route); onClose(); } }}
               style={{
                 display:'flex', gap:12, padding:'14px 18px', cursor:'pointer',
                 borderBottom:`1px solid ${p.line}`,
@@ -426,6 +435,11 @@ function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
 
 // ------- Avatar dropdown menu -------
 function AvatarMenu({ p, lang, user, onClose, onLogout }) {
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const item = (label, fn) => (
     <button onClick={()=>{ fn(); onClose(); }} style={{
       appearance:'none', border:'none', background:'transparent', width:'100%', textAlign:'left',
@@ -439,8 +453,8 @@ function AvatarMenu({ p, lang, user, onClose, onLogout }) {
   );
   return (
     <>
-      <div onClick={onClose} style={{position:'fixed', inset:0, zIndex:40}}></div>
-      <div style={{
+      <div onClick={onClose} aria-hidden="true" style={{position:'fixed', inset:0, zIndex:40}}></div>
+      <div role="menu" aria-label={lang==='jp'?'アカウントメニュー':'Account menu'} style={{
         position:'absolute', top:'calc(100% + 12px)', right:0, width:240, zIndex:41,
         background:p.surface, border:`1px solid ${p.line}`, borderRadius:16,
         boxShadow:`0 30px 60px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
@@ -456,13 +470,14 @@ function AvatarMenu({ p, lang, user, onClose, onLogout }) {
           </div>
         </div>
         <div style={{paddingTop:6}}>
-          {item(<><span style={{display:'inline-flex',width:18}}>👤</span>{lang==='jp'?'プロフィール':'My profile'}</>, ()=>window.__nihon_go({name:'profile'}))}
-          {item(<><span style={{display:'inline-flex',width:18}}><PencilIcon color={p.inkSoft}/></span>{lang==='jp'?'記事を書く':'Write a story'}</>, ()=>window.__nihon_go({name:'compose'}))}
-          {item(<><span style={{display:'inline-flex',width:18}}><BookmarkIcon color={p.inkSoft} size={15}/></span>{lang==='jp'?'保存した記事':'Saved'}</>, ()=>window.__nihon_go({name:'saved'}))}
+          {item(<><span aria-hidden="true" style={{display:'inline-flex',width:18}}>👤</span>{lang==='jp'?'プロフィール':'My profile'}</>, ()=>window.__nihon_go({name:'profile'}))}
+          {item(<><span aria-hidden="true" style={{display:'inline-flex',width:18}}><PencilIcon color={p.inkSoft}/></span>{lang==='jp'?'記事を書く':'Write a story'}</>, ()=>window.__nihon_go({name:'compose'}))}
+          {item(<><span aria-hidden="true" style={{display:'inline-flex',width:18}}><BookmarkIcon color={p.inkSoft} size={15}/></span>{lang==='jp'?'保存した記事':'Saved'}</>, ()=>window.__nihon_go({name:'saved'}))}
+          {item(<><span aria-hidden="true" style={{display:'inline-flex',width:18}}>⚙️</span>{lang==='jp'?'設定':'Settings'}</>, ()=>window.__nihon_go({name:'settings'}))}
         </div>
         {user.role==='admin' && (
           <div style={{borderTop:`1px solid ${p.line}`, marginTop:6, paddingTop:6}}>
-            {item(<><span style={{display:'inline-flex',width:18}}>🛡️</span><span style={{fontWeight:600}}>{lang==='jp'?'管理パネル':'Admin'}</span></>, ()=>{ window.location.href = `/${lang==='jp'?'ja':'en'}/admin`; })}
+            {item(<><span aria-hidden="true" style={{display:'inline-flex',width:18}}>🛡️</span><span style={{fontWeight:600}}>{lang==='jp'?'管理パネル':'Admin'}</span></>, ()=>{ window.location.href = `/${lang==='jp'?'ja':'en'}/admin`; })}
           </div>
         )}
         <div style={{borderTop:`1px solid ${p.line}`, marginTop:6, paddingTop:6}}>

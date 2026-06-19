@@ -50,7 +50,24 @@ function LoginModal({ p, lang, onLogin, onClose }) {
   const [pending, setPending] = React.useState('');    // ticket tying the code to this login
   const [code, setCode] = React.useState('');
   const [remember, setRemember] = React.useState(false);
+  const [forgotStep, setForgotStep] = React.useState(false); // "forgot password" email form
+  const [forgotSent, setForgotSent] = React.useState(false); // reset email dispatched
   const isReg = mode === 'register';
+
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submitForgot = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setErr(''); setBusy(true);
+    try { await window.N101_API.forgot(email.trim()); setForgotSent(true); }
+    catch (ex) { setErr(authError(ex.code, lang)); }
+    setBusy(false);
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -99,7 +116,8 @@ function LoginModal({ p, lang, onLogin, onClose }) {
       position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center',
       background:'rgba(20,14,20,0.45)', backdropFilter:'blur(4px)', padding:20,
     }} onClick={onClose}>
-      <div onClick={(e)=>e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Sign in','ログイン')}
+        onClick={(e)=>e.stopPropagation()} style={{
         width:'100%', maxWidth:440, background:p.surface, borderRadius:24, overflow:'hidden',
         border:`1px solid ${p.line}`, boxShadow:'0 40px 80px -30px rgba(0,0,0,0.5)', position:'relative',
       }}>
@@ -117,10 +135,10 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             </span>
           </div>
           <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:26, color:p.ink, letterSpacing:'-0.02em', lineHeight:1.1}}>
-            {otpStep ? T(lang,'Enter your code','コードを入力') : isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Welcome back','おかえりなさい')}
+            {otpStep ? T(lang,'Enter your code','コードを入力') : forgotStep ? T(lang,'Reset your password','パスワードの再設定') : isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Welcome back','おかえりなさい')}
           </h2>
           <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, marginTop:6}}>
-            {otpStep ? T(lang,'We emailed you a 6-digit code.','6桁のコードをメールで送信しました。') : isReg ? T(lang,'Join to write, like, and share.','登録して、書いて、共有しよう。') : T(lang,'Sign in to write, like, and share.','ログインして、書いて、共有しよう。')}
+            {otpStep ? T(lang,'We emailed you a 6-digit code.','6桁のコードをメールで送信しました。') : forgotStep ? T(lang,"Enter your email and we'll send a reset link.",'メールアドレスを入力すると、再設定リンクを送ります。') : isReg ? T(lang,'Join to write, like, and share.','登録して、書いて、共有しよう。') : T(lang,'Sign in to write, like, and share.','ログインして、書いて、共有しよう。')}
           </p>
         </div>
 
@@ -150,6 +168,38 @@ function LoginModal({ p, lang, onLogin, onClose }) {
               <button onClick={resend} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer',
                 fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0}}>{T(lang,'Resend code','コードを再送')}</button>
             </p>
+          </div>
+        ) : forgotStep ? (
+          <div style={{padding:'24px 32px 32px'}}>
+            {forgotSent ? (
+              <>
+                <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, lineHeight:1.6, marginBottom:20}}>
+                  {T(lang,'If that email has an account, a reset link is on its way. Check your inbox.','そのメールアドレスのアカウントがあれば、再設定リンクを送信しました。受信箱をご確認ください。')}
+                </p>
+                <button onClick={()=>{ setForgotStep(false); setForgotSent(false); setErr(''); }}
+                  style={{...gradStyle(p), width:'100%', justifyContent:'center'}}>
+                  {T(lang,'Back to sign in','ログインに戻る')}
+                </button>
+              </>
+            ) : (
+              <form onSubmit={submitForgot}>
+                <label style={fieldLabel(p)}>{T(lang,'Email','メールアドレス')}</label>
+                <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" autoFocus autoComplete="email"
+                  placeholder="you@example.com" style={fieldInput(p)}/>
+                {err && <div style={{marginTop:12, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{err}</div>}
+                <button type="submit" disabled={busy}
+                  style={{...gradStyle(p), width:'100%', justifyContent:'center', marginTop:20, opacity:busy?0.6:1}}>
+                  {busy ? T(lang,'Please wait…','少々お待ちください…') : T(lang,'Send reset link','再設定リンクを送る')}
+                </button>
+                <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+                  <button type="button" onClick={()=>{ setForgotStep(false); setErr(''); }} style={{
+                    appearance:'none', border:'none', background:'transparent', cursor:'pointer',
+                    fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0}}>
+                    {T(lang,'Back to sign in','ログインに戻る')}
+                  </button>
+                </p>
+              </form>
+            )}
           </div>
         ) : (
         <div style={{padding:'24px 32px 32px'}}>
@@ -204,6 +254,16 @@ function LoginModal({ p, lang, onLogin, onClose }) {
                 <EyeIcon off={showPw}/>
               </button>
             </div>
+
+            {!isReg && (
+              <p style={{textAlign:'right', marginTop:8, marginBottom:0}}>
+                <button type="button" onClick={()=>{ setForgotStep(true); setErr(''); }} style={{
+                  appearance:'none', border:'none', background:'transparent', cursor:'pointer',
+                  fontFamily:'var(--fontBody)', fontSize:12.5, fontWeight:600, color:p.inkFaint, padding:0}}>
+                  {T(lang,'Forgot password?','パスワードをお忘れですか？')}
+                </button>
+              </p>
+            )}
 
             {err && <div style={{marginTop:12, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{err}</div>}
 
@@ -1041,7 +1101,152 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
   );
 }
 
-Object.assign(window, { LoginModal, ComposerPage, ProfilePage, TrendingPage, FeedPage, DEMO_USERS });
+// Account settings: email/verification status, Google link, change password,
+// delete account. Profile fields (name/photo/bio) are edited on the profile page.
+function SettingsPage({ p, lang, user, onUpdateUser, onLogout }) {
+  const jp = lang === 'jp';
+  const [acct, setAcct] = React.useState(null); // { hasPassword, google, emailVerified }
+  React.useEffect(() => {
+    let live = true;
+    window.N101_API.getAccount()
+      .then((d) => { if (live) setAcct({ hasPassword: d.hasPassword, google: d.google, emailVerified: d.user.emailVerified }); })
+      .catch(() => { if (live) setAcct({ hasPassword: true, google: { linked: false }, emailVerified: false }); });
+    return () => { live = false; };
+  }, []);
+
+  // change password
+  const [cur, setCur] = React.useState('');
+  const [next, setNext] = React.useState('');
+  const [conf, setConf] = React.useState('');
+  const [pwBusy, setPwBusy] = React.useState(false);
+  const [pwMsg, setPwMsg] = React.useState(null); // { ok, text }
+  // email verify
+  const [vMsg, setVMsg] = React.useState('');
+  // delete
+  const [confirmText, setConfirmText] = React.useState('');
+  const [delBusy, setDelBusy] = React.useState(false);
+
+  const field = { width: '100%', fontFamily: 'var(--fontBody)', fontSize: 15, color: p.ink, background: p.surface, border: `1px solid ${p.line}`, borderRadius: 12, padding: '11px 14px', outline: 'none' };
+  const labelS = { display: 'block', fontFamily: 'var(--fontMono)', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: p.inkSoft, marginBottom: 8 };
+  const card = { background: p.surface, border: `1px solid ${p.line}`, borderRadius: 18, padding: 28, marginBottom: 22 };
+  const h2 = { fontFamily: 'var(--fontDisplay)', fontWeight: 600, fontSize: 22, letterSpacing: '-0.02em', color: p.ink, marginBottom: 16 };
+
+  const changePw = async (e) => {
+    e.preventDefault();
+    if (pwBusy) return;
+    if (next !== conf) { setPwMsg({ ok: false, text: jp ? 'パスワードが一致しません。' : 'Passwords do not match.' }); return; }
+    setPwBusy(true); setPwMsg(null);
+    try {
+      await window.N101_API.changePassword(cur, next);
+      setPwMsg({ ok: true, text: jp ? 'パスワードを変更しました。' : 'Password changed.' });
+      setCur(''); setNext(''); setConf('');
+    } catch (err) {
+      const m = err.code === 'invalid_credentials' ? (jp ? '現在のパスワードが違います。' : 'Your current password is wrong.')
+        : err.code === 'weak_password' ? (jp ? 'パスワードは8〜72文字。英字に数字か記号を混ぜてください（または12文字以上）。' : 'Password must be 8–72 chars and mix letters with numbers or symbols (or be 12+ long).')
+        : (jp ? '変更できませんでした。' : 'Could not change the password.');
+      setPwMsg({ ok: false, text: m });
+    } finally { setPwBusy(false); }
+  };
+
+  const resendVerify = async () => {
+    try { await window.N101_API.resendVerification(); setVMsg(jp ? '確認メールを送信しました。' : 'Verification email sent.'); }
+    catch { setVMsg(jp ? '送信できませんでした。' : 'Could not send right now.'); }
+  };
+
+  const removeAccount = async () => {
+    if (delBusy || confirmText !== 'DELETE') return;
+    setDelBusy(true);
+    try { await window.N101_API.deleteAccount(); onLogout(); }
+    catch { setDelBusy(false); }
+  };
+
+  return (
+    <div style={{ ...wrap(), padding: '48px 32px 80px', maxWidth: 720 }}>
+      <h1 style={{ fontFamily: 'var(--fontDisplay)', fontWeight: 600, fontSize: 'clamp(30px,3.5vw,44px)', letterSpacing: '-0.025em', color: p.ink, marginBottom: 28 }}>
+        {jp ? '設定' : 'Settings'}
+      </h1>
+
+      {/* Account */}
+      <section style={card}>
+        <h2 style={h2}>{jp ? 'アカウント' : 'Account'}</h2>
+        <div style={{ fontFamily: 'var(--fontBody)', fontSize: 15, color: p.ink, marginBottom: 6 }}>
+          <strong>{jp ? user.jp : user.en}</strong> · @{user.slug}
+        </div>
+        <div style={{ fontFamily: 'var(--fontBody)', fontSize: 14.5, color: p.inkSoft, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {user.email}
+          {acct && (acct.emailVerified
+            ? <span style={{ fontSize: 12, fontWeight: 700, color: p.stamp }}>✓ {jp ? '確認済み' : 'verified'}</span>
+            : <a onClick={resendVerify} style={{ fontSize: 13, fontWeight: 600, color: p.stamp, cursor: 'pointer' }}>{jp ? 'メールを確認する' : 'verify email'}</a>)}
+        </div>
+        {vMsg && <div style={{ fontSize: 13, color: p.inkSoft, marginTop: 8 }}>{vMsg}</div>}
+        {acct?.google?.linked && (
+          <div style={{ fontFamily: 'var(--fontBody)', fontSize: 13.5, color: p.inkSoft, marginTop: 10 }}>
+            {jp ? 'Google連携済み' : 'Linked with Google'}{acct.google.email ? ` · ${acct.google.email}` : ''}
+          </div>
+        )}
+        <div style={{ marginTop: 16 }}>
+          <a onClick={() => window.__nihon_go({ name: 'profile' })} style={{ fontFamily: 'var(--fontBody)', fontSize: 14, fontWeight: 600, color: p.stamp, cursor: 'pointer' }}>
+            {jp ? 'プロフィール（名前・写真・自己紹介）を編集 →' : 'Edit profile (name, photo, bio) →'}
+          </a>
+        </div>
+      </section>
+
+      {/* Change password */}
+      <section style={card}>
+        <h2 style={h2}>{jp ? 'パスワードの変更' : 'Change password'}</h2>
+        {acct && !acct.hasPassword ? (
+          <p style={{ fontFamily: 'var(--fontBody)', fontSize: 14.5, color: p.inkSoft }}>
+            {jp ? 'このアカウントはGoogleでログインしているため、パスワードはありません。' : 'This account signs in with Google and has no password to change.'}
+          </p>
+        ) : (
+          <form onSubmit={changePw}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelS}>{jp ? '現在のパスワード' : 'Current password'}</label>
+              <input style={field} type="password" value={cur} onChange={(e) => setCur(e.target.value)} autoComplete="current-password" />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelS}>{jp ? '新しいパスワード' : 'New password'}</label>
+              <input style={field} type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelS}>{jp ? '新しいパスワード（確認）' : 'Confirm new password'}</label>
+              <input style={field} type="password" value={conf} onChange={(e) => setConf(e.target.value)} autoComplete="new-password" />
+            </div>
+            {pwMsg && <div style={{ fontFamily: 'var(--fontBody)', fontSize: 13.5, color: pwMsg.ok ? p.stamp : '#c2410c', marginBottom: 14 }}>{pwMsg.text}</div>}
+            <button type="submit" disabled={pwBusy || !cur || !next} style={{ ...gradStyle(p), opacity: pwBusy || !cur || !next ? 0.6 : 1 }}>
+              {pwBusy ? (jp ? '保存中…' : 'Saving…') : (jp ? 'パスワードを更新' : 'Update password')}
+            </button>
+          </form>
+        )}
+      </section>
+
+      {/* Session */}
+      <section style={card}>
+        <h2 style={h2}>{jp ? 'セッション' : 'Session'}</h2>
+        <button onClick={onLogout} style={{ appearance: 'none', border: `1px solid ${p.line}`, background: 'transparent', color: p.ink, fontFamily: 'var(--fontBody)', fontSize: 14, fontWeight: 600, padding: '10px 20px', borderRadius: 999, cursor: 'pointer' }}>
+          {jp ? 'ログアウト' : 'Sign out'}
+        </button>
+      </section>
+
+      {/* Danger zone */}
+      <section style={{ ...card, borderColor: '#dc2626' }}>
+        <h2 style={{ ...h2, color: '#dc2626' }}>{jp ? 'アカウントを削除' : 'Delete account'}</h2>
+        <p style={{ fontFamily: 'var(--fontBody)', fontSize: 14, color: p.inkSoft, marginBottom: 16, lineHeight: 1.6 }}>
+          {jp ? 'アカウントと、あなたが投稿したすべて（記事・コメント・いいね）を完全に削除します。元に戻せません。確認のため ' : "Permanently deletes your account and everything you've posted (articles, comments, likes). This cannot be undone. Type "}
+          <strong>DELETE</strong>{jp ? ' と入力してください。' : ' to confirm.'}
+        </p>
+        <input style={{ ...field, marginBottom: 16, maxWidth: 280 }} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder="DELETE" />
+        <div>
+          <button onClick={removeAccount} disabled={delBusy || confirmText !== 'DELETE'} style={{ appearance: 'none', border: 'none', background: '#dc2626', color: '#fff', fontFamily: 'var(--fontBody)', fontSize: 14, fontWeight: 700, padding: '11px 22px', borderRadius: 999, cursor: 'pointer', opacity: delBusy || confirmText !== 'DELETE' ? 0.5 : 1 }}>
+            {delBusy ? (jp ? '削除中…' : 'Deleting…') : (jp ? 'アカウントを削除する' : 'Delete my account')}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+Object.assign(window, { LoginModal, ComposerPage, ProfilePage, TrendingPage, FeedPage, SettingsPage, DEMO_USERS });
 
 // ====== FOR YOU FEED (real backend /feed — ranked: follows + trending + fresh,
 // tilted by category affinity. We only split + label it here.) ======

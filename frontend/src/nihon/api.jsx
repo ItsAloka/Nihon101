@@ -113,6 +113,30 @@ async function updateProfile(patch) {
   const d = await req('/auth/me', { method: 'PATCH', body: JSON.stringify(patch) });
   return d.user;
 }
+// Request a password-reset email. Always resolves (server never reveals if the
+// address exists). The emailed link lands on /{loc}/reset?token=.
+function forgot(email) {
+  return req('/auth/forgot', { method: 'POST', body: JSON.stringify({ email, locale: pageLocale() }) });
+}
+// Consume a reset token from the emailed link; sets the new password.
+function resetPassword(token, password) {
+  return req('/auth/reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+}
+
+// Account detail for the settings screen: { user, hasPassword, google:{linked,email} }.
+function getAccount() {
+  return req('/auth/me', { method: 'GET' });
+}
+// Change password (verifies current). Other sessions are revoked server-side.
+function changePassword(current, password) {
+  return req('/auth/change-password', { method: 'POST', body: JSON.stringify({ current, password }) });
+}
+// GDPR erasure: delete the account; the FK cascade removes its whole footprint.
+async function deleteAccount() {
+  await req('/auth/me', { method: 'DELETE' });
+  accessToken = null;
+}
+
 // Upload an avatar blob to R2 via /media; returns its public URL.
 async function uploadAvatar(blob) {
   const form = new FormData();
@@ -129,5 +153,5 @@ async function uploadAvatar(blob) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification, getAccount, changePassword, deleteAccount, forgot, resetPassword };
 }
