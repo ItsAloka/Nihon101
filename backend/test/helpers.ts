@@ -42,10 +42,11 @@ export interface Res { status: number; json: any; headers: Headers; }
 /** One request through the Worker. `token` sets the Bearer access token. */
 export async function call(
   method: string, path: string,
-  opts: { token?: string; body?: unknown } = {},
+  opts: { token?: string; body?: unknown; cookie?: string } = {},
 ): Promise<Res> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (opts.token) headers.Authorization = 'Bearer ' + opts.token;
+  if (opts.cookie) headers.Cookie = opts.cookie;
   // Unique client IP per call so the by-IP auth limiters (register 5/hr etc.) don't
   // collide across the many users a test run creates — they'd otherwise all share the
   // 'anon' bucket. User-keyed write limits are unaffected.
