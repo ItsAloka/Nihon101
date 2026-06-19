@@ -3,7 +3,7 @@ import React from "react";
 import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
-import FollowStats from "./FollowStats.jsx";
+import FollowStats, { FollowListModal } from "./FollowStats.jsx";
 const { Photo, Avatar, CategoryChip, AuthorChip, gradStyle, Hanko,
         ArrowRight, ArrowLeft, HeartIcon, CommentIcon, PencilIcon,
         BookmarkIcon, TrendIcon, BellIcon } = window;
@@ -1076,6 +1076,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   const [total, setTotal] = React.useState(0);      // total posts → page count
   const [authors, setAuthors] = React.useState([]);  // who-to-follow candidates
   const [cats, setCats] = React.useState([]);
+  const [followOpen, setFollowOpen] = React.useState(false); // "Writers you follow" popup
 
   const PAGE = 12;                                  // blog-style: 12 cards per page (matches Trending)
   const totalPages = Math.max(1, Math.ceil(total / PAGE));
@@ -1158,6 +1159,26 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
       <p style={{fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft, marginBottom:40, maxWidth:680}}>
         {lang==='jp'?'フォロー中の書き手、いま人気の記事、そしてあなたの好みから選びました。':'Built from the writers you follow, what’s trending, and the topics you read.'}
       </p>
+
+      {/* Writers-you-follow popup trigger (YouTube-style subscriptions) */}
+      {currentUser && (
+        <button onClick={()=>setFollowOpen(true)} style={{
+          display:'inline-flex', alignItems:'center', gap:9, marginBottom:40, cursor:'pointer',
+          padding:'9px 16px 9px 14px', borderRadius:999, border:`1px solid ${p.line}`, background:p.surface,
+          fontFamily:'var(--fontBody)', fontSize:13.5, fontWeight:600, color:p.ink,
+        }}
+          onMouseEnter={(e)=>{e.currentTarget.style.borderColor=p.stamp;}}
+          onMouseLeave={(e)=>{e.currentTarget.style.borderColor=p.line;}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={p.stamp} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          {lang==='jp'?'フォロー中の書き手':'Writers you follow'}
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{follows.size}</span>
+        </button>
+      )}
+      {followOpen && currentUser && (
+        <FollowListModal handle={currentUser.slug} locale={loc} tab="writers" tabs={["writers"]} onClose={()=>setFollowOpen(false)} />
+      )}
 
       {/* not signed in */}
       {!currentUser && (

@@ -56,7 +56,9 @@ function Row({ u, loc, viewerId, jp }) {
   );
 }
 
-function FollowListModal({ handle, locale, tab, onTab, onClose }) {
+const TAB_LABELS = { readers: { en: "Readers", ja: "読者" }, writers: { en: "Writers", ja: "フォロー中" } };
+
+export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["readers", "writers"] }) {
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [rows, setRows] = React.useState(null);
@@ -107,10 +109,15 @@ function FollowListModal({ handle, locale, tab, onTab, onClose }) {
         background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 20, overflow: "hidden",
         boxShadow: "0 40px 80px -28px color-mix(in oklab, var(--ink) 50%, transparent)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px 0 18px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ display: "flex", gap: 16 }}>
-            <TabBtn id="readers" en="Readers" ja="読者" />
-            <TabBtn id="writers" en="Writers" ja="フォロー中" />
-          </div>
+          {tabs.length > 1 ? (
+            <div style={{ display: "flex", gap: 16 }}>
+              {tabs.map((id) => <TabBtn key={id} id={id} en={TAB_LABELS[id].en} ja={TAB_LABELS[id].ja} />)}
+            </div>
+          ) : (
+            <div style={{ padding: "16px 2px", fontFamily: "var(--fontDisplay)", fontWeight: 600, fontSize: 17, color: "var(--ink)" }}>
+              {jp ? TAB_LABELS[tabs[0]].ja : TAB_LABELS[tabs[0]].en}
+            </div>
+          )}
           <button onClick={onClose} aria-label="Close" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "var(--inkFaint)", padding: 8 }}>×</button>
         </div>
         <div style={{ padding: "12px 16px 8px" }}>
@@ -173,8 +180,7 @@ export default function FollowStats({ handle, locale = "ja", followers = null, f
   return (
     <span style={{ display: "inline-flex", gap: 18, alignItems: "center" }}>
       {chip("readers", jp ? "読者" : "Readers", counts.followers)}
-      {chip("writers", jp ? "フォロー" : "Writers", counts.following)}
-      {open && <FollowListModal handle={handle} locale={locale} tab={open} onTab={setOpen} onClose={() => setOpen(null)} />}
+      {open && <FollowListModal handle={handle} locale={locale} tab="readers" tabs={["readers"]} onClose={() => setOpen(null)} />}
     </span>
   );
 }

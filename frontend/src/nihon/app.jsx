@@ -7,7 +7,7 @@ import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
 import "./social.jsx";
-const { HomePage, ArticlePage, CategoryPage, SearchPage, AuthorPage, FeedPage, AuthorsPage,
+const { HomePage, ArticlePage, CategoryPage, SearchPage, AuthorPage, FeedPage,
         AboutPage, PrivacyPage, ContactPage, SavedPage, TrendingPage, ComposerPage, ProfilePage,
         LoginModal, Nav, Footer, PALETTES, deriveDark, FONT_PAIRINGS, getAllPosts, getPost } = window;
 function useTweaks(defaults) {
@@ -73,7 +73,6 @@ function App() {
     if (r.name==='tag') { window.location.href = `/${loc}/t/${r.slug}`; return; }
     if (r.name==='author') { window.location.href = `/${loc}/u/${r.slug}`; return; }
     if (r.name==='trending') { window.location.href = `/${loc}/trending`; return; }
-    if (r.name==='authors') { window.location.href = `/${loc}/writers`; return; }
     if (r.name==='feed') { window.location.href = `/${loc}/for-you`; return; }
     if (r.name==='about') { window.location.href = `/${loc}/about`; return; }
     if (r.name==='article') { window.location.href = `/${loc}/p/${r.slug}`; return; }
@@ -220,7 +219,6 @@ function App() {
       r.name === 'author' && r.slug ? `/${loc}/u/${r.slug}` :
       r.name === 'article' && r.slug ? `/${loc}/p/${r.slug}` :
       r.name === 'trending' ? `/${loc}/trending` :
-      r.name === 'authors' ? `/${loc}/writers` :
       r.name === 'feed' ? `/${loc}/for-you` :
       r.name === 'about' ? `/${loc}/about` :
       r.name === 'saved' ? `/${loc}/saved` :
@@ -246,8 +244,6 @@ function App() {
   } else if (r.name === 'feed') {
     screen = <FeedPage p={p} lang={lang} t={t} savedSet={savedSet} onSave={onSave} claps={claps}
               follows={follows} onToggleFollow={onToggleFollow} currentUser={currentUser} onRequireLogin={()=>setLoginOpen(true)}/>;
-  } else if (r.name === 'authors') {
-    screen = <AuthorsPage p={p} lang={lang} claps={claps} currentUser={currentUser} follows={follows} onToggleFollow={onToggleFollow}/>;
   } else if (r.name === 'about') {
     screen = <AboutPage p={p} lang={lang}/>;
   } else if (r.name === 'privacy') {
@@ -321,7 +317,6 @@ function parseHash(h) {
   if (path[0]==='article' && path[1]) return {name:'article', slug:path[1]};
   if (path[0]==='category' && path[1]) return {name:'category', slug:path[1]};
   if (path[0]==='author' && path[1]) return {name:'author', slug:path[1]};
-  if (path[0]==='authors') return {name:'authors'};
   if (path[0]==='about') return {name:'about'};
   if (path[0]==='privacy') return {name:'privacy'};
   if (path[0]==='contact') return {name:'contact'};
@@ -338,7 +333,6 @@ function serializeHash(r) {
   if (r.name==='article') return `#/article/${r.slug}`;
   if (r.name==='category') return `#/category/${r.slug}`;
   if (r.name==='author') return `#/author/${r.slug}`;
-  if (r.name==='authors') return '#/authors';
   if (r.name==='about') return '#/about';
   if (r.name==='privacy') return '#/privacy';
   if (r.name==='contact') return '#/contact';

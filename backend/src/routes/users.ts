@@ -7,7 +7,7 @@ import { getDb } from '../db/client';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
-import { getUserByHandle, getUserById, listAuthors, listFeaturedWriters, countAuthors } from '../db/queries/users';
+import { getUserByHandle, getUserById } from '../db/queries/users';
 import { listPosts, publicPost } from '../db/queries/posts';
 import { follow, unfollow, isFollowing, followCounts, listFollowing, listFollowers, listFollowingUsers } from '../db/queries/follows';
 import { createNotification } from '../db/queries/notifications';
@@ -30,26 +30,6 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
     return null;
   }
 }
-
-// Writers directory (public, SSR) — every author with a published post.
-// ?sort=top|new, ?q= name-searches writers, ?page paginates. The featured top-3
-// podium rides along on the first page of an unfiltered listing. Before /:handle.
-app.get('/', limits.publicRead, async (c) => {
-  const db = getDb(c);
-  const limit = Math.min(48, Math.max(1, Number(c.req.query('limit')) || 24));
-  const page = Math.max(0, Number(c.req.query('page')) || 0);
-  const sort = c.req.query('sort') === 'new' ? 'new' : 'top';
-  // Sub-2-char queries (a lone letter) would match-all — ignore, list everyone.
-  const raw = c.req.query('q')?.trim() || '';
-  const q = raw.length >= 2 ? raw.slice(0, 80) : undefined;
-  const wantsFeatured = !q && page === 0;
-  const [authors, total, featured] = await Promise.all([
-    listAuthors(db, { sort, q, limit, offset: page * limit }),
-    countAuthors(db, q),
-    wantsFeatured ? listFeaturedWriters(db, 3) : Promise.resolve([]),
-  ]);
-  return c.json({ authors, total, featured });
-});
 
 // The authors the requester follows ({id, handle}) — drives the For You feed
 // split + follow-button state. Declared before /:handle (distinct path length).
