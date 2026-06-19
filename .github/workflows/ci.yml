@@ -41,8 +41,10 @@ jobs:
         run: bun audit
         continue-on-error: true # surfaces CVEs as a visible check without blocking; Dependabot patches
       - run: bun run db:migrate
+      - name: Verify every migration actually applied
+        run: bun run db:verify # guards the silent-skip gremlin (future-dated journal `when`)
       - run: bun run typecheck
-      - run: bun test
+      - run: bun test # coverage threshold enforced via bunfig.toml
 
   frontend:
     name: Frontend — build (typecheck)

@@ -1,0 +1,51 @@
+name: DB backup
+
+# Daily logical backup to R2, on top of Neon's own point-in-time recovery. Neon PITR
+# is the primary recovery path (RPO ≈ minutes); this off-platform pg_dump is the
+# belt-and-suspenders copy in case the Neon project itself is lost, and gives a
+# portable dump we can restore anywhere. See docs/disaster-recovery.md.
+#
+# Required repo secrets:
+#   DATABASE_URL            — Neon connection string (a read-only role is enough)
+#   R2_ACCOUNT_ID           — Cloudflare account id (forms the S3 endpoint)
+#   R2_ACCESS_KEY_ID        — R2 API token (S3) key id
+#   R2_SECRET_ACCESS_KEY    — R2 API token (S3) secret
+#   R2_BACKUP_BUCKET        — bucket name, e.g. nihon101-backups
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC daily
+  workflow_dispatch: {}   # allow a manual run before risky migrations
+
+jobs:
+  dump:
+    name: pg_dump → R2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgresql-client-16 (match prod major)
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Dump + gzip
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          echo "FILE=nihon101-${STAMP}.sql.gz" >> "$GITHUB_ENV"
+          pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip -9 > "nihon101-${STAMP}.sql.gz"
+          ls -lh "nihon101-${STAMP}.sql.gz"
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$FILE" "s3://${BUCKET}/daily/${FILE}" --endpoint-url "$ENDPOINT"
+          echo "Uploaded ${FILE} to ${BUCKET}/daily/"
