@@ -1,0 +1,28 @@
+---
+// Landing page for the emailed password-reset link (/{locale}/reset?token=…).
+// SSR shell + a tiny client island that consumes the token. noindex — transient.
+import Shell from "../../layouts/Shell.astro";
+import ResetPassword from "../../nihon/ResetPassword.jsx";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+const pageTitle = jp ? "パスワード再設定 — nihon101" : "Reset password — nihon101";
+---
+<Shell locale={locale} title={pageTitle} description="" canonicalPath={`/${locale}/reset`} active="">
+  <div class="wrap section">
+    <ResetPassword client:only="react" locale={locale} />
+  </div>
+
+  <style is:global>
+    .rst { max-width: 440px; margin: 48px auto; text-align: center; font-family: var(--fontBody); color: var(--ink); }
+    .rst-h { font-family: var(--fontDisplay); font-weight: 600; letter-spacing: -0.01em; font-size: 28px; margin: 0 0 18px; }
+    .rst-p { color: var(--inkSoft); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+    .rst-btn { appearance: none; cursor: pointer; display: inline-block; border: 1px solid var(--line); background: var(--surface);
+      color: var(--ink); border-radius: 999px; padding: 11px 22px; font-family: var(--fontBody); font-size: 14px; font-weight: 600;
+      text-decoration: none; transition: border-color .15s, background .15s; }
+    .rst-btn:hover { border-color: var(--stamp); }
+    .rst-btn.primary { background: var(--stamp); color: #fff; border-color: var(--stamp); }
+    .rst-btn:disabled { opacity: .5; cursor: default; }
+  </style>
+</Shell>

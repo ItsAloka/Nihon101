@@ -41,6 +41,7 @@ export function ssrHref(r, loc) {
     case "saved": return `/${loc}/saved`;
     case "compose": case "write": return r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`;
     case "profile": return `/${loc}/me`;
+    case "settings": return `/${loc}/settings`;
     case "search": return `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
     case "category": return `/${loc}/c/${r.slug}`;
     case "tag": return `/${loc}/t/${r.slug}`;

@@ -1,0 +1,11 @@
+---
+// Clean-URL mount for account settings (change password, email/Google status,
+// delete account). Private surface (no SEO need), so it mounts the existing SPA
+// App island, which reads the screen from the pathname (see app.jsx routeFromPath).
+import SpaLayout from "../../layouts/SpaLayout.astro";
+
+const { locale } = Astro.params;
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+---
+
+<SpaLayout lang={locale} syncLang />

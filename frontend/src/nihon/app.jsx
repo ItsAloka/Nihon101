@@ -9,7 +9,7 @@ import "./screens.jsx";
 import "./social.jsx";
 const { HomePage, ArticlePage, CategoryPage, SearchPage, AuthorPage, FeedPage,
         AboutPage, PrivacyPage, ContactPage, SavedPage, TrendingPage, ComposerPage, ProfilePage,
-        LoginModal, Nav, Footer, PALETTES, deriveDark, FONT_PAIRINGS, getAllPosts, getPost } = window;
+        LoginModal, Nav, Footer, SettingsPage, PALETTES, deriveDark, FONT_PAIRINGS, getAllPosts, getPost } = window;
 function useTweaks(defaults) {
   const [t, setT] = React.useState(defaults);
   const setTweak = React.useCallback((k, v) => setT(prev => ({ ...prev, [k]: v })), []);
@@ -85,6 +85,10 @@ function App() {
     if (r.name==='profile') {
       if (!window.__currentUser) { setLoginOpen(true); return; }
       window.location.href = `/${loc}/me`; return;
+    }
+    if (r.name==='settings') {
+      if (!window.__currentUser) { setLoginOpen(true); return; }
+      window.location.href = `/${loc}/settings`; return;
     }
     setHistory(h=>[...h, r._from || routeRef.current]);
     setRoute(r);
@@ -223,6 +227,7 @@ function App() {
       r.name === 'about' ? `/${loc}/about` :
       r.name === 'saved' ? `/${loc}/saved` :
       r.name === 'profile' ? `/${loc}/me` :
+      r.name === 'settings' ? `/${loc}/settings` :
       (r.name === 'compose' || r.name === 'write') ? (r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`) :
       r.name === 'search' ? `/${loc}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ''}` :
       ''
@@ -261,6 +266,10 @@ function App() {
   } else if (r.name === 'profile') {
     screen = currentUser
       ? <ProfilePage p={p} lang={lang} user={currentUser} t={t} savedSet={savedSet} onSave={onSave} onUpdateUser={setCurrentUser} claps={claps} comments={comments}/>
+      : <LoginPrompt p={p} lang={lang} onLogin={()=>setLoginOpen(true)}/>;
+  } else if (r.name === 'settings') {
+    screen = currentUser
+      ? <SettingsPage p={p} lang={lang} user={currentUser} onUpdateUser={setCurrentUser} onLogout={onLogout}/>
       : <LoginPrompt p={p} lang={lang} onLogin={()=>setLoginOpen(true)}/>;
   } else {
     screen = <NotFound p={p} lang={lang}/>;
@@ -306,6 +315,7 @@ function routeFromPath(pathname, search) {
   if (screen === 'saved') return { name: 'saved' };
   if (screen === 'write') return qp.get('id') ? { name: 'compose', editId: qp.get('id') } : { name: 'compose' };
   if (screen === 'me') return { name: 'profile' };
+  if (screen === 'settings') return { name: 'settings' };
   return null;
 }
 
@@ -325,6 +335,7 @@ function parseHash(h) {
   if (path[0]==='feed' || path[0]==='following') return {name:'feed'};
   if (path[0]==='compose' || path[0]==='write') return path[1] ? {name:'compose', editId:path[1]} : {name:'compose'};
   if (path[0]==='profile') return {name:'profile'};
+  if (path[0]==='settings') return {name:'settings'};
   if (path[0]==='search') return {name:'search', q: qp.get('q')||''};
   return {name:'home'};
 }
@@ -341,6 +352,7 @@ function serializeHash(r) {
   if (r.name==='feed') return '#/following';
   if (r.name==='compose') return r.editId ? `#/compose/${r.editId}` : '#/compose';
   if (r.name==='profile') return '#/profile';
+  if (r.name==='settings') return '#/settings';
   if (r.name==='search') return r.q ? `#/search?q=${encodeURIComponent(r.q)}` : '#/search';
   return '#/';
 }
