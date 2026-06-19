@@ -3,8 +3,9 @@ import "./api.jsx";  // ensures window.N101_API is registered in THIS island's b
 
 /* Admin console island. Bootstraps the session from the refresh cookie, gates on
  * role=admin, then drives the /admin/* API. All data is fetched client-side with
- * the in-memory access token (refreshed on 401). Tabs: Dashboard, Reports, Users,
- * Media, Featured, Settings, Audit. Styling = the .adm-* classes in admin.astro. */
+ * the in-memory access token (refreshed on 401). Tabs: Dashboard, Reports, Posts,
+ * Users, Media, Featured, Settings, Audit. Styling = the .adm-* classes in
+ * admin.astro. */
 
 const T = (jp, en) => (loc) => (loc === "ja" ? jp : en);
 
@@ -40,6 +41,50 @@ const relTime = (ms, loc) => {
   const d = Math.floor(h / 24); return loc === "ja" ? `${d}日前` : `${d}d ago`;
 };
 const initialsOf = (s) => (String(s || "").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2) || "—").toUpperCase();
+
+/* ───────────── icons (inline, currentColor) ───────────── */
+const ICONS = {
+  gauge: <><path d="M3 3h7v7H3z" /><path d="M14 3h7v7h-7z" /><path d="M14 14h7v7h-7z" /><path d="M3 14h7v7H3z" /></>,
+  flag: <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V15" /></>,
+  file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M16 13H8M16 17H8M10 9H8" /></>,
+  message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+  image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></>,
+  star: <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z" />,
+  sliders: <><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" /><path d="M1 14h6M9 8h6M17 16h6" /></>,
+  clipboard: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.35-4.35" /></>,
+  eyeoff: <><path d="M9.9 4.24A9 9 0 0 1 12 4c7 0 11 8 11 8a18 18 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><path d="M6.6 6.6A13.5 13.5 0 0 0 1 12s4 8 11 8a9 9 0 0 0 5.4-1.6" /><path d="M1 1l22 22" /></>,
+  eye: <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>,
+  trash: <><path d="M3 6h18" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
+  ban: <><circle cx="12" cy="12" r="10" /><path d="M4.9 4.9l14.2 14.2" /></>,
+  check: <path d="M20 6L9 17l-5-5" />,
+  reopen: <><path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.5 9a9 9 0 0 1 14.8-3.4L23 10M1 14l4.7 4.4A9 9 0 0 0 20.5 15" /></>,
+  alert: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></>,
+  history: <><circle cx="12" cy="12" r="10" /><path d="M12 7v5l3 2" /></>,
+  chevron: <path d="M6 9l6 6 6-6" />,
+  chevronR: <path d="M9 6l6 6-6 6" />,
+};
+function Ic({ name, size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {ICONS[name] || null}
+    </svg>
+  );
+}
+
+// Per-tab header: icon + title + one-line guidance, for a cohesive console feel.
+function TabHead({ icon, title, sub }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <span style={{ color: "var(--stamp)" }}><Ic name={icon} size={19} /></span>
+        <h2 className="adm-h" style={{ fontSize: 21, margin: 0 }}>{title}</h2>
+      </div>
+      {sub && <p className="adm-sub">{sub}</p>}
+    </div>
+  );
+}
 
 /* ───────────── shared UI: thumbnail, toasts, confirm ───────────── */
 
@@ -154,13 +199,14 @@ export default function AdminConsole({ locale }) {
   );
 
   const tabs = [
-    ["dashboard", T("ダッシュボード", "Dashboard")(loc)],
-    ["reports", T("通報", "Reports")(loc), stats?.openReports || 0],
-    ["users", T("ユーザー", "Users")(loc)],
-    ["media", T("メディア", "Media")(loc)],
-    ["featured", T("注目記事", "Featured")(loc)],
-    ["settings", T("設定", "Settings")(loc)],
-    ["audit", T("監査ログ", "Audit")(loc)],
+    ["dashboard", T("ダッシュボード", "Dashboard")(loc), "gauge"],
+    ["reports", T("通報", "Reports")(loc), "flag", stats?.openReports || 0],
+    ["posts", T("記事", "Posts")(loc), "file"],
+    ["users", T("ユーザー", "Users")(loc), "users"],
+    ["media", T("メディア", "Media")(loc), "image"],
+    ["featured", T("注目記事", "Featured")(loc), "star"],
+    ["settings", T("設定", "Settings")(loc), "sliders"],
+    ["audit", T("監査ログ", "Audit")(loc), "clipboard"],
   ];
 
   return (
@@ -169,15 +215,16 @@ export default function AdminConsole({ locale }) {
       <h1 className="adm-h" style={{ fontSize: 34, margin: "4px 0 0" }}>{T("管理パネル", "Moderation console")(loc)}</h1>
 
       <div className="adm-tabs">
-        {tabs.map(([k, label, badge]) => (
+        {tabs.map(([k, label, icon, badge]) => (
           <button key={k} className={"adm-tab" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
-            {label}{badge ? <span className="badge">{badge}</span> : null}
+            <Ic name={icon} size={15} />{label}{badge ? <span className="badge">{badge}</span> : null}
           </button>
         ))}
       </div>
 
       {tab === "dashboard" && <Dashboard loc={loc} stats={stats} onJump={setTab} />}
       {tab === "reports" && <Reports loc={loc} api={api} onChange={refreshStats} />}
+      {tab === "posts" && <Posts loc={loc} api={api} onChange={refreshStats} />}
       {tab === "users" && <Users loc={loc} api={api} />}
       {tab === "media" && <Media loc={loc} api={api} />}
       {tab === "featured" && <Featured loc={loc} api={api} />}
@@ -194,20 +241,22 @@ export default function AdminConsole({ locale }) {
 function Dashboard({ loc, stats, onJump }) {
   if (!stats) return <div className="adm-empty">…</div>;
   const cells = [
-    [stats.openReports, T("未処理の通報", "Open reports")(loc), stats.openReports > 0, "reports"],
-    [stats.activeBans, T("有効なBAN", "Active bans")(loc), false, "users"],
-    [stats.totalUsers, T("ユーザー総数", "Total users")(loc), false, "users"],
-    [stats.newUsersToday, T("本日の新規", "New today")(loc), false, "users"],
-    [stats.totalPosts, T("公開記事", "Published posts")(loc), false, "featured"],
-    [stats.hiddenPosts, T("非表示の記事", "Hidden posts")(loc), stats.hiddenPosts > 0, "reports"],
+    [stats.openReports, T("未処理の通報", "Open reports")(loc), stats.openReports > 0, "reports", "flag"],
+    [stats.activeBans, T("有効なBAN", "Active bans")(loc), false, "users", "ban"],
+    [stats.totalUsers, T("ユーザー総数", "Total users")(loc), false, "users", "users"],
+    [stats.newUsersToday, T("本日の新規", "New today")(loc), false, "users", "star"],
+    [stats.totalPosts, T("公開記事", "Published posts")(loc), false, "posts", "file"],
+    [stats.hiddenPosts, T("非表示の記事", "Hidden posts")(loc), stats.hiddenPosts > 0, "posts", "eyeoff"],
   ];
   return (
     <div className="adm-stats">
-      {cells.map(([n, l, alert, jump], i) => (
-        <button key={i} onClick={() => onJump?.(jump)} className={"adm-stat" + (alert ? " alert" : "")}
-          style={{ textAlign: "left", cursor: "pointer", appearance: "none", font: "inherit" }}>
-          <div className="n">{n}</div><div className="l">{l}</div>
-        </button>
+      {cells.map(([n, l, alert, jump, icon], i) => (
+        <div key={i} role="button" tabIndex={0} onClick={() => onJump?.(jump)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onJump?.(jump); }}
+          className={"adm-stat" + (alert ? " alert" : "")}>
+          <div className="n">{n}</div>
+          <div className="l"><Ic name={icon} size={13} />{l}</div>
+        </div>
       ))}
     </div>
   );
@@ -224,6 +273,7 @@ function reasonBreakdown(reasons) {
   return [...m.entries()].sort((a, b) => b[1] - a[1]);
 }
 const reasonLabel = (r, loc) => (REASON_LABEL[r] || [r, r])[loc === "ja" ? 0 : 1];
+const TYPE_LABEL = { post: ["記事", "Post"], comment: ["コメント", "Comment"], user: ["ユーザー", "User"] };
 
 // Expandable "who reported, why, with what note" drawer — loads on first open.
 function CaseReporters({ loc, api, k }) {
@@ -238,13 +288,14 @@ function CaseReporters({ loc, api, k }) {
   };
   return (
     <div style={{ marginTop: 8 }}>
-      <button className="adm-btn" style={{ padding: "4px 11px", fontSize: 12 }} onClick={toggle}>
-        {open ? "▾" : "▸"} {T(`通報者 ${k.distinctReporters}人の詳細`, `Who reported (${k.distinctReporters})`)(loc)}
+      <button className="adm-tbtn" onClick={toggle}>
+        <Ic name={open ? "chevron" : "chevronR"} size={14} />
+        {T(`通報者 ${k.distinctReporters}人の詳細`, `Who reported (${k.distinctReporters})`)(loc)}
       </button>
       {open && (rows === null ? <div className="adm-muted" style={{ padding: "8px 0" }}>…</div> : (
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
           {rows.map((r) => (
-            <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--surface)" }}>
+            <div key={r.id} className="adm-rep">
               <Thumb src={r.reporterAvatarUrl} size={32} rounded={999} fallback={initialsOf(r.reporterName)} />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 13, display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
@@ -265,7 +316,8 @@ function CaseReporters({ loc, api, k }) {
 
 function Reports({ loc, api, onChange }) {
   const [status, setStatus] = React.useState("open");
-  const [data, setData] = React.useState(null);   // { mode, threshold, needsAction, watching } | { mode, reports }
+  const [typeFilter, setTypeFilter] = React.useState("all"); // all | post | comment | user
+  const [data, setData] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [banFor, setBanFor] = React.useState(null); // authorId
   const [showWatching, setShowWatching] = React.useState(false);
@@ -284,6 +336,8 @@ function Reports({ loc, api, onChange }) {
   };
 
   const ep = (k) => (k.targetType === "post" ? "posts" : "comments");
+  const matchesType = (t) => typeFilter === "all" || t === typeFilter;
+
   const hide = async (k) => {
     const ok = await confirmDialog({
       loc, note: true, confirmLabel: T("非表示", "Hide")(loc),
@@ -311,6 +365,15 @@ function Reports({ loc, api, onChange }) {
     if (!ok) return;
     run(k.targetId + "dm", () => api("/admin/reports/dismiss-target", { method: "POST", body: JSON.stringify({ targetType: k.targetType, targetId: k.targetId, note: ok.note }) }), T("却下しました。", "Dismissed.")(loc));
   };
+  const reopen = async (r) => {
+    const ok = await confirmDialog({
+      loc, confirmLabel: T("再開", "Reopen")(loc),
+      title: T("通報を再開", "Reopen report")(loc),
+      message: T("この通報を未処理キューに戻します（対象の非表示は解除されません）。", "Sends this report back to the open queue. Does not unhide the target.")(loc),
+    });
+    if (!ok) return;
+    run(r.id + "ro", () => api(`/admin/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ status: "open" }) }), T("再開しました。", "Reopened.")(loc));
+  };
   const clearStale = async () => {
     const ok = await confirmDialog({
       loc, confirmLabel: T("一括却下", "Dismiss all")(loc),
@@ -322,7 +385,7 @@ function Reports({ loc, api, onChange }) {
   };
   const doBan = (authorId, reason, duration) => run(authorId + "ban", () => api(`/admin/users/${authorId}/ban`, { method: "POST", body: JSON.stringify({ reason, duration }) }), T("BANしました。", "User banned.")(loc));
 
-  const renderCase = (k) => {
+  const renderCase = (k, sev) => {
     const t = k.target || {};
     const isPost = k.targetType === "post";
     const isComment = k.targetType === "comment";
@@ -332,34 +395,35 @@ function Reports({ loc, api, onChange }) {
     const thumb = isPost ? t.cover : t.authorAvatarUrl;
     const breakdown = reasonBreakdown(k.reasons);
     return (
-      <div className="adm-card" key={k.targetType + k.targetId}>
+      <div className={"adm-card" + (sev === "high" ? " high" : sev === "watch" ? " watch" : "")} key={k.targetType + k.targetId}>
         <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
           <Thumb src={thumb} size={isPost ? 64 : 48} rounded={isPost ? 12 : 999} fallback={initialsOf(t.authorName || t.handle)} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-              <span className="adm-pill">{k.targetType}</span>
-              <span className="adm-pill red" style={{ fontWeight: 700 }}>
-                {k.distinctReporters} {T("人が通報", k.distinctReporters === 1 ? "person" : "people")(loc)}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 7 }}>
+              <span className={"adm-count" + (sev === "watch" ? " watch" : "")}>
+                <Ic name="flag" size={12} />{k.distinctReporters} {T("人", k.distinctReporters === 1 ? "reporter" : "reporters")(loc)}
               </span>
+              <span className="adm-pill">{(TYPE_LABEL[k.targetType] || [k.targetType, k.targetType])[loc === "ja" ? 0 : 1]}</span>
               {k.totalReports !== k.distinctReporters && <span className="adm-pill">{k.totalReports} {T("件", "reports")(loc)}</span>}
-              {t.isHidden && <span className="adm-pill red">{T("非表示中", "hidden")(loc)}</span>}
+              {t.isHidden && <span className="adm-pill amber"><Ic name="eyeoff" size={11} />{T("非表示中", "hidden")(loc)}</span>}
               <span className="adm-mono" style={{ marginLeft: "auto" }}>{relTime(k.lastAt, loc)}</span>
             </div>
-            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div className="adm-title" style={{ marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis" }}>
               {href ? <a className="adm-link" href={href} target="_blank" rel="noreferrer">{title}</a> : title}
             </div>
             {t.authorName && !isUser && <div className="adm-mono" style={{ marginBottom: 6 }}>{T("投稿者", "by")(loc)} {t.authorName}{t.handle ? ` @${t.handle}` : ""}</div>}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: k.details?.length ? 8 : 0 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {breakdown.map(([r, n]) => (
-                <span key={r} className="adm-pill">{(REASON_LABEL[r] || [r, r])[loc === "ja" ? 0 : 1]}{n > 1 ? ` ×${n}` : ""}</span>
+                <span key={r} className="adm-pill">{reasonLabel(r, loc)}{n > 1 ? ` ×${n}` : ""}</span>
               ))}
             </div>
             <CaseReporters loc={loc} api={api} k={k} />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              {(isPost || isComment) && !t.isHidden && <button className="adm-btn danger" disabled={!!busy} onClick={() => hide(k)}>{T("非表示", "Hide")(loc)}</button>}
-              {(isPost || isComment) && <button className="adm-btn danger" disabled={!!busy} onClick={() => del(k)}>{T("削除", "Delete")(loc)}</button>}
-              {t.authorId && <button className="adm-btn danger" disabled={!!busy} onClick={() => setBanFor(banFor === t.authorId ? null : t.authorId)}>{T("投稿者をBAN", "Ban author")(loc)}</button>}
-              <button className="adm-btn" disabled={!!busy} onClick={() => dismissAll(k)}>{T("却下", "Dismiss")(loc)}</button>
+            <div className="adm-acts">
+              {(isPost || isComment) && !t.isHidden && <button className="adm-tbtn danger" disabled={!!busy} onClick={() => hide(k)}><Ic name="eyeoff" size={15} />{T("非表示", "Hide")(loc)}</button>}
+              {(isPost || isComment) && t.isHidden && <span className="adm-mono" style={{ alignSelf: "center" }}>{T("自動/手動で非表示中", "currently hidden")(loc)}</span>}
+              {(isPost || isComment) && <button className="adm-tbtn danger" disabled={!!busy} onClick={() => del(k)}><Ic name="trash" size={15} />{T("削除", "Delete")(loc)}</button>}
+              {t.authorId && <button className="adm-tbtn danger" disabled={!!busy} onClick={() => setBanFor(banFor === t.authorId ? null : t.authorId)}><Ic name="ban" size={15} />{T("投稿者をBAN", "Ban author")(loc)}</button>}
+              <button className="adm-tbtn" disabled={!!busy} onClick={() => dismissAll(k)}><Ic name="check" size={15} />{T("却下", "Dismiss")(loc)}</button>
             </div>
             {banFor && banFor === t.authorId && (
               <BanForm loc={loc} busy={!!busy} onCancel={() => setBanFor(null)} onBan={(reason, duration) => doBan(t.authorId, reason, duration)} />
@@ -370,14 +434,30 @@ function Reports({ loc, api, onChange }) {
     );
   };
 
+  const TYPES = [["all", T("すべて", "All")(loc)], ["post", T("記事", "Posts")(loc)], ["comment", T("コメント", "Comments")(loc)], ["user", T("ユーザー", "Users")(loc)]];
+
+  const needs = (data?.needsAction || []).filter((k) => matchesType(k.targetType));
+  const watch = (data?.watching || []).filter((k) => matchesType(k.targetType));
+  const closed = (data?.reports || []).filter((r) => matchesType(r.targetType));
+
   return (
     <div>
-      <div className="adm-tabs" style={{ border: "none", marginTop: 0 }}>
-        {["open", "resolved", "dismissed"].map((s) => (
-          <button key={s} className={"adm-tab" + (status === s ? " on" : "")} onClick={() => setStatus(s)}>
-            {T({ open: "未処理", resolved: "解決済み", dismissed: "却下" }[s], s[0].toUpperCase() + s.slice(1))(loc)}
-          </button>
-        ))}
+      <TabHead icon="flag" title={T("通報", "Reports")(loc)}
+        sub={T("通報は対象ごとに1件の案件にまとめられます。記事とコメントを非表示・削除し、投稿者をBANできます。", "Reports are grouped into one case per target. Hide or delete posts and comments, and ban the author.")(loc)} />
+
+      <div className="adm-bar">
+        <div className="adm-seg">
+          {["open", "resolved", "dismissed"].map((s) => (
+            <button key={s} className={status === s ? "on" : ""} onClick={() => setStatus(s)}>
+              {T({ open: "未処理", resolved: "解決済み", dismissed: "却下" }[s], { open: "Open", resolved: "Resolved", dismissed: "Dismissed" }[s])(loc)}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, marginLeft: "auto", flexWrap: "wrap" }}>
+          {TYPES.map(([v, label]) => (
+            <button key={v} className={"adm-chip" + (typeFilter === v ? " on" : "")} onClick={() => setTypeFilter(v)}>{label}</button>
+          ))}
+        </div>
       </div>
 
       {data === null ? <div className="adm-empty">…</div> : status === "open" ? (
@@ -385,53 +465,147 @@ function Reports({ loc, api, onChange }) {
           <div className="adm-muted" style={{ marginBottom: 12 }}>
             {T(`しきい値 ${data.threshold} 人以上の通報で「要対応」に表示。`, `Cases reach “Needs action” at ${data.threshold}+ distinct reporters.`)(loc)}
           </div>
-          {(data.needsAction?.length === 0 && data.watching?.length === 0)
+          {(needs.length === 0 && watch.length === 0)
             ? <div className="adm-empty">{T("通報はありません。", "No open reports.")(loc)}</div>
             : (
               <>
-                <div className="adm-col-h">{T("要対応", "Needs action")(loc)} · {data.needsAction?.length || 0}</div>
-                {data.needsAction?.length ? data.needsAction.map(renderCase)
+                <div className="adm-sec high"><Ic name="alert" size={16} />{T("要対応", "Needs action")(loc)} · {needs.length}</div>
+                {needs.length ? needs.map((k) => renderCase(k, "high"))
                   : <div className="adm-muted" style={{ marginBottom: 16 }}>{T("要対応の案件はありません。", "Nothing over the threshold.")(loc)}</div>}
 
-                {data.watching?.length > 0 && (
+                {watch.length > 0 && (
                   <div style={{ marginTop: 18 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <div className="adm-bar">
                       <button className="adm-btn" onClick={() => setShowWatching((v) => !v)}>
-                        {showWatching ? "▾" : "▸"} {T("監視中", "Watching")(loc)} · {data.watching.length} {T("（しきい値未満）", "(below threshold)")(loc)}
+                        <Ic name={showWatching ? "chevron" : "chevronR"} size={14} />{T("監視中", "Watching")(loc)} · {watch.length} <span className="adm-mono">{T("（しきい値未満）", "(below threshold)")(loc)}</span>
                       </button>
                       <button className="adm-btn" disabled={busy === "clearStale"} onClick={clearStale} title={T("30日以上動きのない案件を一括却下", "Dismiss cases untouched for 30+ days")(loc)}>
                         {T("古い案件を一括却下", "Clear stale")(loc)}
                       </button>
                     </div>
-                    {showWatching && <div style={{ marginTop: 12, opacity: 0.92 }}>{data.watching.map(renderCase)}</div>}
+                    {showWatching && <div style={{ marginTop: 12 }}>{watch.map((k) => renderCase(k, "watch"))}</div>}
                   </div>
                 )}
               </>
             )}
         </>
       ) : (
-        (data.reports?.length ? data.reports : []).length === 0
+        closed.length === 0
           ? <div className="adm-empty">{T("ここには通報はありません。", "No reports here.")(loc)}</div>
-          : data.reports.map((r) => {
-            const t = r.target || {};
-            const title = r.targetType === "post" ? t.postTitle : r.targetType === "comment" ? `“${t.excerpt || ""}”` : `@${t.handle || r.targetId}`;
-            return (
-              <div className="adm-card" key={r.id}>
-                <div style={{ minWidth: 0 }}>
-                  <span className="adm-pill">{r.targetType}</span> <span className="adm-pill">{reasonLabel(r.reason, loc)}</span>
-                  {r.dupeCount > 1 && <> <span className="adm-pill">{r.dupeCount}×</span></>}
-                  <div style={{ fontWeight: 600, margin: "6px 0 2px" }}>{title}</div>
-                  <div className="adm-mono">{T("通報者", "by")(loc)} {r.reporterName || "—"} · {fmtDate(r.createdAt)}</div>
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--line)" }}>
-                    <span className="adm-pill ok">{status === "resolved" ? T("解決", "resolved")(loc) : T("却下", "dismissed")(loc)}</span>{" "}
-                    <span className="adm-mono">{r.resolverName || T("システム", "system")(loc)}{r.resolvedAt ? ` · ${fmtDate(r.resolvedAt)}` : ""}</span>
-                    {r.resolutionNote && <div className="adm-muted" style={{ marginTop: 4, fontStyle: "italic" }}>“{r.resolutionNote}”</div>}
+          : (
+            <>
+              <div className="adm-sec"><Ic name="history" size={15} />{T("履歴", "History")(loc)} · {closed.length}</div>
+              {closed.map((r) => {
+                const t = r.target || {};
+                const title = r.targetType === "post" ? (t.postTitle || r.targetId) : r.targetType === "comment" ? `“${t.excerpt || ""}”` : `@${t.handle || r.targetId}`;
+                return (
+                  <div className="adm-card" key={r.id}>
+                    <div className="adm-row" style={{ alignItems: "flex-start", gap: 14 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 5 }}>
+                          <span className="adm-pill">{(TYPE_LABEL[r.targetType] || [r.targetType, r.targetType])[loc === "ja" ? 0 : 1]}</span>
+                          <span className={"adm-pill " + (status === "resolved" ? "ok" : "")}>{status === "resolved" ? T("解決", "resolved")(loc) : T("却下", "dismissed")(loc)}</span>
+                          <span className="adm-pill">{reasonLabel(r.reason, loc)}</span>
+                          {r.dupeCount > 1 && <span className="adm-pill">{r.dupeCount}×</span>}
+                        </div>
+                        <div className="adm-title" style={{ fontSize: 15, marginBottom: 3 }}>{title}</div>
+                        <div className="adm-mono">{T("通報者", "by")(loc)} {r.reporterName || "—"} · {fmtDate(r.createdAt)}</div>
+                        <div className="adm-mono" style={{ marginTop: 4 }}>
+                          {T("対応", "closed by")(loc)} {r.resolverName || T("システム", "system")(loc)}{r.resolvedAt ? ` · ${fmtDate(r.resolvedAt)}` : ""}
+                        </div>
+                        {r.resolutionNote && <div className="adm-muted" style={{ marginTop: 4, fontStyle: "italic" }}>“{r.resolutionNote}”</div>}
+                      </div>
+                      <button className="adm-tbtn info" disabled={busy === r.id + "ro"} onClick={() => reopen(r)} style={{ flexShrink: 0 }}>
+                        <Ic name="reopen" size={15} />{T("再開", "Reopen")(loc)}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })
+                );
+              })}
+            </>
+          )
       )}
+    </div>
+  );
+}
+
+/* ───────────── Posts (proactive moderation) ───────────── */
+function Posts({ loc, api, onChange }) {
+  const [q, setQ] = React.useState("");
+  const [rows, setRows] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [banFor, setBanFor] = React.useState(null);
+  const load = React.useCallback((query) => {
+    setRows(null);
+    api(`/admin/posts?q=${encodeURIComponent(query || "")}`).then((d) => setRows(d.posts)).catch(() => setRows([]));
+  }, [api]);
+  React.useEffect(() => { load(""); }, [load]);
+  React.useEffect(() => { const t = setTimeout(() => load(q), 300); return () => clearTimeout(t); }, [q, load]);
+
+  const run = async (key, fn, okMsg) => {
+    setBusy(key);
+    try { await fn(); if (okMsg) emitToast(okMsg, "success"); load(q); onChange?.(); setBanFor(null); }
+    catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
+    finally { setBusy(""); }
+  };
+  const titleOf = (p) => (loc === "ja" ? (p.titleJa || p.titleEn) : p.titleEn) || "—";
+
+  const toggleHide = async (p) => {
+    const hiding = !p.isHidden;
+    const ok = await confirmDialog({
+      loc, note: hiding, danger: hiding,
+      confirmLabel: hiding ? T("非表示", "Hide")(loc) : T("公開に戻す", "Unhide")(loc),
+      title: hiding ? T("記事を非表示", "Hide post")(loc) : T("記事を公開に戻す", "Unhide post")(loc),
+      message: hiding ? T("公開ページから外します（後で戻せます）。", "Removes it from the public site (reversible).")(loc) : T("もう一度公開ページに表示します。", "Makes it public again.")(loc),
+    });
+    if (!ok) return;
+    run(p.id + "h", () => api(`/admin/posts/${p.id}/hide`, { method: "PATCH", body: JSON.stringify({ hidden: hiding, reason: "moderation", note: ok.note || "" }) }), hiding ? T("非表示にしました。", "Hidden.")(loc) : T("公開に戻しました。", "Unhidden.")(loc));
+  };
+  const del = async (p) => {
+    const ok = await confirmDialog({
+      loc, danger: true, note: true, confirmLabel: T("削除", "Delete")(loc),
+      title: T("記事を削除", "Delete post")(loc), message: T("この操作は取り消せません。", "This can't be undone.")(loc),
+    });
+    if (!ok) return;
+    run(p.id + "d", () => api(`/admin/posts/${p.id}`, { method: "DELETE", body: JSON.stringify({ note: ok.note }) }), T("削除しました。", "Deleted.")(loc));
+  };
+  const doBan = (p, reason, duration) => run(p.id + "ban", () => api(`/admin/users/${p.authorId}/ban`, { method: "POST", body: JSON.stringify({ reason, duration }) }), T("BANしました。", "Author banned.")(loc));
+
+  return (
+    <div>
+      <TabHead icon="file" title={T("記事", "Posts")(loc)}
+        sub={T("公開中のすべての記事を検索して、非表示・削除、投稿者のBANができます（通報がなくても対応可能）。", "Search every published post — hide, delete, or ban the author, even without a report.")(loc)} />
+      <div className="adm-search">
+        <Ic name="search" size={16} />
+        <input className="adm-in" placeholder={T("タイトルで検索…", "Search by title…")(loc)} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {rows === null ? <div className="adm-empty">…</div>
+        : rows.length === 0 ? <div className="adm-empty">{T("該当する記事がありません。", "No posts found.")(loc)}</div>
+        : rows.map((p) => (
+          <div className="adm-card" key={p.id}>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <Thumb src={p.cover} size={64} rounded={12} fallback={initialsOf(p.authorName)} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 5 }}>
+                  {p.isHidden && <span className="adm-pill amber"><Ic name="eyeoff" size={11} />{T("非表示中", "hidden")(loc)}</span>}
+                  <span className="adm-mono" style={{ marginLeft: "auto" }}>♥ {p.likes} · 💬 {p.comments ?? 0}</span>
+                </div>
+                <div className="adm-title" style={{ marginBottom: 3 }}>
+                  {p.slug ? <a className="adm-link" href={`/${loc}/p/${p.slug}`} target="_blank" rel="noreferrer">{titleOf(p)}</a> : titleOf(p)}
+                </div>
+                <div className="adm-mono">{p.authorName || "—"}{p.authorHandle ? ` @${p.authorHandle}` : ""}</div>
+                <div className="adm-acts">
+                  <button className={p.isHidden ? "adm-tbtn" : "adm-tbtn danger"} disabled={!!busy} onClick={() => toggleHide(p)}>
+                    <Ic name={p.isHidden ? "eye" : "eyeoff"} size={15} />{p.isHidden ? T("公開に戻す", "Unhide")(loc) : T("非表示", "Hide")(loc)}
+                  </button>
+                  <button className="adm-tbtn danger" disabled={!!busy} onClick={() => del(p)}><Ic name="trash" size={15} />{T("削除", "Delete")(loc)}</button>
+                  {p.authorId && <button className="adm-tbtn danger" disabled={!!busy} onClick={() => setBanFor(banFor === p.id ? null : p.id)}><Ic name="ban" size={15} />{T("投稿者をBAN", "Ban author")(loc)}</button>}
+                </div>
+                {banFor === p.id && <BanForm loc={loc} busy={!!busy} onCancel={() => setBanFor(null)} onBan={(reason, duration) => doBan(p, reason, duration)} />}
+              </div>
+            </div>
+          </div>
+        ))}
     </div>
   );
 }
@@ -439,19 +613,19 @@ function Reports({ loc, api, onChange }) {
 /* ───────────── Users ───────────── */
 function Users({ loc, api }) {
   const [q, setQ] = React.useState("");
+  const [bannedOnly, setBannedOnly] = React.useState(false);
   const [rows, setRows] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [banFor, setBanFor] = React.useState(null);
-  const load = React.useCallback((query) => {
+  const load = React.useCallback((query, banned) => {
     setRows(null);
-    api(`/admin/users?q=${encodeURIComponent(query || "")}`).then((d) => setRows(d.users)).catch(() => setRows([]));
+    api(`/admin/users?q=${encodeURIComponent(query || "")}${banned ? "&banned=1" : ""}`).then((d) => setRows(d.users)).catch(() => setRows([]));
   }, [api]);
-  React.useEffect(() => { load(""); }, [load]);
-  React.useEffect(() => { const t = setTimeout(() => load(q), 300); return () => clearTimeout(t); }, [q, load]);
+  React.useEffect(() => { const t = setTimeout(() => load(q, bannedOnly), 300); return () => clearTimeout(t); }, [q, bannedOnly, load]);
 
   const wrap = async (fn, key, okMsg) => {
     setBusy(key);
-    try { await fn(); if (okMsg) emitToast(okMsg, "success"); load(q); setBanFor(null); }
+    try { await fn(); if (okMsg) emitToast(okMsg, "success"); load(q, bannedOnly); setBanFor(null); }
     catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
     finally { setBusy(""); }
   };
@@ -464,7 +638,16 @@ function Users({ loc, api }) {
 
   return (
     <div>
-      <input className="adm-in adm-search" placeholder={T("名前・@ハンドル・メールで検索", "Search name, @handle, or email")(loc)} value={q} onChange={(e) => setQ(e.target.value)} />
+      <TabHead icon="users" title={T("ユーザー", "Users")(loc)}
+        sub={T("名前・@ハンドル・メールで検索して、BANや管理者権限を変更できます。", "Search by name, @handle, or email to ban, unban, or change roles.")(loc)} />
+      <div className="adm-search">
+        <Ic name="search" size={16} />
+        <input className="adm-in" placeholder={T("名前・@ハンドル・メールで検索", "Search name, @handle, or email")(loc)} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div className="adm-bar">
+        <button className={"adm-chip" + (!bannedOnly ? " on" : "")} onClick={() => setBannedOnly(false)}>{T("すべて", "All")(loc)}</button>
+        <button className={"adm-chip" + (bannedOnly ? " on" : "")} onClick={() => setBannedOnly(true)}>{T("BAN中のみ", "Banned only")(loc)}</button>
+      </div>
       {rows === null ? <div className="adm-empty">…</div>
         : rows.length === 0 ? <div className="adm-empty">{T("該当なし", "No users")(loc)}</div>
         : rows.map((u) => (
@@ -487,7 +670,7 @@ function Users({ loc, api }) {
                   : <button className="adm-btn" disabled={!!busy} onClick={() => role(u, "admin")}>{T("管理者に", "Make admin")(loc)}</button>}
                 {u.isBanned
                   ? <button className="adm-btn" disabled={!!busy} onClick={() => unban(u)}>{T("BAN解除", "Unban")(loc)}</button>
-                  : u.role !== "admin" && <button className="adm-btn danger" disabled={!!busy} onClick={() => setBanFor(banFor === u.id ? null : u.id)}>{T("BAN", "Ban")(loc)}</button>}
+                  : u.role !== "admin" && <button className="adm-btn danger" disabled={!!busy} onClick={() => setBanFor(banFor === u.id ? null : u.id)}><Ic name="ban" size={14} />{T("BAN", "Ban")(loc)}</button>}
               </div>
             </div>
             {banFor === u.id && <BanForm loc={loc} busy={!!busy} onCancel={() => setBanFor(null)} onBan={(reason, duration) => doBan(u, reason, duration)} />}
@@ -539,6 +722,8 @@ function Media({ loc, api }) {
 
   return (
     <div>
+      <TabHead icon="image" title={T("メディア", "Media")(loc)}
+        sub={T("どのDB行からも参照されていない孤立画像を見つけて、R2から安全に削除します。", "Find images in R2 that no post or profile references, and clear them safely.")(loc)} />
       <div className="adm-stats" style={{ marginBottom: 18 }}>
         <div className="adm-stat"><div className="n">{data.objects.length}</div><div className="l">{T("オブジェクト", "objects")(loc)}</div></div>
         <div className={"adm-stat" + (orphans.length ? " alert" : "")}><div className="n">{orphans.length}</div><div className="l">{T("孤立 (未参照)", "orphans (unused)")(loc)}</div></div>
@@ -551,7 +736,7 @@ function Media({ loc, api }) {
         <div className="adm-muted">{sel.size} {T("選択中", "selected")(loc)}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="adm-btn" onClick={selectAll} disabled={!orphans.length}>{T("孤立を全選択", "Select all orphans")(loc)}</button>
-          <button className="adm-btn danger" onClick={del} disabled={!sel.size || busy}>{T("選択を削除", "Delete selected")(loc)}</button>
+          <button className="adm-btn danger" onClick={del} disabled={!sel.size || busy}><Ic name="trash" size={14} />{T("選択を削除", "Delete selected")(loc)}</button>
         </div>
       </div>
       {orphans.length === 0 ? <div className="adm-empty">{T("孤立画像はありません。R2はクリーンです。", "No orphans — R2 is clean.")(loc)}</div>
@@ -614,8 +799,10 @@ function Featured({ loc, api }) {
 
   return (
     <div>
+      <TabHead icon="star" title={T("注目記事", "Featured")(loc)}
+        sub={T("ホームの「注目記事」枠を編集します。保存するまで反映されません。", "Curate the home “Also featured” slot. Nothing changes until you save.")(loc)} />
       <div className="adm-row" style={{ marginBottom: 14 }}>
-        <div className="adm-muted">{T("ホームの「注目記事」枠を編集。保存するまで反映されません。", "Curate the home “Also featured” slot. Nothing changes until you save.")(loc)}</div>
+        <div className="adm-muted">{T("ヒーローと「おすすめ」は人気・新着で自動。ここは1枠のみ。", "Hero + picks are automatic; this is the one curated slot.")(loc)}</div>
         <button className="adm-btn primary" disabled={!dirty || busy} onClick={save}>{dirty ? T("保存", "Save changes")(loc) : T("保存済み", "Saved")(loc)}</button>
       </div>
       <div style={{ maxWidth: 520 }}>
@@ -638,7 +825,10 @@ function Featured({ loc, api }) {
 
       <div style={{ marginTop: 22 }}>
         <div className="adm-col-h">{T("記事を検索して追加", "Search posts to add")(loc)}</div>
-        <input className="adm-in adm-search" placeholder={T("タイトルで検索…", "Search by title…")(loc)} value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="adm-search">
+          <Ic name="search" size={16} />
+          <input className="adm-in" placeholder={T("タイトルで検索…", "Search by title…")(loc)} value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
         {results.map((p) => {
           const used = inAny(p.id);
           const full = cur[target].length >= cap[target];
@@ -647,7 +837,7 @@ function Featured({ loc, api }) {
               <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
                 <Thumb src={p.cover} size={52} rounded={8} fallback={initialsOf(p.authorName)} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{titleOf(p)} {p.isHidden && <span className="adm-pill red">{T("非表示", "hidden")(loc)}</span>}</div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{titleOf(p)} {p.isHidden && <span className="adm-pill amber">{T("非表示", "hidden")(loc)}</span>}</div>
                   <div className="adm-mono">{p.authorName} · ♥ {p.likes}</div>
                 </div>
               </div>
@@ -689,9 +879,8 @@ function Settings({ loc, api }) {
 
   return (
     <div style={{ maxWidth: 560 }}>
-      <div className="adm-muted" style={{ marginBottom: 16 }}>
-        {T("通報の「人数」は通報した別々のユーザー数で数えます（同一人物の連投は1人分）。", "Counts are by distinct reporters — one person spamming the same target counts once.")(loc)}
-      </div>
+      <TabHead icon="sliders" title={T("設定", "Settings")(loc)}
+        sub={T("通報の「人数」は別々のユーザー数で数えます（同一人物の連投は1人分）。", "Counts are by distinct reporters — one person spamming the same target counts once.")(loc)} />
       <Row k="reportThreshold" label={T("通報しきい値", "Report threshold")(loc)}
         hint={T("この人数以上が同じ対象を通報すると「要対応」に表示されます。", "A case appears in “Needs action” once this many different people report the same target.")(loc)} />
       <Row k="autoHideThreshold" label={T("自動非表示しきい値", "Auto-hide threshold")(loc)}
@@ -705,16 +894,18 @@ function Settings({ loc, api }) {
 function Audit({ loc, api }) {
   const [rows, setRows] = React.useState(null);
   React.useEffect(() => { api("/admin/audit").then((d) => setRows(d.actions)).catch(() => setRows([])); }, [api]);
-  if (rows === null) return <div className="adm-empty">…</div>;
-  if (!rows.length) return <div className="adm-empty">{T("記録なし", "No actions yet")(loc)}</div>;
   return (
     <div>
-      {rows.map((a) => (
-        <div className="adm-card adm-row" key={a.id} style={{ padding: "10px 14px" }}>
-          <div><span className="adm-pill">{a.action}</span> <span className="adm-muted">{a.targetType}{a.targetId ? ` ${a.targetId.slice(0, 14)}…` : ""}</span></div>
-          <div className="adm-mono">{a.actorName || T("システム", "system")(loc)} · {new Date(Number(a.createdAt)).toLocaleString()}</div>
-        </div>
-      ))}
+      <TabHead icon="clipboard" title={T("監査ログ", "Audit log")(loc)}
+        sub={T("すべての管理操作の記録（誰が・いつ・何を）。", "Every admin action — who did what, and when.")(loc)} />
+      {rows === null ? <div className="adm-empty">…</div>
+        : !rows.length ? <div className="adm-empty">{T("記録なし", "No actions yet")(loc)}</div>
+        : rows.map((a) => (
+          <div className="adm-card adm-row" key={a.id} style={{ padding: "10px 14px" }}>
+            <div><span className="adm-pill">{a.action}</span> <span className="adm-muted">{a.targetType}{a.targetId ? ` ${a.targetId.slice(0, 14)}…` : ""}</span></div>
+            <div className="adm-mono">{a.actorName || T("システム", "system")(loc)} · {new Date(Number(a.createdAt)).toLocaleString()}</div>
+          </div>
+        ))}
     </div>
   );
 }

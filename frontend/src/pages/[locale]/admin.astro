@@ -16,41 +16,100 @@ const pageTitle = jp ? "管理パネル — nihon101" : "Admin — nihon101";
   </div>
 
   <style is:global>
-    .adm { font-family: var(--fontBody); color: var(--ink); }
+    .adm { font-family: var(--fontBody); color: var(--ink); --adm-amber: #b07b16; --adm-green: #2e7d32; --adm-info: #2563a8; }
     .adm-h { font-family: var(--fontDisplay); font-weight: 600; letter-spacing: -0.01em; }
     .adm-kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--inkFaint); }
-    .adm-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 24px; border-bottom: 1px solid var(--line); }
+    .adm-sub { color: var(--inkSoft); font-size: 14px; margin: 8px 0 0; line-height: 1.5; }
+    .adm svg { display: inline-block; vertical-align: -2px; }
+
+    /* top tabs */
+    .adm-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 20px 0 24px; border-bottom: 1px solid var(--line); }
     .adm-tab { appearance: none; border: none; background: transparent; cursor: pointer; padding: 10px 14px; font-family: var(--fontBody);
-      font-size: 14px; color: var(--inkSoft); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+      font-size: 14px; color: var(--inkSoft); border-bottom: 2px solid transparent; margin-bottom: -1px; display: inline-flex; align-items: center; gap: 7px; }
     .adm-tab:hover { color: var(--ink); }
     .adm-tab.on { color: var(--ink); border-bottom-color: var(--stamp); font-weight: 600; }
-    .adm-tab .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 999px; background: var(--stamp);
+    .adm-tab .badge { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--stamp);
       color: #fff; font-family: var(--fontMono); font-size: 10px; line-height: 18px; text-align: center; }
+    .adm-tab .badge.soft { background: var(--tint); color: var(--stamp); }
+
+    /* metric cards (dashboard) */
     .adm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-    .adm-stat { border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--surface); }
-    .adm-stat .n { font-family: var(--fontDisplay); font-weight: 600; font-size: 30px; }
-    .adm-stat .l { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+    .adm-stat { border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; background: var(--surface);
+      transition: border-color .15s, transform .15s; }
+    .adm-stat[role=button] { cursor: pointer; }
+    .adm-stat[role=button]:hover { border-color: var(--stamp); transform: translateY(-2px); }
+    .adm-stat .n { font-family: var(--fontDisplay); font-weight: 600; font-size: 32px; line-height: 1; }
+    .adm-stat .l { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+    .adm-stat.alert { border-color: color-mix(in oklab, var(--stamp) 38%, var(--line)); background: color-mix(in oklab, var(--stamp) 5%, var(--surface)); }
     .adm-stat.alert .n { color: var(--stamp); }
+
+    /* cards */
     .adm-card { border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; background: var(--surface); margin-bottom: 12px; }
+    .adm-card.high { border-color: color-mix(in oklab, var(--stamp) 36%, var(--line)); }
+    .adm-card.watch { border-color: color-mix(in oklab, var(--adm-amber) 30%, var(--line)); }
     .adm-row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
     .adm-muted { color: var(--inkSoft); font-size: 13px; }
     .adm-mono { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); }
-    .adm-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-family: var(--fontMono); font-size: 10px; letter-spacing: 0.04em;
-      text-transform: uppercase; border: 1px solid var(--line); color: var(--inkSoft); }
+    .adm-title { font-family: var(--fontDisplay); font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+
+    /* section headers (severity-tinted) */
+    .adm-sec { display: flex; align-items: center; gap: 8px; margin: 22px 0 12px; font-family: var(--fontMono); font-size: 12px;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkFaint); }
+    .adm-sec.high { color: var(--stamp); }
+    .adm-sec.watch { color: var(--adm-amber); }
+
+    /* segmented control + filter chips */
+    .adm-seg { display: inline-flex; gap: 3px; background: var(--surface2); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+    .adm-seg button { appearance: none; border: none; background: transparent; cursor: pointer; font-family: var(--fontBody);
+      font-size: 13px; color: var(--inkSoft); padding: 6px 15px; border-radius: 999px; }
+    .adm-seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 12%, transparent); }
+    .adm-chip { appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+      padding: 5px 13px; font-family: var(--fontBody); font-size: 12.5px; color: var(--inkSoft); }
+    .adm-chip:hover { border-color: color-mix(in oklab, var(--stamp) 40%, var(--line)); }
+    .adm-chip.on { border-color: var(--stamp); color: var(--stamp); background: var(--tint); font-weight: 600; }
+    .adm-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+
+    /* pills + solid count badge */
+    .adm-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-family: var(--fontMono);
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--line); color: var(--inkSoft); }
     .adm-pill.red { color: var(--stamp); border-color: color-mix(in oklab, var(--stamp) 40%, var(--line)); }
-    .adm-pill.ok { color: #2e7d32; border-color: color-mix(in oklab, #2e7d32 40%, var(--line)); }
+    .adm-pill.amber { color: var(--adm-amber); border-color: color-mix(in oklab, var(--adm-amber) 40%, var(--line)); background: color-mix(in oklab, var(--adm-amber) 9%, var(--surface)); }
+    .adm-pill.ok { color: var(--adm-green); border-color: color-mix(in oklab, var(--adm-green) 40%, var(--line)); }
+    .adm-count { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 999px; background: var(--stamp);
+      color: #fff; font-family: var(--fontBody); font-size: 12px; font-weight: 600; }
+    .adm-count.watch { background: var(--adm-amber); }
+
+    /* reporter rows + action bar */
+    .adm-rep { display: flex; gap: 10px; align-items: flex-start; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .adm-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+    /* buttons */
     .adm-btn { appearance: none; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink);
-      border-radius: 999px; padding: 7px 14px; font-family: var(--fontBody); font-size: 13px; transition: border-color .15s, background .15s; }
+      border-radius: 999px; padding: 7px 14px; font-family: var(--fontBody); font-size: 13px; display: inline-flex; align-items: center; gap: 6px;
+      transition: border-color .15s, background .15s; }
     .adm-btn:hover { border-color: var(--stamp); }
     .adm-btn.primary { background: var(--stamp); color: #fff; border-color: var(--stamp); }
     .adm-btn.danger { color: var(--stamp); border-color: color-mix(in oklab, var(--stamp) 45%, var(--line)); }
     .adm-btn.danger:hover { background: var(--stamp); color: #fff; }
     .adm-btn:disabled { opacity: .5; cursor: default; }
+    /* text buttons (in-card actions) */
+    .adm-tbtn { appearance: none; border: none; background: transparent; cursor: pointer; font-family: var(--fontBody); font-size: 13px;
+      color: var(--inkSoft); display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 8px; }
+    .adm-tbtn:hover { background: var(--surface2); color: var(--ink); }
+    .adm-tbtn.danger { color: var(--stamp); }
+    .adm-tbtn.danger:hover { background: color-mix(in oklab, var(--stamp) 10%, var(--surface)); }
+    .adm-tbtn.info { color: var(--adm-info); }
+    .adm-tbtn:disabled { opacity: .5; cursor: default; }
+
+    /* inputs */
     .adm-in { width: 100%; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
       color: var(--ink); font-family: var(--fontBody); font-size: 14px; outline: none; }
     .adm-in:focus { border-color: var(--stamp); }
-    .adm-search { max-width: 440px; margin-bottom: 16px; }
-    .adm-empty { padding: 40px 0; text-align: center; color: var(--inkSoft); }
+    .adm-search { position: relative; max-width: 460px; margin-bottom: 16px; }
+    .adm-search .adm-in { padding-left: 40px; }
+    .adm-search svg { position: absolute; left: 14px; top: 13px; color: var(--inkFaint); }
+
+    .adm-empty { padding: 44px 0; text-align: center; color: var(--inkSoft); }
     .adm-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
     .adm-col-h { font-family: var(--fontMono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--inkFaint); margin-bottom: 8px; }
     .adm-link { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
