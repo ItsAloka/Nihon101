@@ -550,7 +550,7 @@ function SearchBar({p, onSearch, lang}) {
   // Flatten the four groups into one ordered list for arrow-key navigation.
   const rows = React.useMemo(() => {
     const r = [];
-    for (const o of data.posts || []) r.push({ kind:'post', key:'p'+o.id, label:title(o), go:()=>go(`/${loc}/p/${o.slug}`) });
+    for (const o of data.posts || []) r.push({ kind:'post', key:'p'+o.id, label:title(o), go:()=>{ window.N101_CONTENT?.feedApi?.recordSearchClick(o.id); go(`/${loc}/p/${o.slug}`); } });
     for (const c of data.categories || []) r.push({ kind:'category', key:'c'+c.id, label:catLabel(c), kanji:c.kanji, go:()=>go(`/${loc}/c/${c.id}`) });
     for (const t of data.tags || []) r.push({ kind:'tag', key:'t'+t.id, label:t.label, count:t.postCount, go:()=>go(`/${loc}/t/${t.id}`) });
     for (const a of data.authors || []) r.push({ kind:'author', key:'a'+a.handle, label:authorName(a), handle:a.handle, img:a.avatarUrl, go:()=>go(`/${loc}/u/${a.handle}`) });

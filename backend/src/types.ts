@@ -21,6 +21,7 @@ export type AppVars = {
   RESEND_FROM: string;
   DEEPL_API_KEY: string;
   OPENAI_API_KEY: string;
+  OPENAI_EMBED_API_KEY: string; // separate key for embeddings (feed + search semantic layer)
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;

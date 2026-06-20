@@ -128,6 +128,33 @@ export async function searchPosts(db: DB, f: SearchFilter): Promise<SearchPage> 
   return run(db, base, browseOrder(f.sort), limit, page);
 }
 
+/** SEMANTIC search (optional rescue): nearest published posts to a query vector by
+ *  cosine distance via pgvector. Used only when keyword FTS+trigram find nothing AND
+ *  embeddings are configured — so "quiet mountain temple" can surface 「高野山の朝」
+ *  with zero shared words. Keyword search stays the primary path; this never runs
+ *  unless that returns empty, bounding the embed cost to dead-end queries. */
+export async function semanticSearchPosts(
+  db: DB,
+  queryVec: number[],
+  opts: { categoryId?: string; limit?: number } = {},
+): Promise<PostCardRow[]> {
+  const limit = Math.min(MAX_LIMIT, Math.max(1, opts.limit ?? DEFAULT_LIMIT));
+  const lit = '[' + queryVec.join(',') + ']';
+  const conds: SQL[] = [
+    sql`"posts"."status" = 'published'`,
+    notHidden as SQL,
+    sql`"posts"."embedding" IS NOT NULL`,
+  ];
+  if (opts.categoryId) conds.push(sql`"posts"."category_id" = ${opts.categoryId}`);
+  return db
+    .select(cardCols)
+    .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
+    .where(and(...conds))
+    .orderBy(sql`"posts"."embedding" <=> ${lit}::vector`)
+    .limit(limit) as Promise<PostCardRow[]>;
+}
+
 /** Word-boundary-aware typo/partial score across the fields a reader is likeliest
  *  to mean: either title, the tag labels, or the author's name (EN or JA). */
 function fuzz(q: string): SQL {

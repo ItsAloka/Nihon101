@@ -2,9 +2,11 @@ import { Hono } from 'hono';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { publicPostCard } from '../db/queries/posts';
-import { searchPosts, suggestPosts, searchAuthors, type SearchSort, type Loc } from '../db/queries/search';
+import { searchPosts, suggestPosts, searchAuthors, semanticSearchPosts, type SearchSort, type Loc } from '../db/queries/search';
 import { topTags, searchTags } from '../db/queries/tags';
 import { searchCategories } from '../db/queries/categories';
+import { embedText, getCachedQueryEmbed, cacheQueryEmbed } from '../lib/embeddings';
+import { overAiQuota } from '../lib/aiQuota';
 import { limits } from '../middleware/rateLimit';
 
 const app = new Hono<AppEnv>();
@@ -32,6 +34,31 @@ app.get('/', limits.search, async (c) => {
   // Explore searches blog posts only — author lookup lives in the header dropdown
   // (autocomplete) and the Writers tab, so the results endpoint stays post-only.
   const results = await searchPosts(db, { q, categoryId, tag, authorId, loc: l, sort, page, limit });
+
+  // Semantic rescue: keyword search found nothing for a real query → fall back to
+  // nearest-meaning posts. This is an UNAUTHENTICATED paid call, so it's doubly guarded:
+  //   1) KV cache — a repeated/replayed query is served from cache, never re-billed.
+  //   2) IP quota — a flood of UNIQUE queries (cache misses) is capped per IP per day,
+  //      so a bot can't run up the embed bill. Both degrade to the empty keyword result.
+  if (results.total === 0 && q && page === 0 && !authorId && !tag && c.env.OPENAI_EMBED_API_KEY) {
+    try {
+      const ql = q.toLowerCase();
+      let vec = await getCachedQueryEmbed(c.env.TRENDING_KV, ql);
+      if (!vec) {
+        const ipKey = 'qembed:' + (c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'anon');
+        if (!(await overAiQuota(c, ipKey))) {
+          vec = await embedText(c.env.OPENAI_EMBED_API_KEY, ql);
+          await cacheQueryEmbed(c.env.TRENDING_KV, ql, vec);
+        }
+      }
+      if (vec) {
+        const sem = await semanticSearchPosts(db, vec, { categoryId, limit });
+        if (sem.length) {
+          return c.json({ posts: sem.map(publicPostCard), total: sem.length, nextPage: null, semantic: true });
+        }
+      }
+    } catch { /* fall through to the empty keyword result */ }
+  }
 
   return c.json({
     posts: results.items.map(publicPostCard),

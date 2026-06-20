@@ -4,6 +4,9 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { sanitizeHtml } from '../lib/sanitizeHtml';
+import { embedText, postEmbedText, toVectorLiteral } from '../lib/embeddings';
+import { posts } from '../db/schema';
+import { sql, eq } from 'drizzle-orm';
 import { verifyAccess } from '../lib/tokens';
 import { getCategoryById, bumpCategoryCount } from '../db/queries/categories';
 import { bumpTagCounts, diffTags } from '../db/queries/tags';
@@ -54,6 +57,13 @@ const MAX_BODY = 200_000;
 // regardless of what was POSTed (the editor's output is trusted; the API is not).
 const clampBody = (v: unknown) => sanitizeHtml(String(v ?? '').slice(0, MAX_BODY));
 
+// In-body images per post. The cover is a separate field and is NOT counted, so a
+// post may carry 50 body images + 1 cover. Keeps a "Top 50" listicle workable
+// while blocking a body stuffed with thousands of <img> (page-weight abuse).
+const MAX_BODY_IMAGES = 50;
+const imageCount = (html: string) => (html.match(/<img\b/gi) || []).length;
+const tooManyImages = (...bodies: string[]) => bodies.some((b) => imageCount(b) > MAX_BODY_IMAGES);
+
 const STATUSES: PostStatus[] = ['draft', 'published'];
 const DENSITIES: PostDensity[] = ['compact', 'normal', 'relaxed'];
 const parseDensity = (v: unknown, fallback: PostDensity): PostDensity =>
@@ -88,6 +98,29 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
       if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = sanitizeHtml(out.body);
       if (Object.keys(patch).length) await updatePost(bgDb, post.id, patch);
     } catch { /* leave the other locale empty; next publish retries */ }
+    finally { try { await pool.end(); } catch { /* noop */ } }
+  })();
+  c.executionCtx.waitUntil(job);
+}
+
+/** Fire-and-forget: embed a post's text into posts.embedding for the semantic layer
+ * (For You flavor term + semantic search). Background, so publish stays instant; runs
+ * AFTER translation would have a chance, but reads the post fresh so it embeds whatever
+ * text exists. No key configured → no-op (the whole semantic layer is optional). */
+function scheduleEmbedding(c: Context<AppEnv>, postId: string) {
+  if (!c.env.OPENAI_EMBED_API_KEY) return;
+  const job = (async () => {
+    const { db: bgDb, pool } = standaloneDb(c.env);
+    try {
+      const [p] = await bgDb.select({
+        titleEn: posts.titleEn, titleJa: posts.titleJa,
+        excerptEn: posts.excerptEn, excerptJa: posts.excerptJa, bodyEn: posts.bodyEn,
+      }).from(posts).where(eq(posts.id, postId));
+      const text = p ? postEmbedText(p) : '';
+      if (!text) return;
+      const vec = await embedText(c.env.OPENAI_EMBED_API_KEY, text);
+      await bgDb.execute(sql`UPDATE posts SET embedding = ${toVectorLiteral(vec)}::vector WHERE id = ${postId}`);
+    } catch { /* leave embedding null; next edit retries, backfill catches it */ }
     finally { try { await pool.end(); } catch { /* noop */ } }
   })();
   c.executionCtx.waitUntil(job);
@@ -207,6 +240,10 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   const category = await getCategoryById(d, categoryId);
   if (!category) return c.json({ error: 'invalid_category' }, 400);
 
+  const bodyEn = clampBody(body?.bodyEn);
+  const bodyJa = clampBody(body?.bodyJa);
+  if (tooManyImages(bodyEn, bodyJa)) return c.json({ error: 'too_many_images' }, 400);
+
   const post = await createPost(d, {
     authorId: c.var.user!.id,
     categoryId,
@@ -215,8 +252,8 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
     titleJa,
     excerptEn: String(body?.excerptEn ?? '').trim().slice(0, MAX_EXCERPT),
     excerptJa: String(body?.excerptJa ?? '').trim().slice(0, MAX_EXCERPT),
-    bodyEn: clampBody(body?.bodyEn),
-    bodyJa: clampBody(body?.bodyJa),
+    bodyEn,
+    bodyJa,
     cover: body?.cover ? String(body.cover) : null,
     coverLabel: String(body?.coverLabel ?? '').trim().slice(0, 120),
     coverCredit: String(body?.coverCredit ?? '').trim().slice(0, 120),
@@ -234,6 +271,8 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
   if (body?.translate === true) scheduleTranslation(c, post);
+  // Embed published posts for the semantic layer (no-op without an embed key).
+  if (status === 'published') scheduleEmbedding(c, post.id);
   return c.json({ post: publicPost(post) }, 201);
 });
 
@@ -262,6 +301,8 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   if (body?.excerptJa !== undefined) patch.excerptJa = String(body.excerptJa).trim().slice(0, MAX_EXCERPT);
   if (body?.bodyEn !== undefined) patch.bodyEn = clampBody(body.bodyEn);
   if (body?.bodyJa !== undefined) patch.bodyJa = clampBody(body.bodyJa);
+  if (tooManyImages(String(patch.bodyEn ?? ''), String(patch.bodyJa ?? '')))
+    return c.json({ error: 'too_many_images' }, 400);
   if (body?.cover !== undefined) patch.cover = body.cover ? String(body.cover) : null;
   if (body?.coverLabel !== undefined) patch.coverLabel = String(body.coverLabel).trim().slice(0, 120);
   if (body?.coverCredit !== undefined) patch.coverCredit = String(body.coverCredit).trim().slice(0, 120);
@@ -299,6 +340,10 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   // Explicit manual save (draft or publish), not autosave → refill the other
   // language in the background.
   if (body?.translate === true && post) scheduleTranslation(c, post);
+  // Re-embed when text changed on a published post (no-op without an embed key).
+  if (post && post.status === 'published' && (body?.bodyEn !== undefined || body?.bodyJa !== undefined || body?.titleEn !== undefined || body?.titleJa !== undefined)) {
+    scheduleEmbedding(c, post.id);
+  }
 
   return c.json({ post: publicPost(post!) });
 });

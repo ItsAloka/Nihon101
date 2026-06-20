@@ -52,9 +52,15 @@ const DAY = 24 * HOUR;
  * read is a single indexed lookup, not a per-request aggregation.
  * ========================================================================== */
 
-const TTL = 1 * HOUR;        // recompute a user's snapshot at most once per hour
-const WINDOW = 30 * DAY;     // taste is learned from the last 30 days of engagement
-const HALF_LIFE = 14 * DAY;  // within that, a signal loses half its weight every 14 days
+const TTL = 1 * HOUR;        // recompute a user's SLOW snapshot at most once per hour
+// Two timescales. The SLOW scorecard = "what I generally like" (stable over weeks).
+// The FAST scorecard = "what I'm into right now" (reacts in hours). The effective
+// taste blends them, fast weighted heavier, so a sudden binge (e.g. travel) takes over
+// the feed within the session and then fades back to the slow baseline when it stops.
+const SLOW = { window: 30 * DAY, halfLife: 14 * DAY };
+const FAST = { window: 12 * HOUR, halfLife: 6 * HOUR };
+const SLOW_WEIGHT = 0.5;
+const FAST_WEIGHT = 1.5;
 
 export type Dimension = 'cat' | 'tag' | 'author';
 
@@ -80,11 +86,11 @@ const SHRINK_K = 3;
  *              a post you read AND saved AND commented is worth far more than three
  *              one-touch posts. 1 + 0.3·(distinct event types − 1).
  *    aggregate post_w into the three taste dimensions (category, tag, author). */
-async function computeAffinity(db: DB, userId: string): Promise<Affinity> {
+async function computeAffinity(db: DB, userId: string, opts = SLOW): Promise<Affinity> {
   const now = Date.now();
-  const since = now - WINDOW;
-  // decay(created_at) = 0.5 ^ (age / HALF_LIFE) — folded into each event's weight.
-  const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${HALF_LIFE}.0)`);
+  const since = now - opts.window;
+  // decay(created_at) = 0.5 ^ (age / halfLife) — folded into each event's weight.
+  const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${opts.halfLife}.0)`);
   const rows = await db.execute(sql`
     WITH ev AS (
       SELECT post_id, base, base * (${decay}) AS weight FROM (
@@ -171,9 +177,28 @@ export async function userAffinityFor(db: DB, userId: string): Promise<Affinity>
     return aff;
   }
 
-  const aff = await computeAffinity(db, userId);
+  const aff = await computeAffinity(db, userId, SLOW);
   await persistAffinity(db, userId, aff);
   return aff;
+}
+
+/** The FAST scorecard — last few hours, 6h half-life, NOT cached (it must react within
+ *  the session). Cheap: only a handful of recent events to aggregate. */
+export function fastAffinityFor(db: DB, userId: string): Promise<Affinity> {
+  return computeAffinity(db, userId, FAST);
+}
+
+/** Effective taste = 0.5·slow + 1.5·fast, per key, per dimension. A binge of travel
+ *  reads spikes `fast` and takes over the ranking; when it stops, `fast` decays in
+ *  hours and the slow baseline reasserts. This is what makes the feed follow your mood. */
+export function blendAffinity(slow: Affinity, fast: Affinity): Affinity {
+  const out = emptyAffinity();
+  for (const dim of ['cat', 'tag', 'author'] as Dimension[]) {
+    for (const k of new Set([...slow[dim].keys(), ...fast[dim].keys()])) {
+      out[dim].set(k, SLOW_WEIGHT * (slow[dim].get(k) ?? 0) + FAST_WEIGHT * (fast[dim].get(k) ?? 0));
+    }
+  }
+  return out;
 }
 
 /* ============================================================================
@@ -255,6 +280,35 @@ export async function seenPostIds(db: DB, userId: string, postIds: string[]): Pr
   return new Set([...reads, ...likes, ...saves, ...comments].map((r) => r.id));
 }
 
+/** SEMANTIC scores (optional): cosine similarity of each candidate to the centroid
+ *  of the user's RECENT reads (the fast window), computed entirely in Postgres via
+ *  pgvector. Returns postId → similarity (0–1); empty when the user has no recent
+ *  embedded reads or no candidate has an embedding. The caller wraps this in a guard
+ *  so any pgvector hiccup just means "no semantic term" — the feed runs on pure math.
+ *  recentTasteVec = AVG of recent reads' embeddings → both follows your mood AND avoids
+ *  the multi-interest "blurry centroid" problem (it's only what you read lately). */
+export async function semanticScores(db: DB, userId: string, postIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!postIds.length) return out;
+  const since = Date.now() - FAST.window;
+  const rows = await db.execute(sql`
+    WITH centroid AS (
+      SELECT AVG(p.embedding) AS v
+      FROM post_reads r JOIN posts p ON p.id = r.post_id
+      WHERE r.user_id = ${userId} AND r.created_at > ${since} AND p.embedding IS NOT NULL
+    )
+    SELECT p.id AS id, 1 - (p.embedding <=> (SELECT v FROM centroid)) AS semantic
+    FROM posts p
+    WHERE p.id IN (${sql.join(postIds.map((id) => sql`${id}`), sql`, `)})
+      AND p.embedding IS NOT NULL
+      AND (SELECT v FROM centroid) IS NOT NULL
+  `);
+  for (const r of rows.rows as Array<{ id: string; semantic: string | number }>) {
+    out.set(r.id, Number(r.semantic));
+  }
+  return out;
+}
+
 /* ============================================================================
  * 3. RANKING
  * ----------------------------------------------------------------------------
@@ -284,6 +338,9 @@ export interface RankOpts {
   seen: Set<string>;
   /** Per-tag IDF weights (from tagIdf). Missing/empty → tags don't contribute. */
   idf?: Map<string, number>;
+  /** postId → cosine similarity (0–1) to the user's recent-reads centroid. The
+   *  optional embedding flavor term; missing/empty → semantic contributes 0. */
+  semantic?: Map<string, number>;
   /** Diversity knobs. Defaults are sensible for a real feed. */
   maxPerAuthor?: number;     // cap how many posts one author can take up top
   followCap?: number;        // max share of the feed that may be followed-author posts
@@ -304,6 +361,7 @@ const RECENCY_HALF_LIFE = 3 * DAY;
 const W_FOLLOW = 3.0;   // in-network: a followed author
 const W_TASTE = 2.0;    // content match to your category + tag taste
 const W_AUTHOR = 1.5;   // you keep engaging this writer (even if you don't follow them)
+const W_SEMANTIC = 1.5; // meaning-match to your RECENT reads (0 without embeddings → pure math)
 const W_TREND = 1.0;    // site-wide hotness (kept small → "a few trending")
 /** Tiny floor so a brand-new post from an unknown author isn't exactly zero
  *  (a sliver of exploration), but nowhere near enough to outrank a relevant post. */
@@ -328,7 +386,9 @@ function scoreCard(p: FeedCard, opts: RankOpts, maxTrend: number): number {
   const taste = catAff + tagWeight * tagMatch;
   const authorAff = opts.affinity.author.get(p.authorId) ?? 0; // can be negative (reversed engagement)
   const trendNorm = maxTrend > 0 ? Math.max(0, trendSignal(p)) / maxTrend : 0;
-  const relevance = W_FOLLOW * followed + W_TASTE * taste + W_AUTHOR * authorAff + W_TREND * trendNorm;
+  const semantic = opts.semantic ? Math.max(0, opts.semantic.get(p.id) ?? 0) : 0; // 0 without embeddings
+  const relevance = W_FOLLOW * followed + W_TASTE * taste + W_AUTHOR * authorAff
+    + W_SEMANTIC * semantic + W_TREND * trendNorm;
   const age = Date.now() - (p.publishedAt ?? p.createdAt);
   const recency = Math.pow(0.5, Math.max(0, age) / RECENCY_HALF_LIFE); // fresh ⇒ ~1, 3d ⇒ 0.5
   const seenPenalty = opts.seen.has(p.id) ? 0.35 : 1.0;
@@ -418,6 +478,30 @@ export async function recordRead(db: DB, postId: string, userId: string): Promis
   `);
 }
 
+/** The strongest taste signal: the user SEARCHED, then clicked a result. Drops a
+ *  positive weight-5 row (above comment=4) into user_signals — computeAffinity folds
+ *  it into the cat/tag/author dimensions like any other event. It hits the FAST
+ *  scorecard hardest, so "going exploring" pivots the feed within the session, with a
+ *  mild long-term nudge via the slow one. Skips an author clicking into their own post. */
+const SEARCH_SIGNAL = 5;
+export async function recordSearchClick(db: DB, postId: string, userId: string): Promise<void> {
+  const now = Date.now();
+  // Dedup: at most ONE search-click signal per (user, post) inside the fast window, so
+  // re-clicking the same result doesn't append unbounded rows (recordRead dedups via
+  // ON CONFLICT; user_signals has no unique key, so we guard with NOT EXISTS instead).
+  await db.execute(sql`
+    INSERT INTO user_signals (id, post_id, user_id, base, created_at)
+    SELECT ${newId('sig')}, ${postId}, ${userId}, ${SEARCH_SIGNAL}, ${now}
+    FROM posts p
+    WHERE p.id = ${postId} AND p.author_id <> ${userId}
+      AND NOT EXISTS (
+        SELECT 1 FROM user_signals s
+        WHERE s.user_id = ${userId} AND s.post_id = ${postId}
+          AND s.base = ${SEARCH_SIGNAL} AND s.created_at > ${now - FAST.window}
+      )
+  `);
+}
+
 /* ============================================================================
  * 4. ORCHESTRATOR
  * ----------------------------------------------------------------------------
@@ -461,15 +545,27 @@ export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult
     // ---- RANKED HEAD: score the newest HEAD_SIZE posts, slice this page. ----
     const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
     const cands = await feedCandidates(db, { poolSize: HEAD_SIZE });
-    const [affinity, seen, idf] = uid
-      ? await Promise.all([
-          userAffinityFor(db, uid),
-          seenPostIds(db, uid, cands.map((p) => p.id)),
-          tagIdf(db),
-        ])
-      : [emptyAffinity(), new Set<string>(), new Map<string, number>()];
+    let affinity: Affinity = emptyAffinity();
+    let seen = new Set<string>();
+    let idf = new Map<string, number>();
+    let semantic = new Map<string, number>();
+    if (uid) {
+      // Slow (cached) + fast (live) scorecards, blended into the effective taste.
+      const [slow, fast, seenIds, idfMap] = await Promise.all([
+        userAffinityFor(db, uid),
+        fastAffinityFor(db, uid),
+        seenPostIds(db, uid, cands.map((p) => p.id)),
+        tagIdf(db),
+      ]);
+      affinity = blendAffinity(slow, fast);
+      seen = seenIds;
+      idf = idfMap;
+      // Optional semantic flavor — guarded so any pgvector/embedding issue degrades to
+      // pure math (empty map → W_SEMANTIC term is 0).
+      try { semantic = await semanticScores(db, uid, cands.map((p) => p.id)); } catch { /* pure math */ }
+    }
 
-    const ranked = rankFeed(cands, { affinity, following, seen, idf, exploreEvery: exploreCadence(affinity) });
+    const ranked = rankFeed(cands, { affinity, following, seen, idf, semantic, exploreEvery: exploreCadence(affinity) });
     items = ranked.slice(offset, offset + limit);
   } else {
     // ---- CHRONOLOGICAL TAIL: deep numbered pages past the head, newest-first.

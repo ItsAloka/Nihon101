@@ -1,0 +1,93 @@
+---
+// Searchable category filter for the Trending page. Each option is a real link to
+// /trending?cat=<id> (SSR — works without JS); the inline script only adds the
+// open/close + type-to-filter sugar. Categories are dynamic, so the search box keeps
+// it usable as the list grows.
+interface Props {
+  categories: { id: string; labelEn: string; labelJa: string; kanji?: string }[];
+  current: string; // '' = all
+  locale: string;
+  jp: boolean;
+}
+const { categories, current, locale, jp } = Astro.props as Props;
+const cur = categories.find((c) => c.id === current);
+const curLabel = current ? (jp ? cur?.labelJa : cur?.labelEn) ?? '' : jp ? 'すべて' : 'All categories';
+---
+<div class="tcat" data-tcat>
+  <button type="button" class="tcat-btn" data-tcat-toggle aria-haspopup="listbox" aria-expanded="false">
+    <span class="tcat-kanji">{cur?.kanji || '✦'}</span>
+    <span class="tcat-cur">{curLabel}</span>
+    <span class="tcat-caret">▾</span>
+  </button>
+  <div class="tcat-panel" data-tcat-panel hidden>
+    <input type="text" class="tcat-search" data-tcat-search
+      placeholder={jp ? 'カテゴリーを検索…' : 'Search categories…'} aria-label="Search categories" />
+    <div class="tcat-list">
+      <a href={`/${locale}/trending`} class={`tcat-item${!current ? ' on' : ''}`}
+        data-tcat-item data-label={jp ? 'すべて' : 'all categories'}>
+        <span class="tcat-kanji">✦</span><span>{jp ? 'すべて' : 'All categories'}</span>
+      </a>
+      {categories.map((c) => (
+        <a href={`/${locale}/trending?cat=${c.id}`} class={`tcat-item${current === c.id ? ' on' : ''}`}
+          data-tcat-item data-label={`${(c.labelEn || '').toLowerCase()} ${c.labelJa || ''}`}>
+          <span class="tcat-kanji">{c.kanji || '·'}</span><span>{jp ? c.labelJa : c.labelEn}</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</div>
+
+<style>
+  .tcat { position: relative; display: inline-block; }
+  .tcat-btn {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 14px; font-family: var(--fontBody); font-size: 13px; color: var(--ink);
+  }
+  .tcat-btn:hover { border-color: var(--accent); }
+  .tcat-kanji { font-family: var(--fontDisplay); color: var(--stamp); width: 16px; text-align: center; }
+  .tcat-caret { color: var(--inkFaint); font-size: 10px; }
+  .tcat-panel {
+    position: absolute; top: calc(100% + 8px); left: 0; width: 280px; max-width: 80vw;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: 0 24px 48px -24px color-mix(in oklab, var(--ink) 40%, transparent);
+    z-index: 60; overflow: hidden; padding: 6px;
+  }
+  .tcat-search {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 10px; font-family: var(--fontBody); font-size: 13px; color: var(--ink);
+    background: var(--bg); outline: none; margin-bottom: 4px;
+  }
+  .tcat-search:focus { border-color: var(--accent); }
+  .tcat-list { max-height: 50vh; overflow-y: auto; }
+  .tcat-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+    font-family: var(--fontBody); font-size: 13.5px; color: var(--ink); text-decoration: none;
+  }
+  .tcat-item:hover { background: var(--surface2); }
+  .tcat-item.on { background: var(--surface2); font-weight: 600; }
+</style>
+
+<script>
+  document.querySelectorAll('[data-tcat]').forEach((root) => {
+    const btn = root.querySelector('[data-tcat-toggle]');
+    const panel = root.querySelector('[data-tcat-panel]');
+    const search = root.querySelector('[data-tcat-search]');
+    const items = Array.from(root.querySelectorAll('[data-tcat-item]'));
+    const open = (on) => {
+      panel.hidden = !on;
+      btn.setAttribute('aria-expanded', String(on));
+      if (on) setTimeout(() => search.focus(), 0);
+    };
+    btn.addEventListener('click', () => open(panel.hidden));
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      for (const it of items) {
+        const hit = !q || (it.getAttribute('data-label') || '').includes(q);
+        it.style.display = hit ? '' : 'none';
+      }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') open(false); });
+    document.addEventListener('mousedown', (e) => { if (!root.contains(e.target)) open(false); });
+  });
+</script>

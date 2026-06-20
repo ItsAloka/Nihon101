@@ -64,8 +64,14 @@ const filter = new FilterXSS({
   },
 });
 
-/** Sanitize untrusted post-body HTML. Safe to call on already-clean HTML. */
+/** Sanitize untrusted post-body HTML. Safe to call on already-clean HTML. Body
+ *  images are lazy-loaded: a 50-image listicle must not block first paint, so every
+ *  <img> without an explicit `loading` is forced to lazy + async-decode at write
+ *  time (covers both the SSR and SPA read paths automatically). */
 export function sanitizeHtml(input: string): string {
   if (!input) return '';
-  return filter.process(input);
+  return filter.process(input).replace(
+    /<img\b(?![^>]*\bloading=)/gi,
+    '<img loading="lazy" decoding="async"',
+  );
 }

@@ -16,8 +16,9 @@ app.get('/', limits.feed, async (c) => {
   const db = getDb(c);
   const limit = Math.min(50, Math.max(1, Number(c.req.query('limit')) || 12));
   const page = Math.max(0, Number(c.req.query('page')) || 0);
-  const total = await countTrending(db);
-  const rows = await listTrending(db, limit, page * limit);
+  const categoryId = c.req.query('cat') || undefined; // "hot in this category"; omitted = global
+  const total = await countTrending(db, categoryId);
+  const rows = await listTrending(db, limit, page * limit, categoryId);
   return c.json({ posts: rows.map(publicPostCard), total });
 });
 
