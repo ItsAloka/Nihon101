@@ -66,3 +66,53 @@ export async function translateFields(
   const parsed = JSON.parse(content) as TranslateFields;
   return parsed;
 }
+
+export interface CategorySuggestion { labelEn: string; labelJa: string; kanji: string; }
+
+/** Given a category label in ONE locale, return both locale labels + a single
+ *  representative kanji (e.g. Food→食, Travel→旅). The kanji is GENERATED, not
+ *  translated, so this needs its own prompt. We hard-enforce a single Han glyph on
+ *  the way out — the model is told, but never trusted, to return exactly one. */
+export async function suggestCategory(apiKey: string, label: string, from: Locale): Promise<CategorySuggestion> {
+  if (!apiKey) throw new Error('no_api_key');
+
+  const system = [
+    `You name blog categories for a bilingual (English + Japanese) magazine about Japan.`,
+    `The user gives one category label written in ${LANG_NAME[from]}.`,
+    `Return ONLY a JSON object with exactly these keys:`,
+    `"labelEn" — the category name in natural English (Title Case, 1-3 words);`,
+    `"labelJa" — the category name in natural Japanese;`,
+    `"kanji" — EXACTLY ONE kanji character (常用漢字) that best captures the meaning. Never kana, never Latin, never more than one character.`,
+    `Examples: {"labelEn":"Food","labelJa":"食べ物","kanji":"食"}, {"labelEn":"Travel","labelJa":"旅行","kanji":"旅"}, {"labelEn":"Anime","labelJa":"アニメ","kanji":"画"}.`,
+    `No commentary.`,
+  ].join(' ');
+
+  const res = await fetchWithTimeout(OPENAI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: MODEL,
+      response_format: { type: 'json_object' as const },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: label },
+      ],
+    }),
+    timeoutMs: 30_000,
+    retries: 1,
+  });
+  if (!res.ok) throw new Error(`openai_${res.status}`);
+
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('openai_empty');
+
+  const p = JSON.parse(content) as Partial<CategorySuggestion>;
+  // Trust nothing: keep only the first actual Han glyph the model returned.
+  const kanji = [...String(p.kanji ?? '')].find((ch) => /\p{Script=Han}/u.test(ch)) ?? '';
+  return {
+    labelEn: String(p.labelEn ?? label).trim(),
+    labelJa: String(p.labelJa ?? label).trim(),
+    kanji,
+  };
+}

@@ -103,13 +103,16 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
 }
 
 /** Top trending published posts (card shape, no bodies), highest score first.
- *  Reads the precomputed momentum column — used for the paginated SSR page. */
-export function listTrending(db: DB, limit: number, offset = 0): Promise<PostCardRow[]> {
+ *  Reads the precomputed momentum column — used for the paginated SSR page. An
+ *  optional `categoryId` narrows it to "hot in this category" (the Trending page's
+ *  category filter); omitted = global. */
+export function listTrending(db: DB, limit: number, offset = 0, categoryId?: string): Promise<PostCardRow[]> {
   return db
     .select(cardCols)
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
-    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore)))
+    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore),
+      categoryId ? eq(posts.categoryId, categoryId) : undefined))
     .orderBy(desc(posts.trendScore), desc(posts.publishedAt))
     .limit(limit)
     .offset(offset) as Promise<PostCardRow[]>;
@@ -122,11 +125,12 @@ const TRENDING_COUNT_CAP = 1000;
 
 /** Count of posts eligible for the Trending list (for pagination), bounded so the
  *  count is O(cap) not O(corpus). */
-export async function countTrending(db: DB): Promise<number> {
+export async function countTrending(db: DB, categoryId?: string): Promise<number> {
   const capped = db
     .select({ one: sql`1` })
     .from(posts)
-    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore)))
+    .where(and(eq(posts.status, 'published'), notHidden, isNotNull(posts.trendScore),
+      categoryId ? eq(posts.categoryId, categoryId) : undefined))
     .limit(TRENDING_COUNT_CAP + 1)
     .as('capped');
   const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(capped);

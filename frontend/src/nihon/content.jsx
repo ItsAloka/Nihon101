@@ -30,8 +30,36 @@ async function req(path, { method = 'GET', body, auth = false, _retry = false } 
   return data;
 }
 
+// Downscale + re-encode to WebP in the browser BEFORE upload, so we store ~300KB
+// instead of an 8MB phone photo (every reader then fetches the small file). We cap
+// the longest edge — covers get 2400px (retina hero), body images 2000px — at
+// quality 0.82, where WebP is visually indistinguishable from the original. GIFs
+// are passed through untouched (re-encoding would kill the animation), and we keep
+// the original if shrinking somehow made it bigger.
+async function shrinkImage(file, maxEdge = 2000, quality = 0.82) {
+  if (!file || !file.type?.startsWith('image/') || file.type === 'image/gif') return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    bmp.close?.();
+    const blob = await new Promise((r) => cv.toBlob(r, 'image/webp', quality));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], 'image.webp', { type: 'image/webp' });
+  } catch (e) { return file; }
+}
+
 // Upload one image (multipart) → R2. Returns its public URL. Retries once on 401.
-async function uploadImage(file, _retry = false) {
+// opts.maxEdge/quality tune the client-side shrink (defaults suit body images).
+async function uploadImage(file, opts = {}) {
+  const prepared = await shrinkImage(file, opts.maxEdge ?? 2000, opts.quality ?? 0.82);
+  return rawUpload(prepared);
+}
+
+async function rawUpload(file, _retry = false) {
   const fd = new FormData();
   fd.append('file', file);
   const t = token();
@@ -41,7 +69,7 @@ async function uploadImage(file, _retry = false) {
     body: fd,
   });
   if (res.status === 401 && t && !_retry) {
-    try { await window.N101_API.refresh(); return uploadImage(file, true); } catch (e) {}
+    try { await window.N101_API.refresh(); return rawUpload(file, true); } catch (e) {}
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), { status: res.status, code: data.error });
@@ -112,6 +140,9 @@ const feedApi = {
   },
   // Record that the viewer read a post — the affinity signal. Fire-and-forget.
   recordRead: (postId) => req(`/feed/read/${postId}`, { method: 'POST', auth: true }).catch(() => {}),
+  // Record that the viewer clicked a SEARCH result — strongest signal (weight 5),
+  // pivots the feed toward what they're exploring. Fire-and-forget.
+  recordSearchClick: (postId) => req(`/feed/search-click/${postId}`, { method: 'POST', auth: true }).catch(() => {}),
 };
 
 const followApi = {

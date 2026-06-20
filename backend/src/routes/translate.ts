@@ -3,6 +3,7 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { translateFields, type Locale, type TranslateFields } from '../lib/openai';
+import { overAiQuota } from '../lib/aiQuota';
 
 const app = new Hono<AppEnv>();
 const LOCALES: Locale[] = ['en', 'ja'];
@@ -22,6 +23,8 @@ app.post('/', requireAuth, limits.translate, async (c) => {
   if (typeof src.excerpt === 'string' && src.excerpt.trim()) fields.excerpt = src.excerpt;
   if (typeof src.body === 'string' && src.body.trim()) fields.body = src.body;
   if (!Object.keys(fields).length) return c.json({ error: 'nothing_to_translate' }, 400);
+
+  if (await overAiQuota(c, c.var.user!.id)) return c.json({ error: 'ai_quota_exceeded' }, 429);
 
   try {
     const out = await translateFields(c.env.OPENAI_API_KEY, to, fields);

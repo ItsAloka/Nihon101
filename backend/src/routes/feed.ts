@@ -4,7 +4,7 @@ import type { AppEnv } from '../types';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
-import { forYouFeed, recordRead } from '../db/queries/for-you';
+import { forYouFeed, recordRead, recordSearchClick } from '../db/queries/for-you';
 
 const app = new Hono<AppEnv>();
 
@@ -38,6 +38,13 @@ app.get('/', limits.feed, async (c) => {
 // from the reader; never blocks the page.
 app.post('/read/:postId', requireAuth, limits.read, async (c) => {
   await recordRead(getDb(c), c.req.param('postId'), c.var.user!.id);
+  return c.json({ ok: true });
+});
+
+// Record that the requester clicked a SEARCH result — the strongest taste signal
+// (weight 5), so going exploring pivots the feed. Fire-and-forget from the search UI.
+app.post('/search-click/:postId', requireAuth, limits.read, async (c) => {
+  await recordSearchClick(getDb(c), c.req.param('postId'), c.var.user!.id);
   return c.json({ ok: true });
 });
 

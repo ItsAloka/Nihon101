@@ -383,9 +383,9 @@ function ComposerPage({ p, lang, currentUser, editId }) {
     if (!label || catBusy) return;
     setCatBusy(true);
     try {
-      const created = await window.N101_CONTENT.categoryApi.create({
-        labelEn: label, labelJa: label, kanji: label.slice(0, 1).toUpperCase(),
-      });
+      // Send just the typed label — the server translates the other locale and
+      // picks a single kanji via OpenAI (don't send a Latin placeholder kanji).
+      const created = await window.N101_CONTENT.categoryApi.create({ label });
       await refreshCats();
       setCat(created.id);
       setCatSearch('');
@@ -424,7 +424,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const onCoverFile = async (e)=>{
     const f = e.target.files?.[0]; e.target.value='';
     if (!f) return;
-    try { setCover(await window.N101_CONTENT.uploadImage(f)); }
+    try { setCover(await window.N101_CONTENT.uploadImage(f, { maxEdge: 2400 })); }
     catch { setStatus('Cover upload failed — try a smaller file'); }
   };
   const addTag = (e)=>{
@@ -472,7 +472,11 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       refreshCats();   // publish/unpublish/move changed post_count — refresh the badges
       if (st==='published') window.__nihon_go({name:'profile'});
       else setStatus('Draft saved');
-    } catch (e) { setStatus('Save failed — ' + (e.code || 'try again')); }
+    } catch (e) {
+      setStatus(e.code === 'too_many_images'
+        ? 'Too many images — a post can hold up to 50 (the cover doesn’t count)'
+        : 'Save failed — ' + (e.code || 'try again'));
+    }
     finally { setBusy(false); }
   };
 
