@@ -201,6 +201,7 @@ export default function AdminConsole({ locale }) {
   const tabs = [
     ["dashboard", T("ダッシュボード", "Dashboard")(loc), "gauge"],
     ["reports", T("通報", "Reports")(loc), "flag", stats?.openReports || 0],
+    ["inbox", T("受信箱", "Inbox")(loc), "message", stats?.newContacts || 0],
     ["posts", T("記事", "Posts")(loc), "file"],
     ["users", T("ユーザー", "Users")(loc), "users"],
     ["media", T("メディア", "Media")(loc), "image"],
@@ -224,6 +225,7 @@ export default function AdminConsole({ locale }) {
 
       {tab === "dashboard" && <Dashboard loc={loc} stats={stats} onJump={setTab} />}
       {tab === "reports" && <Reports loc={loc} api={api} onChange={refreshStats} />}
+      {tab === "inbox" && <Inbox loc={loc} api={api} onChange={refreshStats} />}
       {tab === "posts" && <Posts loc={loc} api={api} onChange={refreshStats} />}
       {tab === "users" && <Users loc={loc} api={api} />}
       {tab === "media" && <Media loc={loc} api={api} />}
@@ -852,6 +854,98 @@ function Featured({ loc, api }) {
   );
 }
 
+/* ───────────── Inbox (contact messages) ───────────── */
+function Inbox({ loc, api, onChange }) {
+  const [filter, setFilter] = React.useState("new");
+  const [rows, setRows] = React.useState(null);
+  const load = React.useCallback(() => {
+    setRows(null);
+    api(`/admin/contact${filter === "new" ? "?status=new" : ""}`).then((d) => setRows(d.messages)).catch(() => setRows([]));
+  }, [api, filter]);
+  React.useEffect(() => { load(); }, [load]);
+  const after = () => { load(); onChange?.(); };
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <TabHead icon="message" title={T("受信箱", "Inbox")(loc)}
+        sub={T("お問い合わせフォームからのメッセージ。返信はResend経由で送信者に届きます。", "Messages from the contact form. Replies go to the sender via Resend.")(loc)} />
+      <div className="adm-tabs" style={{ marginBottom: 16 }}>
+        {[["new", T("未対応", "New")], ["all", T("すべて", "All")]].map(([k, lab]) => (
+          <button key={k} className={"adm-tab" + (filter === k ? " on" : "")} onClick={() => setFilter(k)}>{lab(loc)}</button>
+        ))}
+      </div>
+      {rows === null ? <div className="adm-empty">…</div>
+        : rows.length === 0 ? <div className="adm-empty">{T("メッセージはありません。", "No messages.")(loc)}</div>
+        : rows.map((m) => <InboxRow key={m.id} m={m} loc={loc} api={api} onDone={after} />)}
+    </div>
+  );
+}
+
+function InboxRow({ m, loc, api, onDone }) {
+  const [open, setOpen] = React.useState(false);
+  const [reply, setReply] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const isNew = m.status === "new";
+  const send = async () => {
+    if (!reply.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api(`/admin/contact/${m.id}/reply`, { method: "POST", body: JSON.stringify({ body: reply.trim() }) });
+      emitToast(T("返信しました。", "Reply sent.")(loc), "success");
+      setReply(""); setOpen(false); onDone?.();
+    } catch (e) { emitToast(e.code === "send_failed" ? T("送信に失敗しました。", "Send failed.")(loc) : (e.code || "Failed"), "error"); }
+    finally { setBusy(false); }
+  };
+  const del = async () => {
+    if (busy) return;
+    const ok = await confirmDialog({
+      title: T("メッセージを削除", "Delete message")(loc),
+      message: T("このメッセージを完全に削除します。元に戻せません。", "This permanently deletes the message. This can't be undone.")(loc),
+      confirmLabel: T("削除", "Delete")(loc), danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try { await api(`/admin/contact/${m.id}`, { method: "DELETE" }); emitToast(T("削除しました。", "Deleted.")(loc), "success"); onDone?.(); }
+    catch (e) { emitToast(e.code || "Failed", "error"); setBusy(false); }
+  };
+  return (
+    <div className="adm-card" style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          {/* Unread dot → an at-a-glance count lives on the tab badge. */}
+          {isNew && <span title={T("未読", "Unread")(loc)} style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--stamp, #d63752)", flex: "none" }} />}
+          <div style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+            {m.name || "—"} <span className="adm-muted" style={{ fontWeight: 400 }}>· {m.email}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span className="adm-muted" style={{ fontSize: 12 }}>
+            {m.status === "replied" ? T("返信済み", "Replied")(loc) + " · " : ""}{relTime(m.createdAt, loc)} · {String(m.locale).toUpperCase()}
+          </span>
+          <button className="adm-icon-btn" title={T("削除", "Delete")(loc)} disabled={busy} onClick={del}
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "1px solid var(--line)", background: "transparent", color: "var(--inkSoft)", cursor: "pointer", flex: "none" }}>
+            <Ic name="trash" size={15} />
+          </button>
+        </div>
+      </div>
+      <div style={{ whiteSpace: "pre-wrap", marginTop: 10, lineHeight: 1.6 }}>{m.message}</div>
+      {open ? (
+        <div style={{ marginTop: 12 }}>
+          <textarea className="adm-in" rows={4} style={{ width: "100%", resize: "vertical", lineHeight: 1.5 }}
+            value={reply} onChange={(e) => setReply(e.target.value)}
+            placeholder={T("返信を入力…", "Write your reply…")(loc)} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button className="adm-btn primary" disabled={!reply.trim() || busy} onClick={send}>{busy ? "…" : T("送信", "Send reply")(loc)}</button>
+            <button className="adm-btn" onClick={() => setOpen(false)}>{T("閉じる", "Cancel")(loc)}</button>
+          </div>
+        </div>
+      ) : (
+        <button className="adm-btn" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>{m.status === "replied" ? T("もう一度返信", "Reply again")(loc) : T("返信する", "Reply")(loc)}</button>
+      )}
+    </div>
+  );
+}
+
 /* ───────────── Settings (moderation thresholds) ───────────── */
 function Settings({ loc, api }) {
   const [cfg, setCfg] = React.useState(null);
@@ -860,8 +954,9 @@ function Settings({ loc, api }) {
   React.useEffect(() => { api("/admin/settings").then((d) => { setCfg(d); setDraft(d); }).catch(() => {}); }, [api]);
   if (!draft) return <div className="adm-empty">…</div>;
 
-  const dirty = cfg && (draft.reportThreshold !== cfg.reportThreshold || draft.autoHideThreshold !== cfg.autoHideThreshold);
+  const dirty = cfg && (draft.reportThreshold !== cfg.reportThreshold || draft.autoHideThreshold !== cfg.autoHideThreshold || (draft.contactEmail || "") !== (cfg.contactEmail || ""));
   const setField = (k) => (e) => setDraft((d) => ({ ...d, [k]: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }));
+  const setText = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }));
   const save = async () => {
     setBusy(true);
     try { const d = await api("/admin/settings", { method: "PUT", body: JSON.stringify(draft) }); setCfg(d); setDraft(d); emitToast(T("保存しました。", "Saved.")(loc), "success"); }
@@ -885,6 +980,12 @@ function Settings({ loc, api }) {
         hint={T("この人数以上が同じ対象を通報すると「要対応」に表示されます。", "A case appears in “Needs action” once this many different people report the same target.")(loc)} />
       <Row k="autoHideThreshold" label={T("自動非表示しきい値", "Auto-hide threshold")(loc)}
         hint={T("この人数以上が通報すると、対象は審査待ちとして自動的に非表示になります（取り消し可能）。通報しきい値以上である必要があります。", "Once this many different people report a post/comment, it is auto-hidden pending review (reversible). Must be ≥ the report threshold.")(loc)} />
+      <div className="adm-card">
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{T("お問い合わせの宛先", "Contact email")(loc)}</div>
+        <div className="adm-muted" style={{ marginBottom: 12 }}>{T("お問い合わせフォームのメッセージが届くアドレス。空欄なら送信元アドレスにフォールバックします。", "Where contact-form messages are emailed. Blank → falls back to the send-from address.")(loc)}</div>
+        <input type="email" className="adm-in" style={{ width: "100%", height: 40 }} placeholder="you@gmail.com"
+          value={draft.contactEmail || ""} onChange={setText("contactEmail")} />
+      </div>
       <button className="adm-btn primary" disabled={!dirty || busy} onClick={save}>{dirty ? T("保存", "Save changes")(loc) : T("保存済み", "Saved")(loc)}</button>
     </div>
   );

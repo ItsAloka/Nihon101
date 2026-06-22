@@ -5,7 +5,7 @@
 import { eq, and, desc, lt, sql, inArray, isNull, count } from 'drizzle-orm';
 import type { DB } from '../client';
 import {
-  users, posts, postComments, reports, bans, adminActions, featuredSlots, adminSettings,
+  users, posts, postComments, reports, bans, adminActions, featuredSlots, adminSettings, contactMessages,
   type Report, type Ban,
 } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -376,16 +376,16 @@ const SETTINGS_ID = 'singleton';
 // surface threshold to stay conservative about no-human takedowns.
 const DEFAULT_REPORT_THRESHOLD = 3;
 const DEFAULT_AUTO_HIDE_THRESHOLD = 8;
-export interface ModSettings { reportThreshold: number; autoHideThreshold: number; }
+export interface ModSettings { reportThreshold: number; autoHideThreshold: number; contactEmail: string; }
 
 /** Read the singleton config, lazily creating it with defaults on first access. */
 export async function getSettings(db: DB): Promise<ModSettings> {
   const [row] = await db.select().from(adminSettings).where(eq(adminSettings.id, SETTINGS_ID));
-  if (row) return { reportThreshold: row.reportThreshold, autoHideThreshold: row.autoHideThreshold };
+  if (row) return { reportThreshold: row.reportThreshold, autoHideThreshold: row.autoHideThreshold, contactEmail: row.contactEmail };
   await db.insert(adminSettings)
-    .values({ id: SETTINGS_ID, reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, updatedAt: now() })
+    .values({ id: SETTINGS_ID, reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '', updatedAt: now() })
     .onConflictDoNothing();
-  return { reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD };
+  return { reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '' };
 }
 
 const SETTINGS_KV_KEY = 'mod:settings';
@@ -568,15 +568,16 @@ export async function setUserRole(db: DB, userId: string, role: 'user' | 'admin'
 
 export async function adminStats(db: DB): Promise<{
   openReports: number; activeBans: number; totalUsers: number; newUsersToday: number;
-  totalPosts: number; hiddenPosts: number;
+  totalPosts: number; hiddenPosts: number; newContacts: number;
 }> {
   const dayAgo = now() - 24 * 60 * 60 * 1000;
-  const [openReports, activeBans, [u], [pub], [hid]] = await Promise.all([
+  const [openReports, activeBans, [u], [pub], [hid], [contacts]] = await Promise.all([
     openReportCount(db),
     activeBanCount(db),
     db.select({ total: sql<number>`count(*)::int`, today: sql<number>`count(*) FILTER (WHERE ${users.createdAt} > ${dayAgo})::int` }).from(users),
     db.select({ n: sql<number>`count(*)::int` }).from(posts).where(eq(posts.status, 'published')),
     db.select({ n: sql<number>`count(*)::int` }).from(posts).where(and(eq(posts.status, 'published'), eq(posts.isHidden, true))),
+    db.select({ n: sql<number>`count(*)::int` }).from(contactMessages).where(eq(contactMessages.status, 'new')),
   ]);
   return {
     openReports, activeBans,
@@ -584,6 +585,7 @@ export async function adminStats(db: DB): Promise<{
     newUsersToday: u?.today ?? 0,
     totalPosts: pub?.n ?? 0,
     hiddenPosts: hid?.n ?? 0,
+    newContacts: contacts?.n ?? 0,
   };
 }
 

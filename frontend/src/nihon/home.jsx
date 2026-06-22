@@ -504,6 +504,15 @@ function AuthorGrid({p, lang}) {
 function NewsletterBlock({p, lang}) {
   const [v, setV] = React.useState('');
   const [done, setDone] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || done || !v.includes('@')) return;
+    setBusy(true);
+    try { await window.N101_CONTENT.newsletterApi.subscribe(v.trim(), lang==='jp'?'ja':'en'); setDone(true); }
+    catch { setDone(true); /* dedupe/already-subscribed still reads as success to the user */ }
+    finally { setBusy(false); }
+  };
   return (
     <section style={{
       marginTop:96, padding:'56px 56px', borderRadius:24,
@@ -521,14 +530,21 @@ function NewsletterBlock({p, lang}) {
         <p style={{fontFamily:'var(--fontBody)', fontSize:16, lineHeight:1.6, color:p.inkSoft, marginBottom:24}}>
           {lang==='jp'?'急がず、押し付けず。今週の三つの記事と、ひとつの小さな日本語の言葉を、お届けします。':'No urgency, no push. Three pieces from the week, and one small Japanese word we’ve been thinking about.'}
         </p>
-        <form onSubmit={(e)=>{e.preventDefault(); if(v.includes('@')) setDone(true);}} style={{display:'flex', gap:10, maxWidth:520}}>
-          <input value={v} onChange={(e)=>setV(e.target.value)} placeholder={lang==='jp'?'メールアドレス':'you@somewhere.jp'}
-            style={{flex:1, padding:'14px 18px', borderRadius:999, border:`1px solid ${p.line}`,
-              background:p.surface, fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, outline:'none'}}/>
-          <button style={gradStyle(p)}>{done ? (lang==='jp'?'届いたよ':'Sent ✓') : (lang==='jp'?'登録する':'Subscribe')}</button>
-        </form>
+        {done ? (
+          <div style={{padding:'14px 18px', borderRadius:14, background:p.surface, border:`1px solid ${p.line}`, maxWidth:520,
+            fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, lineHeight:1.5}}>
+            {lang==='jp'?'リストに登録しました。日曜のおたよりは準備中です。':"You're on the list — the Sunday letter is coming soon."}
+          </div>
+        ) : (
+          <form onSubmit={submit} style={{display:'flex', gap:10, maxWidth:520}}>
+            <input type="email" value={v} onChange={(e)=>setV(e.target.value)} placeholder={lang==='jp'?'メールアドレス':'you@somewhere.jp'}
+              style={{flex:1, padding:'14px 18px', borderRadius:999, border:`1px solid ${p.line}`,
+                background:p.surface, fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, outline:'none'}}/>
+            <button disabled={busy} style={gradStyle(p)}>{busy ? '…' : (lang==='jp'?'登録する':'Subscribe')}</button>
+          </form>
+        )}
         <div style={{marginTop:14, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>
-          {lang==='jp'?'4,820人の読者と一緒に。':'4,820 readers, no spam ever.'}
+          {lang==='jp'?'近日公開・スパムは送りません。':'Coming soon · no spam, ever.'}
         </div>
       </div>
     </section>

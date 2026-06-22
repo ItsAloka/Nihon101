@@ -174,10 +174,14 @@ function mapNotif(n) {
   const title = (n.postTitleEn || '').slice(0, 32);
   const titleJa = (n.postTitleJa || n.postTitleEn || '').slice(0, 24);
   const artRoute = n.postSlug ? { name: 'article', slug: n.postSlug } : { name: 'home' };
+  // Comment/reply notifications deep-link to the exact comment (#comment-<id>),
+  // not just the top of the post — mirrors Not Bagel's navToComment.
+  const cmtRoute = n.postSlug && n.commentId
+    ? { name: 'article', slug: n.postSlug, commentId: n.commentId } : artRoute;
   const byType = {
     like:    { kind: 'like',    en: `liked your story “${title}…”`, jp: 'があなたの記事にいいねしました', route: artRoute },
-    comment: { kind: 'comment', en: `commented on “${title}…”`,     jp: 'があなたの記事にコメントしました', route: artRoute },
-    reply:   { kind: 'comment', en: `replied to your comment`,       jp: 'があなたに返信しました',         route: artRoute },
+    comment: { kind: 'comment', en: `commented on “${title}…”`,     jp: 'があなたの記事にコメントしました', route: cmtRoute },
+    reply:   { kind: 'comment', en: `replied to your comment`,       jp: 'があなたに返信しました',         route: cmtRoute },
     follow:  { kind: 'follow',  en: `started following you`,         jp: 'があなたをフォローしました',     route: n.actorHandle ? { name: 'author', slug: n.actorHandle } : { name: 'home' } },
     post:    { kind: 'system',  en: `published “${title}…”`,         jp: '新しい記事を公開しました',       route: artRoute },
   };
@@ -194,6 +198,19 @@ const notifApi = {
   list: () => req('/notifications', { auth: true }).then((r) => ({ notifications: r.notifications.map(mapNotif), unread: r.unread })),
   markRead: () => req('/notifications/read', { method: 'POST', auth: true }).catch(() => {}),
   clearAll: () => req('/notifications', { method: 'DELETE', auth: true }).catch(() => {}),
+};
+
+// Newsletter signup (capture only). Open to logged-out visitors; the token, if any,
+// rides along so the backend can link the row to the signed-in user.
+const newsletterApi = {
+  subscribe: (email, locale) => req('/newsletter', { method: 'POST', body: { email, locale } }),
+};
+
+// Contact form (public send) + admin inbox (list/reply).
+const contactApi = {
+  send: (payload) => req('/contact', { method: 'POST', body: payload }),
+  list: (status) => req(`/admin/contact${status ? `?status=${status}` : ''}`, { auth: true }).then((r) => r.messages),
+  reply: (id, body) => req(`/admin/contact/${id}/reply`, { method: 'POST', auth: true, body: { body } }),
 };
 
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.
@@ -229,6 +246,6 @@ function hydrateReal(po) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, uploadImage, translate, hydrateReal };
+  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, contactApi, uploadImage, translate, hydrateReal };
   window.N101_CATS = catStore;
 }

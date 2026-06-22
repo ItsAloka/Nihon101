@@ -965,6 +965,7 @@ function Footer({p, lang}) {
           items={[
             {label:'Today', route:{name:'home'}},
             {label:'Explore', route:{name:'search'}},
+            {label:'Trending', route:{name:'trending'}},
             {label:'Saved', route:{name:'saved'}},
           ]} lang={lang} />
         <FooterCol p={p} title={lang==='jp'?'雑誌について':'Magazine'}
@@ -981,8 +982,8 @@ function Footer({p, lang}) {
           <NewsletterMini p={p} lang={lang}/>
         </div>
       </div>
-      <div style={{borderTop:`1px solid ${p.line}`, padding:'18px 32px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:16, flexWrap:'wrap',
-        fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em',
+      <div style={{padding:'18px 32px 28px', display:'flex', justifyContent:'space-between', alignItems:'center', gap:16, flexWrap:'wrap',
+        fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft,
       }}>
         <span>© 2026 nihon101</span>
       </div>
@@ -1009,18 +1010,32 @@ function FooterCol({p, title, items, lang}) {
 function NewsletterMini({p, lang}) {
   const [v, setV] = React.useState('');
   const [done, setDone] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || done || !v.includes('@')) return;
+    setBusy(true);
+    try { await window.N101_CONTENT.newsletterApi.subscribe(v.trim(), lang==='jp'?'ja':'en'); }
+    catch (_) { /* dedupe still reads as success */ }
+    finally { setBusy(false); setDone(true); }
+  };
+  if (done) return (
+    <div style={{fontFamily:'var(--fontBody)', fontSize:12.5, color:p.inkSoft, lineHeight:1.5}}>
+      {lang==='jp'?'登録しました。近日公開。':"You're on the list — coming soon."}
+    </div>
+  );
   return (
-    <form onSubmit={(e)=>{e.preventDefault(); if(v.includes('@')) setDone(true);}} style={{
+    <form onSubmit={submit} style={{
       display:'flex', gap:0,
       border:`1px solid ${p.line}`, borderRadius:999, background:p.bg, overflow:'hidden',
     }}>
-      <input value={v} onChange={(e)=>setV(e.target.value)} placeholder={lang==='jp'?'メールアドレス':'you@example.com'}
+      <input type="email" value={v} onChange={(e)=>setV(e.target.value)} placeholder={lang==='jp'?'メールアドレス':'you@example.com'}
         style={{flex:1, minWidth:0, border:'none', outline:'none', background:'transparent',
           padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:13, color:p.ink}}/>
-      <button style={{
+      <button disabled={busy} style={{
         border:'none', background:p.ink, color:p.surface, padding:'10px 16px',
         fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600, cursor:'pointer',
-      }}>{done ? '✓' : (lang==='jp'?'登録':'Send')}</button>
+      }}>{busy ? '…' : (lang==='jp'?'登録':'Send')}</button>
     </form>
   );
 }

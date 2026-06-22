@@ -1,0 +1,63 @@
+---
+// SSR Contact page. The page chrome + intro are server-rendered (SEO); the form is
+// a small React island that posts to /contact. Prototype design.
+import Shell from "../../layouts/Shell.astro";
+import ContactIsland from "../../nihon/ContactIsland.jsx";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+
+const pageTitle = jp ? "お問い合わせ — nihon101" : "Contact — nihon101";
+const pageDesc = jp ? "寄稿のご相談、誤りのご指摘、ただのご挨拶も歓迎です。" : "Pitches, corrections, or just a hello — we read everything.";
+
+const side = [
+  { num: "一", en: "Write for us", ja: "寄稿する",
+    bodyEn: "Anyone can publish on nihon101. The fastest way in is to just start writing.", bodyJa: "nihon101は誰でも公開できます。いちばん早いのは、まず書きはじめること。" },
+  { num: "二", en: "Found a mistake?", ja: "誤りを見つけた",
+    bodyEn: "Tell us — we fix corrections fast, in both languages.", bodyJa: "教えてください。日英どちらも、すぐ直します。" },
+  { num: "三", en: "No urgency", ja: "急ぎません",
+    bodyEn: "We read everything and reply within a few days. There's no ticket queue here.", bodyJa: "すべて読んで、数日以内にお返事します。行列はありません。" },
+];
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={`/${locale}/contact`} active="">
+  <div class="wrap ct-wrap">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? "お問い合わせ" : "Contact"}
+    </div>
+    <h1 class="ct-title">{jp ? "こんにちは。" : "Say hello."}</h1>
+    <p class="ct-lede">{pageDesc}</p>
+
+    <div class="ct-grid">
+      <div class="ct-card">
+        <ContactIsland client:only="react" locale={locale} />
+      </div>
+      <div class="ct-side">
+        {side.map((s) => (
+          <div class="ct-item">
+            <div class="ct-num">{s.num}</div>
+            <div>
+              <h3 class="ct-h">{jp ? s.ja : s.en}</h3>
+              <p class="ct-b">{jp ? s.bodyJa : s.bodyEn}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <style is:global>
+    .ct-wrap { max-width: 1040px; padding-top: 56px; padding-bottom: 64px; }
+    .ct-title { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5.5vw, 72px); letter-spacing: -0.025em; line-height: 1.03; color: var(--ink); margin: 12px 0 16px; }
+    .ct-lede { font-family: var(--fontDisplay); font-style: italic; font-size: clamp(18px, 2.3vw, 22px); color: var(--inkSoft); line-height: 1.45; margin-bottom: 40px; max-width: 620px; }
+    .ct-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: start; }
+    .ct-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px; position: relative; }
+    .ct-side { display: flex; flex-direction: column; gap: 22px; }
+    .ct-item { display: grid; grid-template-columns: 48px 1fr; gap: 16px; }
+    .ct-num { font-family: var(--fontDisplay); font-size: 34px; color: var(--stamp); line-height: 1; font-weight: 600; }
+    .ct-h { font-family: var(--fontDisplay); font-weight: 600; font-size: 20px; color: var(--ink); margin-bottom: 6px; }
+    .ct-b { font-family: var(--fontBody); font-size: 14px; line-height: 1.6; color: var(--inkSoft); }
+    @media (max-width: 860px) { .ct-grid { grid-template-columns: 1fr; gap: 36px; } }
+  </style>
+</Shell>

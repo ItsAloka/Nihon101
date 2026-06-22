@@ -10,17 +10,18 @@ type SendArgs = {
   to: string;
   subject: string;
   html: string;
+  replyTo?: string;  // so an admin reply / contact notice can be replied to directly
 };
 
-export async function sendEmail({ apiKey, from, to, subject, html }: SendArgs): Promise<void> {
+export async function sendEmail({ apiKey, from, to, subject, html, replyTo }: SendArgs): Promise<void> {
   if (!apiKey) {
-    console.log(`[mail:dev] would send to ${to} — "${subject}"\n${html}`);
+    console.log(`[mail:dev] would send to ${to}${replyTo ? ` (reply-to ${replyTo})` : ''} — "${subject}"\n${html}`);
     return;
   }
   const res = await fetchWithTimeout('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
     timeoutMs: 10_000,
     retries: 1, // a reset/verify email is worth one retry over a transient blip
   });
@@ -73,6 +74,38 @@ export function loginOtpHtml(code: string, locale: 'ja' | 'en'): { subject: stri
       <p>Enter the code below to finish signing in. It expires in 10 minutes.</p>
       ${codeBox}
       <p style="color:#5C544C;font-size:13px">If you didn't try to sign in, ignore this email — someone may have entered your password.</p>
+    </div>`,
+  };
+}
+
+/** HTML-escape untrusted text before dropping it into an email body. */
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Notification to the admin contact address when a visitor submits the form. The
+ *  visitor's address is set as Reply-To by the caller, so a reply goes straight back. */
+export function contactNotifyHtml(name: string, email: string, message: string): { subject: string; html: string } {
+  const who = name ? `${esc(name)} (${esc(email)})` : esc(email);
+  return {
+    subject: `Nihon101 — new contact message from ${name || email}`,
+    html: `<div style="font-family:sans-serif;color:#1A1817">
+      <h2 style="font-weight:600">New contact message</h2>
+      <p style="color:#5C544C">From: <strong>${who}</strong></p>
+      <div style="white-space:pre-wrap;border-left:3px solid #D63752;padding:8px 14px;margin:14px 0;color:#1A1817">${esc(message)}</div>
+      <p style="color:#5C544C;font-size:13px">Reply directly to this email, or from the admin console.</p>
+    </div>`,
+  };
+}
+
+/** The admin's reply, sent to the visitor. `body` is the admin's free text. */
+export function contactReplyHtml(body: string, locale: 'ja' | 'en'): { subject: string; html: string } {
+  const sign = locale === 'ja' ? 'Nihon101 より' : '— Nihon101';
+  return {
+    subject: locale === 'ja' ? 'Nihon101 — お問い合わせへの返信' : 'Nihon101 — re: your message',
+    html: `<div style="font-family:sans-serif;color:#1A1817">
+      <div style="white-space:pre-wrap;color:#1A1817">${esc(body)}</div>
+      <p style="color:#5C544C;font-size:13px;margin-top:18px">${sign}</p>
     </div>`,
   };
 }

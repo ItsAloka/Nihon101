@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { eq, and, isNull, ne, desc } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import bcrypt from 'bcryptjs';
@@ -29,6 +30,58 @@ export function validPassword(pw: unknown): pw is string {
   const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^a-zA-Z0-9]/].filter((re) => re.test(p)).length;
   return classes >= 2;
 }
+
+/* ---------------- request validation (Zod) ----------------
+ * Schemas mirror the previous hand-rolled checks exactly, so every error code and
+ * status is preserved. Strict schemas 400 on bad shape, mapped back to the original
+ * per-field code via `firstErr`. Lenient schemas (.catch) never 400 — they coerce to
+ * safe defaults and let the handler's own logic (401/200) decide, matching the old
+ * `String(x ?? '')` behavior. */
+const FIELD_ERR: Record<string, string> = {
+  email: 'invalid_email',
+  password: 'weak_password',
+  token: 'invalid_token',
+};
+function firstErr(e: z.ZodError): string {
+  const f = e.issues[0]?.path[0];
+  return (typeof f === 'string' && FIELD_ERR[f]) || 'invalid_body';
+}
+
+const registerSchema = z.object({
+  email: z.string().trim().toLowerCase().regex(EMAIL_RE),
+  password: z.string().refine(validPassword),
+  displayName: z.string().trim().optional().default(''),
+  locale: z.string().optional().catch(undefined),
+});
+const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().catch(''),
+  password: z.string().catch(''),
+  locale: z.string().optional().catch(undefined),
+}).catch({ email: '', password: '' });
+const verifyOtpSchema = z.object({
+  pending: z.string().catch(''),
+  code: z.string().catch(''),
+  remember: z.boolean().catch(false),
+}).catch({ pending: '', code: '', remember: false });
+const resendOtpSchema = z.object({
+  pending: z.string().catch(''),
+  locale: z.string().optional().catch(undefined),
+}).catch({ pending: '' });
+const forgotSchema = z.object({
+  email: z.string().trim().toLowerCase().catch(''),
+  locale: z.string().optional().catch(undefined),
+}).catch({ email: '' });
+const resetSchema = z.object({
+  password: z.string().refine(validPassword),
+  token: z.string().min(1),
+});
+const verifyEmailSchema = z.object({
+  token: z.string().min(1),
+});
+const changePasswordSchema = z.object({
+  current: z.string().catch(''),
+  password: z.string().refine(validPassword),
+});
 
 const db = (c: any) => getDb(c);
 const now = () => Date.now();
@@ -93,13 +146,10 @@ async function enforceBan(c: any, u: any): Promise<{ banned: boolean; until: num
 
 // ---------------------------------------------------------------- register
 auth.post('/register', limits.register, async (c) => {
-  const { email, password, displayName, locale } = await c.req.json().catch(() => ({}));
-  const mail = String(email ?? '').trim().toLowerCase();
-  const name = String(displayName ?? '').trim();
-  const loc: 'ja' | 'en' = locale === 'en' ? 'en' : 'ja';
-
-  if (!EMAIL_RE.test(mail)) return c.json({ error: 'invalid_email' }, 400);
-  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
+  const parsed = registerSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstErr(parsed.error) }, 400);
+  const { email: mail, password, displayName: name } = parsed.data;
+  const loc: 'ja' | 'en' = parsed.data.locale === 'en' ? 'en' : 'ja';
 
   const [existing] = await db(c).select().from(users).where(eq(users.email, mail));
   if (existing) return c.json({ error: 'email_taken' }, 409);
@@ -167,14 +217,13 @@ async function deviceTrusted(c: any, userId: string): Promise<boolean> {
 
 // ------------------------------------------------------------------- login
 auth.post('/login', limits.login, async (c) => {
-  const { email, password, locale } = await c.req.json().catch(() => ({}));
-  const mail = String(email ?? '').trim().toLowerCase();
+  const { email: mail, password, locale } = loginSchema.parse(await c.req.json().catch(() => ({})));
   const loc: 'ja' | 'en' = locale === 'en' ? 'en' : 'ja';
 
   const [u] = await db(c).select().from(users).where(eq(users.email, mail));
   // Constant-ish: still run a compare to blunt timing/user-enumeration.
   const ok = u?.passwordHash
-    ? await bcrypt.compare(String(password ?? ''), u.passwordHash)
+    ? await bcrypt.compare(password, u.passwordHash)
     : await bcrypt.compare('x', '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinv');
   if (!u || !ok) return c.json({ error: 'invalid_credentials' }, 401);
 
@@ -197,8 +246,8 @@ auth.post('/login', limits.login, async (c) => {
 
 // ---------------------------------------------------------- login verify-otp
 auth.post('/login/verify-otp', limits.otpVerify, async (c) => {
-  const { pending, code, remember } = await c.req.json().catch(() => ({}));
-  const userId = await verifyOtpTicket(c.env.JWT_SECRET, String(pending ?? ''));
+  const { pending, code, remember } = verifyOtpSchema.parse(await c.req.json().catch(() => ({})));
+  const userId = await verifyOtpTicket(c.env.JWT_SECRET, pending);
   if (!userId) return c.json({ error: 'otp_expired' }, 401);
 
   const [u] = await db(c).select().from(users).where(eq(users.id, userId));
@@ -214,7 +263,7 @@ auth.post('/login/verify-otp', limits.otpVerify, async (c) => {
     return c.json({ error: 'too_many_attempts' }, 429);
   }
 
-  const match = (await hashToken(String(code ?? ''), c.env.REFRESH_PEPPER)) === otp.codeHash;
+  const match = (await hashToken(code, c.env.REFRESH_PEPPER)) === otp.codeHash;
   await db(c).update(loginOtps).set({ attempts: otp.attempts + 1 }).where(eq(loginOtps.id, otp.id));
   if (!match) return c.json({ error: 'invalid_code' }, 400);
 
@@ -241,8 +290,8 @@ auth.post('/login/verify-otp', limits.otpVerify, async (c) => {
 
 // ---------------------------------------------------------- login resend-otp
 auth.post('/login/resend-otp', limits.otpResend, async (c) => {
-  const { pending, locale } = await c.req.json().catch(() => ({}));
-  const userId = await verifyOtpTicket(c.env.JWT_SECRET, String(pending ?? ''));
+  const { pending, locale } = resendOtpSchema.parse(await c.req.json().catch(() => ({})));
+  const userId = await verifyOtpTicket(c.env.JWT_SECRET, pending);
   if (!userId) return c.json({ error: 'otp_expired' }, 401);
   const [u] = await db(c).select().from(users).where(eq(users.id, userId));
   if (!u) return c.json({ error: 'otp_expired' }, 401);
@@ -390,8 +439,9 @@ auth.patch('/me', requireAuth, limits.profile, async (c) => {
 // ------------------------------------------------------- change password
 auth.post('/change-password', requireAuth, limits.profile, async (c) => {
   const sess = c.get('user')!;
-  const { current, password } = await c.req.json().catch(() => ({}));
-  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
+  const parsed = changePasswordSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstErr(parsed.error) }, 400);
+  const { current, password } = parsed.data;
 
   const [u] = await db(c).select().from(users).where(eq(users.id, sess.id));
   if (!u) return c.json({ error: 'unauthorized' }, 401);
@@ -438,8 +488,7 @@ auth.delete('/me', requireAuth, async (c) => {
 
 // ------------------------------------------------------------------ forgot
 auth.post('/forgot', limits.forgot, async (c) => {
-  const { email, locale } = await c.req.json().catch(() => ({}));
-  const mail = String(email ?? '').trim().toLowerCase();
+  const { email: mail, locale } = forgotSchema.parse(await c.req.json().catch(() => ({})));
   const loc: 'ja' | 'en' = locale === 'en' ? 'en' : 'ja';
 
   // Always 200 — never reveal whether the address exists.
@@ -471,9 +520,9 @@ auth.post('/forgot', limits.forgot, async (c) => {
 
 // ------------------------------------------------------------------- reset
 auth.post('/reset', limits.reset, async (c) => {
-  const { token, password } = await c.req.json().catch(() => ({}));
-  if (!validPassword(password)) return c.json({ error: 'weak_password' }, 400);
-  if (!token) return c.json({ error: 'invalid_token' }, 400);
+  const parsed = resetSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstErr(parsed.error) }, 400);
+  const { token, password } = parsed.data;
 
   const tokenHash = await hashToken(String(token), c.env.REFRESH_PEPPER);
   const [pr] = await db(c)
@@ -503,9 +552,10 @@ auth.post('/reset', limits.reset, async (c) => {
 
 // ------------------------------------------------------- verify email (public)
 auth.post('/verify-email', limits.reset, async (c) => {
-  const { token } = await c.req.json().catch(() => ({}));
-  if (!token) return c.json({ error: 'invalid_token' }, 400);
-  const tokenHash = await hashToken(String(token), c.env.REFRESH_PEPPER);
+  const parsed = verifyEmailSchema.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json({ error: firstErr(parsed.error) }, 400);
+  const { token } = parsed.data;
+  const tokenHash = await hashToken(token, c.env.REFRESH_PEPPER);
   const [ev] = await db(c).select().from(emailVerifications).where(eq(emailVerifications.tokenHash, tokenHash));
   if (!ev || ev.usedAt || ev.expiresAt < now()) return c.json({ error: 'invalid_token' }, 400);
 

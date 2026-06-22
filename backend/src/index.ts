@@ -17,6 +17,8 @@ import notifications from './routes/notifications';
 import trending from './routes/trending';
 import admin from './routes/admin';
 import reports from './routes/reports';
+import contact from './routes/contact';
+import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
 import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
@@ -39,8 +41,12 @@ app.use('*', async (c, next) => {
 });
 
 app.use('*', async (c, next) => {
+  // Never fall back to the wildcard with credentials (Hono GHSA-88fw-hqm2-52qc):
+  // if FRONTEND_ORIGIN is somehow unset, deny cross-origin rather than reflect any.
+  // Dev fallback = local Astro origin; switched to https://nihon101.com at hosting.
+  const origin = c.env.FRONTEND_ORIGIN || 'http://localhost:4321';
   const corsMw = cors({
-    origin: c.env.FRONTEND_ORIGIN,
+    origin,
     credentials: true,
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -103,6 +109,8 @@ app.route('/trending', trending);
 app.route('/weather', weather);
 app.route('/admin', admin);
 app.route('/reports', reports);
+app.route('/contact', contact);
+app.route('/newsletter', newsletter);
 
 export default {
   fetch: app.fetch,

@@ -466,9 +466,16 @@ function RealArticle(props) {
   }, [id, liked]);
 
   const onAddComment = React.useCallback(async (_slug, text, parentId)=>{
-    try { const c = await window.N101_CONTENT.postApi.addComment(id, text, parentId); setComments(prev=>[...prev, toCommentView(c)]); }
-    catch {}
-  }, [id]);
+    // Optimistic: show immediately, reconcile on success, drop on failure.
+    const tmpId = "tmp_"+Math.random().toString(36).slice(2);
+    const u = currentUser;
+    const optimistic = { id:tmpId, parentId:parentId||null,
+      author:{ slug:u.slug, handle:u.slug, avatarUrl:u.avatarUrl||null, en:u.en, jp:u.jp, initials:u.initials, tint:u.tint },
+      text, ts:Date.now(), likes:0, liked:false, _real:false, userId:u.id, _pending:true };
+    setComments(prev=>[...prev, optimistic]);
+    try { const c = await window.N101_CONTENT.postApi.addComment(id, text, parentId); setComments(prev=>prev.map(x=> x.id===tmpId ? toCommentView(c) : x)); }
+    catch { setComments(prev=>prev.filter(x=> x.id!==tmpId)); }
+  }, [id, currentUser]);
 
   const onDeleteComment = React.useCallback(async (cid)=>{
     setComments(prev=>prev.filter(c=> c.id!==cid && c.parentId!==cid));   // optimistic (drop replies too)
@@ -581,7 +588,7 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
     </span>
   );
   return (
-    <div style={{display:'flex', gap:14}}>
+    <div id={`comment-${c.id}`} style={{display:'flex', gap:14, scrollMarginTop:96, borderRadius:14, transition:'background 0.6s ease'}}>
       {href
         ? <a href={href} style={{display:'block', textDecoration:'none'}}><Avatar user={c.author} p={p} size={isReply?34:44}/></a>
         : <Avatar user={c.author} p={p} size={isReply?34:44}/>}
