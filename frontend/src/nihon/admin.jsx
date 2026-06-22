@@ -201,7 +201,6 @@ export default function AdminConsole({ locale }) {
   const tabs = [
     ["dashboard", T("ダッシュボード", "Dashboard")(loc), "gauge"],
     ["reports", T("通報", "Reports")(loc), "flag", stats?.openReports || 0],
-    ["inbox", T("受信箱", "Inbox")(loc), "message", stats?.newContacts || 0],
     ["posts", T("記事", "Posts")(loc), "file"],
     ["users", T("ユーザー", "Users")(loc), "users"],
     ["media", T("メディア", "Media")(loc), "image"],
@@ -225,7 +224,6 @@ export default function AdminConsole({ locale }) {
 
       {tab === "dashboard" && <Dashboard loc={loc} stats={stats} onJump={setTab} />}
       {tab === "reports" && <Reports loc={loc} api={api} onChange={refreshStats} />}
-      {tab === "inbox" && <Inbox loc={loc} api={api} onChange={refreshStats} />}
       {tab === "posts" && <Posts loc={loc} api={api} onChange={refreshStats} />}
       {tab === "users" && <Users loc={loc} api={api} />}
       {tab === "media" && <Media loc={loc} api={api} />}
@@ -322,11 +320,10 @@ function Reports({ loc, api, onChange }) {
   const [data, setData] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [banFor, setBanFor] = React.useState(null); // authorId
-  const [showWatching, setShowWatching] = React.useState(false);
 
   const load = React.useCallback(() => {
     setData(null);
-    api(`/admin/reports?status=${status}`).then(setData).catch(() => setData({ mode: status === "open" ? "cases" : "list", needsAction: [], watching: [], reports: [] }));
+    api(`/admin/reports?status=${status}`).then(setData).catch(() => setData({ mode: status === "open" ? "cases" : "list", cases: [], reports: [] }));
   }, [api, status]);
   React.useEffect(load, [load]);
 
@@ -376,16 +373,7 @@ function Reports({ loc, api, onChange }) {
     if (!ok) return;
     run(r.id + "ro", () => api(`/admin/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ status: "open" }) }), T("再開しました。", "Reopened.")(loc));
   };
-  const clearStale = async () => {
-    const ok = await confirmDialog({
-      loc, confirmLabel: T("一括却下", "Dismiss all")(loc),
-      title: T("古い監視案件を一括却下", "Clear stale watching cases")(loc),
-      message: T("30日以上動きのない、しきい値未満の通報をまとめて却下します。", "Dismisses all below-threshold reports untouched for 30+ days.")(loc),
-    });
-    if (!ok) return;
-    run("clearStale", () => api("/admin/reports/dismiss-watching", { method: "POST", body: JSON.stringify({ olderThanDays: 30 }) }), T("古い案件を却下しました。", "Stale cases cleared.")(loc));
-  };
-  const doBan = (authorId, reason, duration) => run(authorId + "ban", () => api(`/admin/users/${authorId}/ban`, { method: "POST", body: JSON.stringify({ reason, duration }) }), T("BANしました。", "User banned.")(loc));
+  const doBan = (authorId, reason, duration) =>run(authorId + "ban", () => api(`/admin/users/${authorId}/ban`, { method: "POST", body: JSON.stringify({ reason, duration }) }), T("BANしました。", "User banned.")(loc));
 
   const renderCase = (k, sev) => {
     const t = k.target || {};
@@ -438,8 +426,7 @@ function Reports({ loc, api, onChange }) {
 
   const TYPES = [["all", T("すべて", "All")(loc)], ["post", T("記事", "Posts")(loc)], ["comment", T("コメント", "Comments")(loc)], ["user", T("ユーザー", "Users")(loc)]];
 
-  const needs = (data?.needsAction || []).filter((k) => matchesType(k.targetType));
-  const watch = (data?.watching || []).filter((k) => matchesType(k.targetType));
+  const cases = (data?.cases || []).filter((k) => matchesType(k.targetType));
   const closed = (data?.reports || []).filter((r) => matchesType(r.targetType));
 
   return (
@@ -465,29 +452,14 @@ function Reports({ loc, api, onChange }) {
       {data === null ? <div className="adm-empty">…</div> : status === "open" ? (
         <>
           <div className="adm-muted" style={{ marginBottom: 12 }}>
-            {T(`しきい値 ${data.threshold} 人以上の通報で「要対応」に表示。`, `Cases reach “Needs action” at ${data.threshold}+ distinct reporters.`)(loc)}
+            {T(`同じ対象を ${data.threshold} 人以上が通報すると、ここに表示されます。しきい値未満は非表示（しきい値を下げると現れます）。`, `Cases appear here once ${data.threshold}+ distinct people report the same target. Below the threshold they stay hidden — lower it to reveal them.`)(loc)}
           </div>
-          {(needs.length === 0 && watch.length === 0)
+          {cases.length === 0
             ? <div className="adm-empty">{T("通報はありません。", "No open reports.")(loc)}</div>
             : (
               <>
-                <div className="adm-sec high"><Ic name="alert" size={16} />{T("要対応", "Needs action")(loc)} · {needs.length}</div>
-                {needs.length ? needs.map((k) => renderCase(k, "high"))
-                  : <div className="adm-muted" style={{ marginBottom: 16 }}>{T("要対応の案件はありません。", "Nothing over the threshold.")(loc)}</div>}
-
-                {watch.length > 0 && (
-                  <div style={{ marginTop: 18 }}>
-                    <div className="adm-bar">
-                      <button className="adm-btn" onClick={() => setShowWatching((v) => !v)}>
-                        <Ic name={showWatching ? "chevron" : "chevronR"} size={14} />{T("監視中", "Watching")(loc)} · {watch.length} <span className="adm-mono">{T("（しきい値未満）", "(below threshold)")(loc)}</span>
-                      </button>
-                      <button className="adm-btn" disabled={busy === "clearStale"} onClick={clearStale} title={T("30日以上動きのない案件を一括却下", "Dismiss cases untouched for 30+ days")(loc)}>
-                        {T("古い案件を一括却下", "Clear stale")(loc)}
-                      </button>
-                    </div>
-                    {showWatching && <div style={{ marginTop: 12 }}>{watch.map((k) => renderCase(k, "watch"))}</div>}
-                  </div>
-                )}
+                <div className="adm-sec high"><Ic name="alert" size={16} />{T("要対応", "Open cases")(loc)} · {cases.length}</div>
+                {cases.map((k) => renderCase(k, "high"))}
               </>
             )}
         </>
@@ -854,98 +826,6 @@ function Featured({ loc, api }) {
   );
 }
 
-/* ───────────── Inbox (contact messages) ───────────── */
-function Inbox({ loc, api, onChange }) {
-  const [filter, setFilter] = React.useState("new");
-  const [rows, setRows] = React.useState(null);
-  const load = React.useCallback(() => {
-    setRows(null);
-    api(`/admin/contact${filter === "new" ? "?status=new" : ""}`).then((d) => setRows(d.messages)).catch(() => setRows([]));
-  }, [api, filter]);
-  React.useEffect(() => { load(); }, [load]);
-  const after = () => { load(); onChange?.(); };
-
-  return (
-    <div style={{ maxWidth: 760 }}>
-      <TabHead icon="message" title={T("受信箱", "Inbox")(loc)}
-        sub={T("お問い合わせフォームからのメッセージ。返信はResend経由で送信者に届きます。", "Messages from the contact form. Replies go to the sender via Resend.")(loc)} />
-      <div className="adm-tabs" style={{ marginBottom: 16 }}>
-        {[["new", T("未対応", "New")], ["all", T("すべて", "All")]].map(([k, lab]) => (
-          <button key={k} className={"adm-tab" + (filter === k ? " on" : "")} onClick={() => setFilter(k)}>{lab(loc)}</button>
-        ))}
-      </div>
-      {rows === null ? <div className="adm-empty">…</div>
-        : rows.length === 0 ? <div className="adm-empty">{T("メッセージはありません。", "No messages.")(loc)}</div>
-        : rows.map((m) => <InboxRow key={m.id} m={m} loc={loc} api={api} onDone={after} />)}
-    </div>
-  );
-}
-
-function InboxRow({ m, loc, api, onDone }) {
-  const [open, setOpen] = React.useState(false);
-  const [reply, setReply] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const isNew = m.status === "new";
-  const send = async () => {
-    if (!reply.trim() || busy) return;
-    setBusy(true);
-    try {
-      await api(`/admin/contact/${m.id}/reply`, { method: "POST", body: JSON.stringify({ body: reply.trim() }) });
-      emitToast(T("返信しました。", "Reply sent.")(loc), "success");
-      setReply(""); setOpen(false); onDone?.();
-    } catch (e) { emitToast(e.code === "send_failed" ? T("送信に失敗しました。", "Send failed.")(loc) : (e.code || "Failed"), "error"); }
-    finally { setBusy(false); }
-  };
-  const del = async () => {
-    if (busy) return;
-    const ok = await confirmDialog({
-      title: T("メッセージを削除", "Delete message")(loc),
-      message: T("このメッセージを完全に削除します。元に戻せません。", "This permanently deletes the message. This can't be undone.")(loc),
-      confirmLabel: T("削除", "Delete")(loc), danger: true,
-    });
-    if (!ok) return;
-    setBusy(true);
-    try { await api(`/admin/contact/${m.id}`, { method: "DELETE" }); emitToast(T("削除しました。", "Deleted.")(loc), "success"); onDone?.(); }
-    catch (e) { emitToast(e.code || "Failed", "error"); setBusy(false); }
-  };
-  return (
-    <div className="adm-card" style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          {/* Unread dot → an at-a-glance count lives on the tab badge. */}
-          {isNew && <span title={T("未読", "Unread")(loc)} style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--stamp, #d63752)", flex: "none" }} />}
-          <div style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-            {m.name || "—"} <span className="adm-muted" style={{ fontWeight: 400 }}>· {m.email}</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span className="adm-muted" style={{ fontSize: 12 }}>
-            {m.status === "replied" ? T("返信済み", "Replied")(loc) + " · " : ""}{relTime(m.createdAt, loc)} · {String(m.locale).toUpperCase()}
-          </span>
-          <button className="adm-icon-btn" title={T("削除", "Delete")(loc)} disabled={busy} onClick={del}
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "1px solid var(--line)", background: "transparent", color: "var(--inkSoft)", cursor: "pointer", flex: "none" }}>
-            <Ic name="trash" size={15} />
-          </button>
-        </div>
-      </div>
-      <div style={{ whiteSpace: "pre-wrap", marginTop: 10, lineHeight: 1.6 }}>{m.message}</div>
-      {open ? (
-        <div style={{ marginTop: 12 }}>
-          <textarea className="adm-in" rows={4} style={{ width: "100%", resize: "vertical", lineHeight: 1.5 }}
-            value={reply} onChange={(e) => setReply(e.target.value)}
-            placeholder={T("返信を入力…", "Write your reply…")(loc)} />
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button className="adm-btn primary" disabled={!reply.trim() || busy} onClick={send}>{busy ? "…" : T("送信", "Send reply")(loc)}</button>
-            <button className="adm-btn" onClick={() => setOpen(false)}>{T("閉じる", "Cancel")(loc)}</button>
-          </div>
-        </div>
-      ) : (
-        <button className="adm-btn" style={{ marginTop: 12 }} onClick={() => setOpen(true)}>{m.status === "replied" ? T("もう一度返信", "Reply again")(loc) : T("返信する", "Reply")(loc)}</button>
-      )}
-    </div>
-  );
-}
-
 /* ───────────── Settings (moderation thresholds) ───────────── */
 function Settings({ loc, api }) {
   const [cfg, setCfg] = React.useState(null);
@@ -954,9 +834,8 @@ function Settings({ loc, api }) {
   React.useEffect(() => { api("/admin/settings").then((d) => { setCfg(d); setDraft(d); }).catch(() => {}); }, [api]);
   if (!draft) return <div className="adm-empty">…</div>;
 
-  const dirty = cfg && (draft.reportThreshold !== cfg.reportThreshold || draft.autoHideThreshold !== cfg.autoHideThreshold || (draft.contactEmail || "") !== (cfg.contactEmail || ""));
+  const dirty = cfg && draft.reportThreshold !== cfg.reportThreshold;
   const setField = (k) => (e) => setDraft((d) => ({ ...d, [k]: Math.max(1, Math.min(100, Number(e.target.value) || 1)) }));
-  const setText = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }));
   const save = async () => {
     setBusy(true);
     try { const d = await api("/admin/settings", { method: "PUT", body: JSON.stringify(draft) }); setCfg(d); setDraft(d); emitToast(T("保存しました。", "Saved.")(loc), "success"); }
@@ -977,15 +856,7 @@ function Settings({ loc, api }) {
       <TabHead icon="sliders" title={T("設定", "Settings")(loc)}
         sub={T("通報の「人数」は別々のユーザー数で数えます（同一人物の連投は1人分）。", "Counts are by distinct reporters — one person spamming the same target counts once.")(loc)} />
       <Row k="reportThreshold" label={T("通報しきい値", "Report threshold")(loc)}
-        hint={T("この人数以上が同じ対象を通報すると「要対応」に表示されます。", "A case appears in “Needs action” once this many different people report the same target.")(loc)} />
-      <Row k="autoHideThreshold" label={T("自動非表示しきい値", "Auto-hide threshold")(loc)}
-        hint={T("この人数以上が通報すると、対象は審査待ちとして自動的に非表示になります（取り消し可能）。通報しきい値以上である必要があります。", "Once this many different people report a post/comment, it is auto-hidden pending review (reversible). Must be ≥ the report threshold.")(loc)} />
-      <div className="adm-card">
-        <div style={{ fontWeight: 600, marginBottom: 4 }}>{T("お問い合わせの宛先", "Contact email")(loc)}</div>
-        <div className="adm-muted" style={{ marginBottom: 12 }}>{T("お問い合わせフォームのメッセージが届くアドレス。空欄なら送信元アドレスにフォールバックします。", "Where contact-form messages are emailed. Blank → falls back to the send-from address.")(loc)}</div>
-        <input type="email" className="adm-in" style={{ width: "100%", height: 40 }} placeholder="you@gmail.com"
-          value={draft.contactEmail || ""} onChange={setText("contactEmail")} />
-      </div>
+        hint={T("この人数以上が同じ対象を通報すると、通報タブに表示されます。これ未満の通報は表示されません。しきい値を下げると、隠れていた案件がすぐに現れます。", "Once this many different people report the same target, the case shows in the Reports tab. Anything below this stays hidden — lower the threshold and previously-hidden cases appear immediately.")(loc)} />
       <button className="adm-btn primary" disabled={!dirty || busy} onClick={save}>{dirty ? T("保存", "Save changes")(loc) : T("保存済み", "Saved")(loc)}</button>
     </div>
   );

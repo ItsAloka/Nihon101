@@ -1,13 +1,13 @@
 ---
-// SSR Contact page. The page chrome + intro are server-rendered (SEO); the form is
-// a small React island that posts to /contact. Prototype design.
+// SSR Contact page. Fully server-rendered (SEO) — no form, just our address.
+// Mail lands in our inbox; we reply from there. Prototype design.
 import Shell from "../../layouts/Shell.astro";
-import ContactIsland from "../../nihon/ContactIsland.jsx";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
 const jp = locale === "ja";
 
+const CONTACT_EMAIL = "contact@nihon101.com";
 const pageTitle = jp ? "お問い合わせ — nihon101" : "Contact — nihon101";
 const pageDesc = jp ? "寄稿のご相談、誤りのご指摘、ただのご挨拶も歓迎です。" : "Pitches, corrections, or just a hello — we read everything.";
 
@@ -31,7 +31,10 @@ const side = [
 
     <div class="ct-grid">
       <div class="ct-card">
-        <ContactIsland client:only="react" locale={locale} />
+        <div class="ct-mail-label">{jp ? "メールはこちらへ" : "Drop us a line"}</div>
+        <a class="ct-mail" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+        <p class="ct-mail-note">{jp ? "すべて読んで、数日以内にお返事します。" : "We read everything and reply within a few days."}</p>
+        <a class="ct-mail-btn" href={`mailto:${CONTACT_EMAIL}`}>{jp ? "メールを書く" : "Write an email"}</a>
       </div>
       <div class="ct-side">
         {side.map((s) => (
@@ -52,7 +55,12 @@ const side = [
     .ct-title { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5.5vw, 72px); letter-spacing: -0.025em; line-height: 1.03; color: var(--ink); margin: 12px 0 16px; }
     .ct-lede { font-family: var(--fontDisplay); font-style: italic; font-size: clamp(18px, 2.3vw, 22px); color: var(--inkSoft); line-height: 1.45; margin-bottom: 40px; max-width: 620px; }
     .ct-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: start; }
-    .ct-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 32px; position: relative; }
+    .ct-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 40px 32px; position: relative; }
+    .ct-mail-label { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--inkFaint); margin-bottom: 14px; }
+    .ct-mail { display: inline-block; font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(22px, 3vw, 30px); color: var(--ink); text-decoration: none; word-break: break-all; }
+    .ct-mail:hover { color: var(--stamp); }
+    .ct-mail-note { font-family: var(--fontBody); font-size: 14px; line-height: 1.6; color: var(--inkSoft); margin: 14px 0 24px; }
+    .ct-mail-btn { display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; border-radius: 999px; padding: 13px 26px; font-family: var(--fontBody); font-size: 14px; font-weight: 600; text-decoration: none; }
     .ct-side { display: flex; flex-direction: column; gap: 22px; }
     .ct-item { display: grid; grid-template-columns: 48px 1fr; gap: 16px; }
     .ct-num { font-family: var(--fontDisplay); font-size: 34px; color: var(--stamp); line-height: 1; font-weight: 600; }

@@ -11,7 +11,7 @@ import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
 import { getComment, deleteComment } from '../db/queries/engagement';
 import {
   createReport, listReports, getReportById, resolveReport, reopenReport,
-  resolveReportsForTarget, dismissReportsForTarget, dismissStaleWatchingReports,
+  resolveReportsForTarget, dismissReportsForTarget,
   reportsAgainstUser, getDisplayNamesByIds,
   listReportCases, listReportsForTarget, resolveReportTargets, countOpenReportsForTargets,
   getSettings, updateSettings, invalidateSettingsCache, type ReportCase,
@@ -22,8 +22,6 @@ import {
   listFeatured, setFeatured, searchPostsAdmin,
   type ReportStatus, type BanDuration, type FeaturedSection,
 } from '../db/queries/admin';
-import { listContactMessages, getContactMessage, markContactReplied, deleteContactMessage } from '../db/queries/contact';
-import { sendEmail, contactReplyHtml } from '../lib/mail';
 
 const app = new Hono<AppEnv>();
 app.use('*', requireAdmin);
@@ -45,21 +43,21 @@ app.get('/reports', async (c) => {
   const sp = c.req.query('status');
   const status = REPORT_STATUSES.includes(sp as ReportStatus) ? (sp as ReportStatus) : 'open';
 
-  // OPEN reports are returned GROUPED into one case per target, split by the
-  // distinct-reporter threshold: "needs action" (≥ threshold) vs "watching"
-  // (below — a lone/abusive reporter stays out of the way). Resolved/dismissed
-  // are returned as a flat history list (keyset-paginated). Target context is
+  // OPEN reports are returned GROUPED into one case per target. Only cases at or
+  // above the distinct-reporter threshold are surfaced; anything below stays
+  // hidden entirely until the admin lowers the threshold. Resolved/dismissed are
+  // returned as a flat history list (keyset-paginated). Target context is
   // batch-resolved (fixed query count) rather than per-row.
   if (status === 'open') {
     const { reportThreshold } = await getSettings(db);
     const cases = await listReportCases(db, 'open');
-    const ctx = await resolveReportTargets(db, cases);
-    const withCtx = cases.map((k: ReportCase) => ({ ...k, target: ctx.get(`${k.targetType}:${k.targetId}`)! }));
+    const visible = cases.filter((k: ReportCase) => k.distinctReporters >= reportThreshold);
+    const ctx = await resolveReportTargets(db, visible);
+    const withCtx = visible.map((k: ReportCase) => ({ ...k, target: ctx.get(`${k.targetType}:${k.targetId}`)! }));
     return c.json({
       mode: 'cases' as const,
       threshold: reportThreshold,
-      needsAction: withCtx.filter((k) => k.distinctReporters >= reportThreshold),
-      watching: withCtx.filter((k) => k.distinctReporters < reportThreshold),
+      cases: withCtx,
     });
   }
 
@@ -109,94 +107,22 @@ app.post('/reports/dismiss-target', async (c) => {
   return c.json({ ok: true, dismissed: n });
 });
 
-/* Bulk-clear stale low-signal "watching" cases on demand (the manual counterpart
- *  to the hourly cron sweep). body.olderThanDays > 0 limits to cases that haven't
- *  moved in that long; omit/0 clears every sub-threshold case now. */
-app.post('/reports/dismiss-watching', async (c) => {
-  const db = getDb(c);
-  const actor = c.var.user!;
-  const { reportThreshold } = await getSettings(db);
-  const body = (await c.req.json().catch(() => null)) as { olderThanDays?: unknown } | null;
-  const days = Number(body?.olderThanDays);
-  const cutoff = Number.isFinite(days) && days > 0 ? Date.now() - days * DAY : Date.now() + 1;
-  const n = await dismissStaleWatchingReports(db, reportThreshold, cutoff, actor.id, 'dismissed: low-signal case cleared by admin');
-  await logAdminAction(db, { actorId: actor.id, action: 'dismiss_watching', targetType: 'report', targetId: '', detail: { dismissed: n, olderThanDays: days > 0 ? days : 0 } });
-  return c.json({ ok: true, dismissed: n });
-});
-
-/* Moderation settings (report threshold + auto-hide threshold). */
+/* Moderation settings (report threshold). */
 app.get('/settings', async (c) => c.json(await getSettings(getDb(c))));
 app.put('/settings', async (c) => {
   const db = getDb(c);
   const actor = c.var.user!;
-  const body = (await c.req.json().catch(() => null)) as { reportThreshold?: unknown; autoHideThreshold?: unknown; contactEmail?: unknown } | null;
+  const body = (await c.req.json().catch(() => null)) as { reportThreshold?: unknown } | null;
   const cur = await getSettings(db);
   const clamp = (v: unknown, def: number) => {
     const n = Math.round(Number(v));
     return Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : def;
   };
   const reportThreshold = clamp(body?.reportThreshold, cur.reportThreshold);
-  // auto-hide must never be below the surface threshold.
-  const autoHideThreshold = Math.max(reportThreshold, clamp(body?.autoHideThreshold, cur.autoHideThreshold));
-  // Contact destination: accept a valid email or '' (clear → fall back to RESEND_FROM).
-  let contactEmail = cur.contactEmail;
-  if (typeof body?.contactEmail === 'string') {
-    const e = body.contactEmail.trim().slice(0, 254);
-    if (e === '' || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) contactEmail = e;
-    else return c.json({ error: 'invalid_email' }, 400);
-  }
-  const next = await updateSettings(db, { reportThreshold, autoHideThreshold, contactEmail });
+  const next = await updateSettings(db, { reportThreshold, contactEmail: cur.contactEmail });
   await invalidateSettingsCache(c.env.TRENDING_KV); // hot-path report POST reads the cache
   await logAdminAction(db, { actorId: actor.id, action: 'update_settings', targetType: 'settings', targetId: '', detail: { ...next } });
   return c.json(next);
-});
-
-/* ───────────── contact inbox ───────────── */
-
-app.get('/contact', async (c) => {
-  const statusParam = c.req.query('status');
-  const status = statusParam === 'new' || statusParam === 'replied' ? statusParam : undefined;
-  const before = Number(c.req.query('before')) || undefined;
-  const messages = await listContactMessages(getDb(c), { status, before, limit: 50 });
-  return c.json({ messages });
-});
-
-app.post('/contact/:id/reply', async (c) => {
-  const db = getDb(c);
-  const actor = c.var.user!;
-  const body = (await c.req.json().catch(() => null)) as { body?: unknown } | null;
-  const text = typeof body?.body === 'string' ? body.body.trim() : '';
-  if (!text) return c.json({ error: 'empty_reply' }, 400);
-  if (text.length > 8000) return c.json({ error: 'reply_too_long' }, 400);
-
-  const msg = await getContactMessage(db, c.req.param('id'));
-  if (!msg) return c.json({ error: 'not_found' }, 404);
-
-  // Send the reply to the visitor. Reply-To = the contact address so any follow-up
-  // routes back to the admin (via CF Email Routing in prod). Resend must succeed for
-  // a reply (unlike the fire-and-forget notify) — surface failure to the admin.
-  const { contactEmail } = await getSettings(db);
-  const { subject, html } = contactReplyHtml(text, msg.locale as 'ja' | 'en');
-  try {
-    await sendEmail({
-      apiKey: c.env.RESEND_API_KEY, from: c.env.RESEND_FROM, to: msg.email,
-      subject, html, replyTo: contactEmail || c.env.RESEND_FROM,
-    });
-  } catch {
-    return c.json({ error: 'send_failed' }, 502);
-  }
-  await markContactReplied(db, msg.id, actor.id);
-  await logAdminAction(db, { actorId: actor.id, action: 'reply_contact', targetType: 'contact', targetId: msg.id, detail: {} });
-  return c.json({ ok: true });
-});
-
-app.delete('/contact/:id', async (c) => {
-  const db = getDb(c);
-  const actor = c.var.user!;
-  const ok = await deleteContactMessage(db, c.req.param('id'));
-  if (!ok) return c.json({ error: 'not_found' }, 404);
-  await logAdminAction(db, { actorId: actor.id, action: 'delete_contact', targetType: 'contact', targetId: c.req.param('id'), detail: {} });
-  return c.json({ ok: true });
 });
 
 app.patch('/reports/:id', async (c) => {
