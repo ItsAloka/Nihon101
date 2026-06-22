@@ -37,7 +37,7 @@ function serializeHash(r) {
 // or '' to fall through to the SPA shell. Shared with the SPA navigator (app.jsx).
 export function ssrHref(r, loc) {
   switch (r.name) {
-    case "article": return `/${loc}/p/${r.slug}`;
+    case "article": return `/${loc}/p/${r.slug}${r.commentId ? `#comment-${r.commentId}` : ""}`;
     case "saved": return `/${loc}/saved`;
     case "compose": case "write": return r.editId ? `/${loc}/write?id=${r.editId}` : `/${loc}/write`;
     case "profile": return `/${loc}/me`;
@@ -49,6 +49,8 @@ export function ssrHref(r, loc) {
     case "trending": return `/${loc}/trending`;
     case "feed": return `/${loc}/for-you`;
     case "about": return `/${loc}/about`;
+    case "contact": return `/${loc}/contact`;
+    case "privacy": return `/${loc}/privacy`;
     default: return "";
   }
 }
@@ -159,6 +161,31 @@ export function HomeHeader({ locale, active = "home" }) {
     btns.forEach((b) => b.addEventListener("click", onClick));
     return () => btns.forEach((b) => b.removeEventListener("click", onClick));
   }, [currentUser]);
+
+  // Wire the SSR newsletter form (plain HTML from index.astro) to the real capture
+  // endpoint. On success, swap the form for the "you're on the list" note.
+  React.useEffect(() => {
+    const form = document.getElementById("nl-form");
+    if (!form) return;
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const input = form.querySelector('input[name="email"]');
+      const btn = form.querySelector("button");
+      const email = (input?.value || "").trim();
+      if (!email.includes("@")) return;
+      if (btn) { btn.disabled = true; btn.textContent = "…"; }
+      const finish = () => {
+        form.hidden = true;
+        const done = form.parentElement?.querySelector(".nl-done");
+        if (done) done.hidden = false;
+      };
+      window.N101_CONTENT.newsletterApi
+        .subscribe(email, form.getAttribute("data-locale") === "ja" ? "ja" : "en")
+        .then(finish).catch(finish); // dedupe still reads as success
+    };
+    form.addEventListener("submit", onSubmit);
+    return () => form.removeEventListener("submit", onSubmit);
+  }, []);
 
   // Dark mode: drive the whole page (SSR body via [data-mode], + footer island).
   React.useEffect(() => {

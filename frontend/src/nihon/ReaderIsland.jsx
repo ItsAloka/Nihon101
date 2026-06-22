@@ -71,6 +71,22 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
     return () => { live = false; };
   }, [postId]);
 
+  // Deep-link from a comment/reply notification (#comment-<id>): once comments are
+  // in the DOM, scroll to the target and flash it. Runs after comments load so the
+  // anchor exists. Mirrors Not Bagel's navToComment.
+  React.useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#comment-") || !comments.length) return;
+    const el = document.getElementById(hash.slice(1));
+    if (!el) return;
+    const t = setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.style.background = `color-mix(in oklab, ${p.accent} 18%, transparent)`;
+      setTimeout(() => { el.style.background = "transparent"; }, 1600);
+    }, 120);
+    return () => clearTimeout(t);
+  }, [comments.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Floating action pill: appears once the reader has scrolled into the body and
   // hides ("docks") the moment the in-flow engagement bar comes on screen — so it
   // never overlaps the bar/comments at the bottom.
@@ -127,7 +143,18 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
   };
   const reported = reportedIds.has(postId);
   const onAddComment = async (_slug, text, parentId) => {
-    try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => [...prev, toCommentView(c)]); } catch {}
+    // Optimistic: show the comment immediately, reconcile with the server row on
+    // success, drop it on failure. Mirrors the like/follow pattern.
+    const tmpId = "tmp_" + Math.random().toString(36).slice(2);
+    const optimistic = {
+      id: tmpId, parentId: parentId || null,
+      author: { slug: user.slug, handle: user.slug, avatarUrl: user.avatarUrl || null,
+        en: user.en, jp: user.jp, initials: user.initials, tint: user.tint },
+      text, ts: Date.now(), likes: 0, liked: false, _real: false, userId: user.id, _pending: true,
+    };
+    setComments((prev) => [...prev, optimistic]);
+    try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => prev.map((x) => (x.id === tmpId ? toCommentView(c) : x))); }
+    catch { setComments((prev) => prev.filter((x) => x.id !== tmpId)); }
   };
   const onLikeComment = async (_slug, cid) => {
     setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: !c.liked, likes: c.likes + (c.liked ? -1 : 1) } : c)));

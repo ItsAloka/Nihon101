@@ -261,19 +261,19 @@ const pageDesc = jp
       .author-card .rl { font-size: 11px; color: var(--inkFaint); letter-spacing: 0.08em; text-transform: uppercase; }
       .author-card .pc { font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); margin-top: 2px; }
 
-      /* newsletter (blurred, coming soon) */
+      /* newsletter (capture now, sender later) */
       .newsletter { margin-top: 96px; padding: 56px; border-radius: 24px; background: linear-gradient(135deg, var(--tint), color-mix(in oklab, var(--tint) 60%, var(--surface))); border: 1px solid var(--line); position: relative; overflow: hidden; }
-      .nl-inner { max-width: 600px; filter: blur(5px); pointer-events: none; user-select: none; }
+      .nl-inner { max-width: 600px; }
       .nl-inner .k { font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 14px; }
       .nl-inner h2 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(32px, 3.4vw, 48px); line-height: 1.05; letter-spacing: -0.02em; margin-bottom: 14px; }
       .nl-inner p { font-size: 16px; line-height: 1.6; color: var(--inkSoft); margin-bottom: 24px; }
       .nl-form { display: flex; gap: 10px; max-width: 520px; }
       .nl-form input { flex: 1; padding: 14px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-family: var(--fontBody); font-size: 15px; color: var(--ink); outline: none; }
-      .nl-form .btn { background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 14px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; border: none; }
+      .nl-form .btn { background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 14px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; }
+      .nl-form .btn:disabled { opacity: 0.6; cursor: default; }
+      .nl-done { max-width: 520px; padding: 14px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); font-family: var(--fontBody); font-size: 15px; color: var(--ink); line-height: 1.5; }
+      .nl-note { margin-top: 14px; font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
       .nl-hanko { position: absolute; top: 26px; right: 32px; width: 88px; height: 88px; border-radius: 14%; border: 2.5px solid var(--stamp); color: var(--stamp); display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 700; font-size: 40px; transform: rotate(-8deg); opacity: 0.85; }
-      .coming-soon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 2; }
-      .coming-soon .pill { background: color-mix(in oklab, var(--surface) 92%, transparent); backdrop-filter: blur(4px); border: 1px solid var(--line); border-radius: 999px; padding: 14px 28px; font-family: var(--fontDisplay); font-weight: 600; font-size: 18px; color: var(--ink); box-shadow: 0 20px 40px -20px rgba(26, 24, 23, 0.35); display: inline-flex; align-items: center; gap: 10px; }
-      .coming-soon .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--stamp); }
 
       @media (max-width: 980px) {
         .hero-grid, .second-grid, .feature-card { grid-template-columns: 1fr; }
@@ -485,20 +485,19 @@ const pageDesc = jp
         ))}
       </div>
 
-      <!-- Newsletter — UI kept, blurred, coming soon -->
+      <!-- Newsletter — capture now (the Sunday letter sender ships later) -->
       <section class="newsletter">
         <div class="nl-hanko">便</div>
-        <div class="nl-inner" aria-hidden="true">
+        <div class="nl-inner">
           <div class="k">{jp ? '毎週、おたより' : 'a slow weekly letter'}</div>
           <h2>{jp ? '日曜の朝に、一通だけ。' : 'One letter, every Sunday morning.'}</h2>
           <p>{jp ? '急がず、押し付けず。今週の三つの記事と、ひとつの小さな日本語の言葉を、お届けします。' : 'No urgency, no push. Three pieces from the week, and one small Japanese word we’ve been thinking about.'}</p>
-          <div class="nl-form">
-            <input type="email" disabled placeholder={jp ? 'メールアドレス' : 'you@somewhere.jp'} />
-            <button class="btn" disabled>{jp ? '登録する' : 'Subscribe'}</button>
-          </div>
-        </div>
-        <div class="coming-soon">
-          <span class="pill"><span class="dot"></span>{jp ? '近日公開 — もうすぐ届きます' : 'Coming soon'}</span>
+          <form class="nl-form" id="nl-form" data-locale={locale}>
+            <input type="email" name="email" required placeholder={jp ? 'メールアドレス' : 'you@somewhere.jp'} />
+            <button class="btn" type="submit">{jp ? '登録する' : 'Subscribe'}</button>
+          </form>
+          <div class="nl-done" hidden>{jp ? 'リストに登録しました。日曜のおたよりは準備中です。' : "You're on the list — the Sunday letter is coming soon."}</div>
+          <div class="nl-note">{jp ? '近日公開・スパムは送りません。' : 'Coming soon · no spam, ever.'}</div>
         </div>
       </section>
     </div>

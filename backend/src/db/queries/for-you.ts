@@ -90,7 +90,7 @@ async function computeAffinity(db: DB, userId: string, opts = SLOW): Promise<Aff
   const now = Date.now();
   const since = now - opts.window;
   // decay(created_at) = 0.5 ^ (age / halfLife) — folded into each event's weight.
-  const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${opts.halfLife}.0)`);
+  const decay = sql`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / (${opts.halfLife})::float)`;
   const rows = await db.execute(sql`
     WITH ev AS (
       SELECT post_id, base, base * (${decay}) AS weight FROM (
@@ -213,7 +213,7 @@ export function blendAffinity(slow: Affinity, fast: Affinity): Affinity {
  *  live so the feed is correct between trend-cron runs. */
 const trendExpr = () => sql<number>`
   (${posts.likes} + 2 * ${posts.comments} + 0.5 * ${posts.saves})::float
-  / power(((${Date.now()}::bigint - ${posts.publishedAt}) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
+  / power(((${Date.now()}::bigint - ${posts.publishedAt}) / (${HOUR})::float) + 2, 1.4)
 `;
 
 export type FeedCard = PostCardRow & { trend: number };

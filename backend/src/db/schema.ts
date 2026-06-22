@@ -382,8 +382,42 @@ export const adminSettings = pgTable('admin_settings', {
   id: text('id').primaryKey(),               // always 'singleton'
   reportThreshold: integer('report_threshold').notNull().default(3),
   autoHideThreshold: integer('auto_hide_threshold').notNull().default(6),
+  // Destination for the contact form. '' = fall back to RESEND_FROM at send time.
+  // Admin-editable from the moderation console Settings tab.
+  contactEmail: text('contact_email').notNull().default(''),
   updatedAt: ms('updated_at').notNull(),
 });
+
+// Contact-form submissions. Stored first (source of truth), then a notification is
+// emailed to the admin contact address; admin replies from the console via Resend.
+// reporterId-style: userId is set when a signed-in reader sends it, else null.
+export const contactMessages = pgTable('contact_messages', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  name: text('name').notNull().default(''),
+  email: text('email').notNull(),           // sender's reply-to
+  message: text('message').notNull(),
+  locale: text('locale').notNull().default('ja'),  // 'ja' | 'en' — reply language
+  status: text('status').notNull().default('new'), // 'new' | 'replied'
+  repliedAt: ms('replied_at'),
+  repliedBy: text('replied_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  index('contact_messages_status_idx').on(t.status, t.createdAt),
+]);
+
+// Pre-launch newsletter list (capture only — the weekly digest sender ships later,
+// once the list is worth sending to). One row per email; userId links the row to a
+// signed-in subscriber when present, but signup is open to logged-out visitors too.
+export const newsletterSubscribers = pgTable('newsletter_subscribers', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull(),
+  locale: text('locale').notNull().default('ja'),  // which language to send in
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('ux_newsletter_email').on(t.email),
+]);
 
 export type User = typeof users.$inferSelect;
 export type AdminSettings = typeof adminSettings.$inferSelect;
@@ -398,3 +432,5 @@ export type PostComment = typeof postComments.$inferSelect;
 export type Follow = typeof follows.$inferSelect;
 export type PostRead = typeof postReads.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
+export type ContactMessage = typeof contactMessages.$inferSelect;
+export type NewsletterSubscriber = typeof newsletterSubscribers.$inferSelect;

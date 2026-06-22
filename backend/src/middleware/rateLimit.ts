@@ -150,11 +150,15 @@ export const limits = {
   save:         rateLimit({ bucket: 'save',      limit: 60, windowSec: 60,   by: 'user' }),
   read:         rateLimit({ bucket: 'read-ping', limit: 120,windowSec: 60,   by: 'user' }),
   follow:       rateLimit({ bucket: 'follow',    limit: 30, windowSec: 60,   by: 'user' }),
+  notif:        rateLimit({ bucket: 'notif',     limit: 120,windowSec: 60,   by: 'user' }),  // bell read/clear
   report:       rateLimit({ bucket: 'report',    limit: 20, windowSec: 3600, by: 'user' }),
   profile:      rateLimit({ bucket: 'profile',   limit: 20, windowSec: 3600, by: 'user' }),
   upload:       rateLimit({ bucket: 'upload',    limit: 30, windowSec: 3600, by: 'user' }),
   translate:    rateLimit({ bucket: 'translate', limit: 30, windowSec: 3600, by: 'user' }),  // external DeepL+OpenAI cost
   category:     rateLimit({ bucket: 'category',  limit: 20, windowSec: 3600, by: 'user' }),
+  // ---- PUBLIC writes — KV, per IP (no auth required; spam/abuse guard + email-cost) ----
+  contact:      rateLimit({ bucket: 'contact',   limit: 5,  windowSec: 3600, by: 'ip' }),  // form → emails admin
+  newsletter:   rateLimit({ bucket: 'newsletter',limit: 10, windowSec: 3600, by: 'ip' }),  // signup spam
 
   // ---- READ — in-memory per isolate, per IP ----
   search:       rateLimit({ bucket: 'search',  limit: 60,  windowSec: 60, by: 'ip', store: 'memory' }),
