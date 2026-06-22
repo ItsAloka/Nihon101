@@ -17,11 +17,9 @@ import notifications from './routes/notifications';
 import trending from './routes/trending';
 import admin from './routes/admin';
 import reports from './routes/reports';
-import contact from './routes/contact';
 import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
-import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
 import { recomputeWeatherCache } from './lib/weather';
 import weather from './routes/weather';
 
@@ -109,7 +107,6 @@ app.route('/trending', trending);
 app.route('/weather', weather);
 app.route('/admin', admin);
 app.route('/reports', reports);
-app.route('/contact', contact);
 app.route('/newsletter', newsletter);
 
 export default {
@@ -125,14 +122,6 @@ export default {
         recomputeTrendingCache(db, env.TRENDING_KV),
         recomputeWeatherCache(env.TRENDING_KV),
       ];
-      // Hourly: retire stale low-signal "watching" reports (< threshold distinct
-      // reporters, untouched for 30d) so single-report cases don't accumulate.
-      if (new Date().getUTCMinutes() === 0) {
-        tasks.push((async () => {
-          const { reportThreshold } = await getSettings(db);
-          await dismissStaleWatchingReports(db, reportThreshold, Date.now() - 30 * 24 * 60 * 60 * 1000);
-        })().catch(() => {}));
-      }
       await Promise.all(tasks);
     } finally {
       await pool.end();

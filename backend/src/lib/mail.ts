@@ -78,38 +78,6 @@ export function loginOtpHtml(code: string, locale: 'ja' | 'en'): { subject: stri
   };
 }
 
-/** HTML-escape untrusted text before dropping it into an email body. */
-function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/** Notification to the admin contact address when a visitor submits the form. The
- *  visitor's address is set as Reply-To by the caller, so a reply goes straight back. */
-export function contactNotifyHtml(name: string, email: string, message: string): { subject: string; html: string } {
-  const who = name ? `${esc(name)} (${esc(email)})` : esc(email);
-  return {
-    subject: `Nihon101 — new contact message from ${name || email}`,
-    html: `<div style="font-family:sans-serif;color:#1A1817">
-      <h2 style="font-weight:600">New contact message</h2>
-      <p style="color:#5C544C">From: <strong>${who}</strong></p>
-      <div style="white-space:pre-wrap;border-left:3px solid #D63752;padding:8px 14px;margin:14px 0;color:#1A1817">${esc(message)}</div>
-      <p style="color:#5C544C;font-size:13px">Reply directly to this email, or from the admin console.</p>
-    </div>`,
-  };
-}
-
-/** The admin's reply, sent to the visitor. `body` is the admin's free text. */
-export function contactReplyHtml(body: string, locale: 'ja' | 'en'): { subject: string; html: string } {
-  const sign = locale === 'ja' ? 'Nihon101 より' : '— Nihon101';
-  return {
-    subject: locale === 'ja' ? 'Nihon101 — お問い合わせへの返信' : 'Nihon101 — re: your message',
-    html: `<div style="font-family:sans-serif;color:#1A1817">
-      <div style="white-space:pre-wrap;color:#1A1817">${esc(body)}</div>
-      <p style="color:#5C544C;font-size:13px;margin-top:18px">${sign}</p>
-    </div>`,
-  };
-}
-
 export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: string; html: string } {
   if (locale === 'ja') {
     return {

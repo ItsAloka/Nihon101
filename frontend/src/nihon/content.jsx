@@ -206,13 +206,6 @@ const newsletterApi = {
   subscribe: (email, locale) => req('/newsletter', { method: 'POST', body: { email, locale } }),
 };
 
-// Contact form (public send) + admin inbox (list/reply).
-const contactApi = {
-  send: (payload) => req('/contact', { method: 'POST', body: payload }),
-  list: (status) => req(`/admin/contact${status ? `?status=${status}` : ''}`, { auth: true }).then((r) => r.messages),
-  reply: (id, body) => req(`/admin/contact/${id}/reply`, { method: 'POST', auth: true, body: { body } }),
-};
-
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.
 const translate = (to, fields) =>
   req('/translate', { method: 'POST', auth: true, body: { to, fields } }).then((r) => r.fields);
@@ -246,6 +239,6 @@ function hydrateReal(po) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, contactApi, uploadImage, translate, hydrateReal };
+  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, uploadImage, translate, hydrateReal };
   window.N101_CATS = catStore;
 }

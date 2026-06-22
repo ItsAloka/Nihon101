@@ -159,9 +159,17 @@ export function listReportsForTarget(db: DB, targetType: string, targetId: strin
     .limit(200) as Promise<ReportDetailRow[]>;
 }
 
-export async function openReportCount(db: DB): Promise<number> {
-  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(reports).where(eq(reports.status, 'open'));
-  return row?.n ?? 0;
+/** Number of OPEN cases visible to the admin — distinct-reporter groups that meet
+ *  the threshold. Matches the Reports tab list exactly, so the tab badge can never
+ *  show a count while the list reads empty (below-threshold cases are hidden). */
+export async function openReportCount(db: DB, threshold = 1): Promise<number> {
+  const rows = await db
+    .select({ t: reports.targetType, id: reports.targetId })
+    .from(reports)
+    .where(eq(reports.status, 'open'))
+    .groupBy(reports.targetType, reports.targetId)
+    .having(sql`count(distinct ${reports.reporterId}) >= ${threshold}`);
+  return rows.length;
 }
 
 /** Account age (ms) a reporter must clear before their flag counts toward the
@@ -571,8 +579,9 @@ export async function adminStats(db: DB): Promise<{
   totalPosts: number; hiddenPosts: number; newContacts: number;
 }> {
   const dayAgo = now() - 24 * 60 * 60 * 1000;
+  const { reportThreshold } = await getSettings(db);
   const [openReports, activeBans, [u], [pub], [hid], [contacts]] = await Promise.all([
-    openReportCount(db),
+    openReportCount(db, reportThreshold),
     activeBanCount(db),
     db.select({ total: sql<number>`count(*)::int`, today: sql<number>`count(*) FILTER (WHERE ${users.createdAt} > ${dayAgo})::int` }).from(users),
     db.select({ n: sql<number>`count(*)::int` }).from(posts).where(eq(posts.status, 'published')),
