@@ -551,6 +551,29 @@ function NewsletterBlock({p, lang}) {
   );
 }
 
+// Placeholder card shown while a feed is loading — matches ArticleCard's frame.
+function CardSkeleton({p, compact=false}) {
+  return (
+    <div style={{ background:p.surface, border:`1.5px solid ${p.line}`, padding:14, borderRadius:22, display:'flex', flexDirection:'column', gap:12 }}>
+      <div className="skel" style={{ width:'100%', height:compact?200:240, borderRadius:12 }}/>
+      <div style={{display:'flex', gap:10}}>
+        <div className="skel" style={{ width:64, height:18, borderRadius:999 }}/>
+        <div className="skel" style={{ width:40, height:18 }}/>
+      </div>
+      <div className="skel" style={{ width:'90%', height:22 }}/>
+      <div className="skel" style={{ width:'70%', height:22 }}/>
+      {!compact && <><div className="skel" style={{ width:'100%', height:13 }}/><div className="skel" style={{ width:'85%', height:13 }}/></>}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'auto', paddingTop:12, borderTop:`1px solid ${p.line}`}}>
+        <div style={{display:'flex', gap:8, alignItems:'center'}}>
+          <div className="skel" style={{ width:24, height:24, borderRadius:'50%' }}/>
+          <div className="skel" style={{ width:80, height:12 }}/>
+        </div>
+        <div className="skel" style={{ width:50, height:12 }}/>
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
-  HomePage, ArticleCard, SectionHeader, AuthorGrid, NewsletterBlock, maxWrap,
+  HomePage, ArticleCard, CardSkeleton, SectionHeader, AuthorGrid, NewsletterBlock, maxWrap,
 });
