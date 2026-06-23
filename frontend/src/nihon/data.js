@@ -23,4 +23,4 @@ const CATEGORIES = [
 const AUTHORS = [];
 const POSTS = [];
 
-window.NIHON_DATA = { CATEGORIES, AUTHORS, POSTS };
+if (typeof window !== 'undefined') window.NIHON_DATA = { CATEGORIES, AUTHORS, POSTS };

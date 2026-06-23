@@ -4,7 +4,7 @@ import "./ui.jsx";
 import "./home.jsx";
 const { maxWrap, SectionHeader, ArticleCard, CategoryChip, AuthorChip, Avatar, Photo, Hanko,
         gradStyle, WaveMark, tintBg, ArrowLeft, ArrowRight, BookmarkIcon, HeartIcon,
-        CommentIcon, PencilIcon, TrendIcon, SearchIcon } = window;
+        CommentIcon, PencilIcon, TrendIcon, SearchIcon } = (typeof window !== 'undefined' ? window : {});
 
 // ====== ARTICLE ======
 // Reading-progress bar in its own component: it updates the bar width via a DOM
@@ -1286,7 +1286,7 @@ function ContactItem({p, lang, k, en, jp, body_en, body_jp, action}) {
   );
 }
 
-Object.assign(window, {
+if (typeof window !== 'undefined') Object.assign(window, {
   ArticlePage, ArticleLoader, CategoryPage, SearchPage, AuthorPage, AboutPage, SavedPage,
   CommentSection, ShareIcon, relTime, PrivacyPage, ContactPage,
 });

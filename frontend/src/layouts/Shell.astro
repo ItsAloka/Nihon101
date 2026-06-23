@@ -30,7 +30,7 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
     <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
     <link rel="alternate" hreflang={locale} href={`https://nihon101.com${canonicalPath}`} />
     <script is:inline>
-      try { document.documentElement.dataset.mode = localStorage.getItem('nihon.mode') || 'light'; } catch (e) {}
+      try { var __m = localStorage.getItem('nihon.mode') || 'light'; document.documentElement.dataset.mode = __m; document.documentElement.style.colorScheme = __m === 'dark' ? 'dark' : 'light'; } catch (e) {}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -169,8 +169,8 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
     </style>
   </head>
   <body>
-    <HomeHeader client:only="react" locale={locale} active={active} />
+    <HomeHeader client:load locale={locale} active={active} />
     <slot />
-    <HomeFooter client:only="react" locale={locale} />
+    <HomeFooter client:load locale={locale} />
   </body>
 </html>

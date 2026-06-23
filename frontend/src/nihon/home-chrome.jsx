@@ -6,10 +6,8 @@
 import React from "react";
 import "./api.jsx";     // window.N101_API
 import "./content.jsx"; // window.N101_CONTENT (notifApi, …)
-import "./ui.jsx";      // window.Nav, Footer, PALETTES, deriveDark
-import "./social.jsx";  // window.LoginModal (+ chains ui/home/screens globals)
-
-const { Nav, Footer, LoginModal, PALETTES, deriveDark } = window;
+import { Nav, Footer, PALETTES, deriveDark } from "./ui.jsx";
+import { LoginModal } from "./social.jsx"; // also chains ui/home/screens globals
 
 // Home-page hash routing: there's no SPA mounted here, so every Nav/Footer/avatar
 // action hard-navigates into the app shell at /<locale>/app#<hash> (home → /<locale>/).
