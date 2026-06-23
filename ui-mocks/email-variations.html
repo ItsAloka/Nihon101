@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nihon101 — Email design variations</title>
+<style>
+  :root{
+    --bg:#FBFAF7; --bg-2:#F4EEE4; --surface:#FFFFFF; --surface-2:#FBF7F0;
+    --border:#EAE2D6; --border-2:#E0D5C5;
+    --ink:#1A1817; --ink-2:#5C544C; --ink-3:#9C948A;
+    --rose:#D63752; --rose-strong:#BE2C45; --rose-soft:#FBE9EC;
+    --indigo:#3B5168; --indigo-soft:#E7ECF1;
+    --gold:#C9923B; --matcha:#7B8A53;
+    --serif:Georgia,'Times New Roman',serif;
+    --sans:'Helvetica Neue',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
+    --mono:'SFMono-Regular',ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg-2);font-family:var(--sans);color:var(--ink);
+    background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:22px 22px}
+  .page{max-width:1180px;margin:0 auto;padding:48px 24px 120px}
+  .page > header{text-align:center;margin-bottom:8px}
+  .page > header h1{font-family:var(--serif);font-size:34px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px}
+  .page > header h1 .dot{color:var(--rose)}
+  .page > header p{color:var(--ink-2);margin:0;font-size:15px}
+  .page > header code{font-family:var(--mono);background:var(--surface);border:1px solid var(--border);padding:1px 6px;border-radius:5px;font-size:13px}
+  .sec-title{display:flex;align-items:baseline;gap:12px;margin:64px 0 20px;
+    border-bottom:1px solid var(--border-2);padding-bottom:10px}
+  .sec-title h2{font-size:13px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--rose-strong);margin:0}
+  .sec-title span{font-size:13px;color:var(--ink-3)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:26px;align-items:start}
+  .variant > .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink-3);
+    margin:0 0 10px;display:flex;gap:8px;align-items:center}
+  .variant > .lbl b{color:var(--ink);font-weight:700;letter-spacing:0}
+  /* the "email" frame */
+  .mail{background:var(--surface);border:1px solid var(--border);border-radius:18px;overflow:hidden;
+    box-shadow:0 10px 30px -18px rgba(26,24,23,.35)}
+  .mail-pad{padding:34px 34px 30px}
+  .wordmark{font-family:var(--serif);font-weight:700;font-size:23px;letter-spacing:-.01em;color:var(--ink)}
+  .wordmark .dot{color:var(--rose)}
+  .et{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:-.01em;margin:18px 0 10px;color:var(--ink)}
+  .ep{font-size:14.5px;line-height:1.65;color:var(--ink-2);margin:0 0 14px}
+  .btn{display:inline-block;background:var(--rose);color:#fff;font-weight:700;font-size:14px;
+    text-decoration:none;padding:13px 26px;border-radius:11px}
+  .btn.indigo{background:var(--indigo)}
+  .foot{padding:16px 34px 22px;border-top:1px solid var(--border);background:var(--surface-2)}
+  .foot p{margin:0;font-size:11.5px;color:var(--ink-3);line-height:1.6}
+  .foot p + p{margin-top:6px}
+  .sig{color:var(--ink-3)!important}
+  .bloom{animation:bob 6s ease-in-out infinite;transform-origin:center}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-7px) rotate(3deg)}}
+  /* OTP code styles */
+  .chip{display:inline-block;background:var(--bg-2);border:1px solid var(--border);border-radius:13px;
+    padding:15px 26px;margin:4px 0 2px}
+  .chip span{font-family:var(--mono);font-size:33px;font-weight:700;letter-spacing:.32em;color:var(--ink)}
+  .tiles{display:flex;gap:9px;margin:8px 0 2px}
+  .tiles i{width:46px;height:58px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border-2);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:26px;
+    color:var(--ink);position:relative;font-style:normal}
+  .tiles i::after{content:"";position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%}
+  .tiles i:nth-child(odd)::after{background:var(--rose)}
+  .tiles i:nth-child(even)::after{background:var(--indigo)}
+  .ring{position:relative;width:150px;height:150px;margin:6px auto 10px}
+  .ring .code-in{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:800;font-size:22px;letter-spacing:.12em;color:#fff;
+    text-shadow:0 1px 3px rgba(0,0,0,.35)}
+  .center{text-align:center}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--rose-strong);margin:0 0 4px}
+  .expire{font-size:12px;color:var(--ink-3);margin:14px 0 0}
+  .hr{height:1px;background:var(--border);margin:20px 0}
+  /* banner header variant */
+  .banner{background:linear-gradient(135deg,var(--rose-soft),var(--indigo-soft));padding:26px 34px 20px;
+    display:flex;align-items:center;gap:13px}
+  .banner .wordmark{font-size:20px}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>nihon1<span class="dot">●</span>1 — email designs 🌸</h1>
+    <p>Pick the ones you like and I'll wire them into <code>backend/src/lib/mail.ts</code>. Every template ships in both <b>JA</b> + <b>EN</b>; English shown here.</p>
+  </header>
+
+  <!-- ============================ LOGIN OTP ============================ -->
+  <div class="sec-title"><h2>Login code (OTP)</h2><span>the 6-digit code — 3 variants</span></div>
+  <div class="grid">
+
+    <!-- OTP A: classic mono chip (matches current build) -->
+    <div class="variant">
+      <p class="lbl"><b>A.</b> Classic chip <span style="color:var(--matcha)">· current</span></p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <div class="et">Your login code</div>
+          <p class="ep">Enter the code below to finish signing in.</p>
+          <div class="chip"><span>428913</span></div>
+          <p class="expire">Expires in 10 minutes</p>
+        </div>
+        <div class="foot"><p>If you didn't try to sign in, ignore this — someone may have entered your password.</p></div>
+      </div>
+    </div>
+
+    <!-- OTP B: petal tiles -->
+    <div class="variant">
+      <p class="lbl"><b>B.</b> Petal tiles</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <p class="kicker" style="margin-top:18px">Login code</p>
+          <div class="et" style="margin-top:2px">Welcome back</div>
+          <div class="tiles" style="justify-content:center">
+            <i>4</i><i>2</i><i>8</i><i>9</i><i>1</i><i>3</i>
+          </div>
+          <p class="expire">Good for 10 minutes · one use only</p>
+        </div>
+        <div class="foot"><p>Not you? Ignore this email — your account is still safe.</p></div>
+      </div>
+    </div>
+
+    <!-- OTP C: code on the seal -->
+    <div class="variant">
+      <p class="lbl"><b>C.</b> Code on the seal (hanko)</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <p class="kicker" style="margin-top:18px">Your login code</p>
+          <div class="ring">
+            <svg class="bloom" viewBox="0 0 150 150" width="150" height="150" aria-hidden="true">
+              <circle cx="75" cy="75" r="60" fill="none" stroke="#BE2C45" stroke-width="5" opacity=".9"/>
+              <circle cx="75" cy="75" r="51" fill="#D63752"/>
+              <g opacity=".22" stroke="#fff" stroke-width="1">
+                <line x1="35" y1="55" x2="115" y2="55"/><line x1="35" y1="75" x2="115" y2="75"/><line x1="35" y1="95" x2="115" y2="95"/>
+                <line x1="55" y1="30" x2="55" y2="120"/><line x1="75" y1="30" x2="75" y2="120"/><line x1="95" y1="30" x2="95" y2="120"/>
+              </g>
+            </svg>
+            <div class="code-in">428913</div>
+          </div>
+          <p class="expire">Stamped & expires in 10 minutes</p>
+        </div>
+        <div class="foot"><p>Didn't request a code? Someone may have your password — ignore this and consider a reset.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ WELCOME ============================ -->
+  <div class="sec-title"><h2>Welcome</h2><span>sent on first signup — 2 variants</span></div>
+  <div class="grid">
+
+    <!-- Welcome A: sakura hero -->
+    <div class="variant">
+      <p class="lbl"><b>A.</b> Sakura hero</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <svg class="bloom" viewBox="0 0 160 160" width="118" height="118" aria-hidden="true">
+            <g transform="translate(80,80)">
+              <g fill="#FBE9EC" stroke="#D63752" stroke-width="3">
+                <path d="M0 -52 C 13 -38 13 -20 0 -10 C -13 -20 -13 -38 0 -52 Z" transform="rotate(0)"/>
+                <path d="M0 -52 C 13 -38 13 -20 0 -10 C -13 -20 -13 -38 0 -52 Z" transform="rotate(72)"/>
+                <path d="M0 -52 C 13 -38 13 -20 0 -10 C -13 -20 -13 -38 0 -52 Z" transform="rotate(144)"/>
+                <path d="M0 -52 C 13 -38 13 -20 0 -10 C -13 -20 -13 -38 0 -52 Z" transform="rotate(216)"/>
+                <path d="M0 -52 C 13 -38 13 -20 0 -10 C -13 -20 -13 -38 0 -52 Z" transform="rotate(288)"/>
+              </g>
+              <circle r="8" fill="#C9923B"/>
+              <g stroke="#C9923B" stroke-width="1.6" stroke-linecap="round">
+                <line x1="0" y1="0" x2="0" y2="-14"/><line x1="0" y1="0" x2="13" y2="-5"/>
+                <line x1="0" y1="0" x2="8" y2="11"/><line x1="0" y1="0" x2="-8" y2="11"/><line x1="0" y1="0" x2="-13" y2="-5"/>
+              </g>
+            </g>
+          </svg>
+          <div class="et">Welcome, Aloka.</div>
+          <p class="ep">You're in. Nihon101 is a quiet corner of the internet for Japan's culture, food, travel, language, anime, and history. Read at your own pace, follow writers you love, and publish a story of your own.</p>
+          <a class="btn" href="#">Start reading →</a>
+        </div>
+        <div class="foot"><p>If you didn't create this account, you can safely ignore this email.</p></div>
+      </div>
+    </div>
+
+    <!-- Welcome B: gradient banner -->
+    <div class="variant">
+      <p class="lbl"><b>B.</b> Gradient banner</p>
+      <div class="mail">
+        <div class="banner">
+          <span style="font-size:26px">🌸</span>
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+        </div>
+        <div class="mail-pad">
+          <p class="kicker">Welcome aboard</p>
+          <div class="et" style="margin-top:2px">Glad you're here, Aloka.</div>
+          <p class="ep">Thanks for joining. Three quiet things to try:</p>
+          <p class="ep" style="margin:0 0 6px">🔥 See what's trending across Japan today<br>✍️ Follow a writer or two<br>📝 Publish your first post whenever you're ready</p>
+          <div class="hr"></div>
+          <a class="btn" href="#">Explore Nihon101 →</a>
+        </div>
+        <div class="foot"><p>Not you? You can safely ignore this email — no account changes were made.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ VERIFY ============================ -->
+  <div class="sec-title"><h2>Verify email</h2><span>confirm address — 2 variants</span></div>
+  <div class="grid">
+
+    <!-- Verify A: simple CTA -->
+    <div class="variant">
+      <p class="lbl"><b>A.</b> Simple CTA</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <div class="et">Verify your email</div>
+          <p class="ep">One click and you're confirmed. This link expires in 24 hours.</p>
+          <a class="btn indigo" href="#">Verify email →</a>
+        </div>
+        <div class="foot"><p>If you didn't create this account, you can ignore this email.</p></div>
+      </div>
+    </div>
+
+    <!-- Verify B: seal stamp -->
+    <div class="variant">
+      <p class="lbl"><b>B.</b> Approved seal</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <div class="ring" style="width:96px;height:96px;margin:16px auto 6px">
+            <svg viewBox="0 0 96 96" width="96" height="96" aria-hidden="true">
+              <circle cx="48" cy="48" r="44" fill="var(--indigo-soft)" stroke="var(--indigo)" stroke-width="2" stroke-dasharray="5 5"/>
+              <path d="M32 49 l11 11 l22 -24" fill="none" stroke="var(--indigo)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="et" style="margin-top:4px">Almost there</div>
+          <p class="ep">Confirm your address to unlock publishing and comments. The link's good for 24 hours.</p>
+          <a class="btn indigo" href="#">Confirm my email →</a>
+        </div>
+        <div class="foot"><p>Didn't sign up? Ignore this and the account stays unverified.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ RESET ============================ -->
+  <div class="sec-title"><h2>Reset password</h2><span>forgot-password link — 2 variants</span></div>
+  <div class="grid">
+
+    <!-- Reset A: simple -->
+    <div class="variant">
+      <p class="lbl"><b>A.</b> Simple CTA</p>
+      <div class="mail">
+        <div class="mail-pad center">
+          <div class="wordmark">nihon1<span class="dot">●</span>1</div>
+          <div class="et">Reset your password</div>
+          <p class="ep">Click below to set a new password. This link expires in 1 hour.</p>
+          <a class="btn" href="#">Reset password →</a>
+        </div>
+        <div class="foot"><p>If you didn't request this, you can ignore this email — nothing changed.</p></div>
+      </div>
+    </div>
+
+    <!-- Reset B: with safety note -->
+    <div class="variant">
+      <p class="lbl"><b>B.</b> With safety note</p>
+      <div class="mail">
+        <div class="mail-pad">
+          <div class="wordmark center" style="text-align:center">nihon1<span class="dot">●</span>1</div>
+          <p class="kicker center" style="text-align:center;margin-top:16px">Password reset</p>
+          <div class="et center" style="text-align:center;margin-top:2px">Let's get you back in</div>
+          <p class="ep">We got a request to reset your password. Set a new one with the button below — the link works for the next hour.</p>
+          <p class="center" style="text-align:center;margin:0 0 4px"><a class="btn" href="#">Choose a new password →</a></p>
+          <div class="hr"></div>
+          <p class="ep" style="font-size:13px;margin:0">🔒 Didn't ask for this? Your password still works and nothing changed. You can safely delete this email.</p>
+        </div>
+        <div class="foot"><p>For your security, this link can only be used once.</p></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
