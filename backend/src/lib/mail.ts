@@ -1,6 +1,7 @@
-// Resend is used ONLY for transactional auth emails — password reset and email
-// verification (per plan — no newsletter, no notification emails). If no API key is
-// configured (local dev), we log the link to the console so the flow is testable.
+// Resend is used ONLY for transactional auth emails — welcome, password reset,
+// email verification, and login codes (per plan — no newsletter, no notification
+// emails). If no API key is configured (local dev), we log to the console so the
+// flow is testable.
 
 import { fetchWithTimeout } from './http';
 
@@ -31,50 +32,132 @@ export async function sendEmail({ apiKey, from, to, subject, html, replyTo }: Se
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Branded email shell. Table-based + fully inline styles for mail-client compat
+ * (Gmail/Outlook strip <style> and flexbox). The palette mirrors the site: paper
+ * background, ink text, the nihon1●1 wordmark with its rose dot, rose accents.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const INK = '#1A1817';
+const INK_SOFT = '#5C544C';
+const ROSE = '#D63752';
+const PAPER = '#F4EEE4';
+const CARD = '#FFFFFF';
+const LINE = '#EAE2D6';
+
+/** A primary call-to-action button (bulletproof-ish for Outlook via padding). */
+function button(href: string, label: string): string {
+  return `<a href="${href}" style="display:inline-block;background:${ROSE};color:#ffffff;font-weight:700;font-size:15px;text-decoration:none;padding:13px 28px;border-radius:10px;font-family:'Helvetica Neue',Arial,sans-serif">${label}</a>`;
+}
+
+/** A large mono code chip for OTP / login codes. */
+function codeChip(code: string): string {
+  return `<div style="display:inline-block;background:${PAPER};border:1px solid ${LINE};border-radius:12px;padding:16px 26px;margin:6px 0 4px">
+    <span style="font-family:'SFMono-Regular',Consolas,monospace;font-size:34px;font-weight:700;letter-spacing:0.32em;color:${INK}">${code}</span>
+  </div>`;
+}
+
+/** Wrap inner content in the branded card + header wordmark + footer. `inner`
+ * is already-trusted HTML built by the template functions below. */
+function shell(inner: string, footnote: string): string {
+  return `<!doctype html><html><body style="margin:0;padding:0;background:${PAPER}">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:32px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+        <tr><td align="center" style="padding:8px 0 22px">
+          <span style="font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:700;letter-spacing:-0.01em;color:${INK}">nihon1<span style="color:${ROSE}">●</span>1</span>
+        </td></tr>
+        <tr><td style="background:${CARD};border:1px solid ${LINE};border-radius:18px;padding:38px 40px">
+          ${inner}
+        </td></tr>
+        <tr><td align="center" style="padding:20px 16px 4px">
+          <p style="margin:0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;line-height:1.6;color:${INK_SOFT}">${footnote}</p>
+          <p style="margin:8px 0 0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;color:#9C948A">Nihon101 · a slow read on Japan · nihon101.com</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table></body></html>`;
+}
+
+/** Title + body paragraph(s) block, shared by every template. */
+function block(title: string, bodyHtml: string): string {
+  return `<h1 style="margin:0 0 14px;font-family:Georgia,'Times New Roman',serif;font-size:23px;font-weight:600;color:${INK}">${title}</h1>
+    <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;line-height:1.65;color:${INK_SOFT}">${bodyHtml}</div>`;
+}
+
+/** Escape HTML so a user-set display name can't inject markup into the email. */
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+export function welcomeEmailHtml(name: string, link: string, locale: 'ja' | 'en'): { subject: string; html: string } {
+  const who = esc(name?.trim() || (locale === 'ja' ? 'ようこそ' : 'there'));
+  if (locale === 'ja') {
+    return {
+      subject: 'Nihon101へようこそ 🌸',
+      html: shell(
+        block(`${who}さん、ようこそ。`,
+          `<p style="margin:0 0 16px">Nihon101へのご登録ありがとうございます。日本の文化・食・旅・言葉・アニメ・歴史を、ゆっくり読むための場所です。</p>
+           <p style="margin:0 0 24px">読むのはもちろん、あなた自身の物語を書いて公開することもできます。まずはホームを覗いてみてください。</p>
+           <p style="margin:0 0 8px">${button(link, 'はじめる')}</p>`),
+        '心当たりがない場合は、このメールを無視してください。',
+      ),
+    };
+  }
+  return {
+    subject: 'Welcome to Nihon101 🌸',
+    html: shell(
+      block(`Welcome, ${who}.`,
+        `<p style="margin:0 0 16px">Thanks for joining Nihon101 — a quiet corner of the internet for Japan's culture, food, travel, language, anime, and history.</p>
+         <p style="margin:0 0 24px">Read at your own pace, follow writers you love, and when you're ready, publish a story of your own.</p>
+         <p style="margin:0 0 8px">${button(link, 'Start reading')}</p>`),
+      "If you didn't create this account, you can safely ignore this email.",
+    ),
+  };
+}
+
 export function resetEmailHtml(link: string, locale: 'ja' | 'en'): { subject: string; html: string } {
   if (locale === 'ja') {
     return {
       subject: 'Nihon101 — パスワードの再設定',
-      html: `<div style="font-family:sans-serif;color:#1A1817">
-        <h2 style="font-weight:600">パスワードの再設定</h2>
-        <p>下のボタンから新しいパスワードを設定してください。リンクは1時間有効です。</p>
-        <p><a href="${link}" style="display:inline-block;background:#D63752;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">パスワードを再設定</a></p>
-        <p style="color:#5C544C;font-size:13px">心当たりがない場合は、このメールを無視してください。</p>
-      </div>`,
+      html: shell(
+        block('パスワードの再設定',
+          `<p style="margin:0 0 24px">下のボタンから新しいパスワードを設定してください。リンクは1時間有効です。</p>
+           <p style="margin:0">${button(link, 'パスワードを再設定')}</p>`),
+        '心当たりがない場合は、このメールを無視してください。',
+      ),
     };
   }
   return {
     subject: 'Nihon101 — Reset your password',
-    html: `<div style="font-family:sans-serif;color:#1A1817">
-      <h2 style="font-weight:600">Reset your password</h2>
-      <p>Click the button below to set a new password. This link expires in 1 hour.</p>
-      <p><a href="${link}" style="display:inline-block;background:#D63752;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Reset password</a></p>
-      <p style="color:#5C544C;font-size:13px">If you didn't request this, you can ignore this email.</p>
-    </div>`,
+    html: shell(
+      block('Reset your password',
+        `<p style="margin:0 0 24px">Click the button below to set a new password. This link expires in 1 hour.</p>
+         <p style="margin:0">${button(link, 'Reset password')}</p>`),
+      "If you didn't request this, you can ignore this email.",
+    ),
   };
 }
 
 export function loginOtpHtml(code: string, locale: 'ja' | 'en'): { subject: string; html: string } {
-  const codeBox = `<p style="font-family:monospace;font-size:32px;font-weight:700;letter-spacing:0.3em;color:#1A1817;margin:18px 0">${code}</p>`;
   if (locale === 'ja') {
     return {
       subject: `Nihon101 — ログインコード ${code}`,
-      html: `<div style="font-family:sans-serif;color:#1A1817">
-        <h2 style="font-weight:600">ログインコード</h2>
-        <p>下のコードを入力してログインを完了してください。10分間有効です。</p>
-        ${codeBox}
-        <p style="color:#5C544C;font-size:13px">心当たりがない場合は、このメールを無視してください。誰かがあなたのパスワードを入力した可能性があります。</p>
-      </div>`,
+      html: shell(
+        block('ログインコード',
+          `<p style="margin:0 0 6px">下のコードを入力してログインを完了してください。10分間有効です。</p>
+           ${codeChip(code)}`),
+        '心当たりがない場合は、このメールを無視してください。誰かがあなたのパスワードを入力した可能性があります。',
+      ),
     };
   }
   return {
     subject: `Nihon101 — Your login code ${code}`,
-    html: `<div style="font-family:sans-serif;color:#1A1817">
-      <h2 style="font-weight:600">Your login code</h2>
-      <p>Enter the code below to finish signing in. It expires in 10 minutes.</p>
-      ${codeBox}
-      <p style="color:#5C544C;font-size:13px">If you didn't try to sign in, ignore this email — someone may have entered your password.</p>
-    </div>`,
+    html: shell(
+      block('Your login code',
+        `<p style="margin:0 0 6px">Enter the code below to finish signing in. It expires in 10 minutes.</p>
+         ${codeChip(code)}`),
+      "If you didn't try to sign in, ignore this email — someone may have entered your password.",
+    ),
   };
 }
 
@@ -82,21 +165,21 @@ export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: s
   if (locale === 'ja') {
     return {
       subject: 'Nihon101 — メールアドレスの確認',
-      html: `<div style="font-family:sans-serif;color:#1A1817">
-        <h2 style="font-weight:600">メールアドレスの確認</h2>
-        <p>下のボタンを押して、メールアドレスの確認を完了してください。リンクは24時間有効です。</p>
-        <p><a href="${link}" style="display:inline-block;background:#D63752;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">メールを確認</a></p>
-        <p style="color:#5C544C;font-size:13px">心当たりがない場合は、このメールを無視してください。</p>
-      </div>`,
+      html: shell(
+        block('メールアドレスの確認',
+          `<p style="margin:0 0 24px">下のボタンを押して、メールアドレスの確認を完了してください。リンクは24時間有効です。</p>
+           <p style="margin:0">${button(link, 'メールを確認')}</p>`),
+        '心当たりがない場合は、このメールを無視してください。',
+      ),
     };
   }
   return {
     subject: 'Nihon101 — Verify your email',
-    html: `<div style="font-family:sans-serif;color:#1A1817">
-      <h2 style="font-weight:600">Verify your email</h2>
-      <p>Click the button below to confirm your email address. This link expires in 24 hours.</p>
-      <p><a href="${link}" style="display:inline-block;background:#D63752;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Verify email</a></p>
-      <p style="color:#5C544C;font-size:13px">If you didn't create this account, you can ignore this email.</p>
-    </div>`,
+    html: shell(
+      block('Verify your email',
+        `<p style="margin:0 0 24px">Click the button below to confirm your email address. This link expires in 24 hours.</p>
+         <p style="margin:0">${button(link, 'Verify email')}</p>`),
+      "If you didn't create this account, you can ignore this email.",
+    ),
   };
 }

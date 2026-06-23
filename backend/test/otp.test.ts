@@ -17,7 +17,7 @@ async function withCode<T>(fn: () => Promise<T>): Promise<{ result: T; code: str
   console.log = (...a: unknown[]) => { lines.push(a.map(String).join(' ')); };
   try {
     const result = await fn();
-    const m = lines.join('\n').match(/margin:18px 0">(\d{6})</);
+    const m = lines.join('\n').match(/letter-spacing:0\.32em;color:#1A1817">(\d{6})</);
     return { result, code: m ? m[1]! : '' };
   } finally { console.log = orig; }
 }

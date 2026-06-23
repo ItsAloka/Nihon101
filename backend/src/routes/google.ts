@@ -10,6 +10,7 @@ import { startSession } from '../lib/session';
 import { uniqueHandle } from '../db/queries/users';
 import { limits } from '../middleware/rateLimit';
 import { fetchWithTimeout } from '../lib/http';
+import { sendEmail, welcomeEmailHtml } from '../lib/mail';
 
 const google = new Hono<AppEnv>();
 const STATE_COOKIE = 'n101_oauth';
@@ -105,6 +106,12 @@ google.get('/callback', limits.oauth, async (c) => {
         createdAt: now(),
         updatedAt: now(),
       });
+      // One-time welcome email on first Google signup (background, best-effort).
+      const { subject, html } = welcomeEmailHtml(name, home, locale);
+      c.executionCtx.waitUntil(
+        sendEmail({ apiKey: c.env.RESEND_API_KEY, from: c.env.RESEND_FROM, to: email, subject, html })
+          .catch((e: unknown) => console.error('[welcome] send failed', e)),
+      );
     }
     await db.insert(googleLinks).values({
       id: id('gl'),

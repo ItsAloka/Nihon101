@@ -9,7 +9,7 @@ import { id } from '../lib/ids';
 import { randomToken, randomDigits, hashToken } from '../lib/crypto';
 import { signAccess, signOtpTicket, verifyOtpTicket } from '../lib/tokens';
 import { clearRefreshCookie, readRefreshCookie, setTrustedDeviceCookie, readTrustedDeviceCookie } from '../lib/cookies';
-import { sendEmail, resetEmailHtml, verifyEmailHtml, loginOtpHtml } from '../lib/mail';
+import { sendEmail, resetEmailHtml, verifyEmailHtml, loginOtpHtml, welcomeEmailHtml } from '../lib/mail';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { startSession, revokeFamily } from '../lib/session';
@@ -133,6 +133,15 @@ function emailVerification(c: any, to: string, link: string, loc: 'ja' | 'en'): 
   );
 }
 
+/** Fire the one-time welcome email on account creation (background, best-effort). */
+export function welcomeEmail(c: any, to: string, name: string, loc: 'ja' | 'en'): void {
+  const { subject, html } = welcomeEmailHtml(name, `${c.env.FRONTEND_ORIGIN}/${loc}/`, loc);
+  c.executionCtx.waitUntil(
+    sendEmail({ apiKey: c.env.RESEND_API_KEY, from: c.env.RESEND_FROM, to, subject, html })
+      .catch((e: unknown) => console.error('[welcome] send failed', e)),
+  );
+}
+
 /** Ban gate, self-healing. Permanent (bannedUntil null) or still-in-window →
  *  blocked. An expired timed ban auto-lifts (clears the mirrored user-row flag) so
  *  the next auth succeeds without an admin action. Called on login + refresh, so a
@@ -174,6 +183,7 @@ auth.post('/register', limits.register, async (c) => {
   // in immediately; emailVerified flips once they click the link.
   const link = await createVerificationLink(c, userId, loc);
   emailVerification(c, mail, link, loc);
+  welcomeEmail(c, mail, display, loc);
   await startSession(c, userId);
   const access = await signAccess(c.env.JWT_SECRET, u!);
   return c.json({ access, user: publicUser(u) }, 201);
