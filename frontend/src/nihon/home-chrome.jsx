@@ -70,7 +70,11 @@ function paletteFor(mode) {
 export function HomeHeader({ locale, active = "home" }) {
   const loc = locale === "ja" ? "ja" : "en";
   const lang = loc === "ja" ? "jp" : "en";
-  const [mode, setMode] = React.useState(readMode);
+  // Start 'light' to match the server render (avoids a React hydration mismatch),
+  // then apply the viewer's saved mode on mount. The header/footer backgrounds use
+  // CSS vars so they already paint in the right theme before this runs.
+  const [mode, setMode] = React.useState('light');
+  React.useEffect(() => { setMode(readMode()); }, []);
   const [currentUser, setCurrentUser] = React.useState(null);
   const [savedCount, setSavedCount] = React.useState(0);
   const [loginOpen, setLoginOpen] = React.useState(false);
@@ -221,10 +225,10 @@ export function HomeHeader({ locale, active = "home" }) {
 // ------- Footer island -------
 export function HomeFooter({ locale }) {
   const lang = locale === "ja" ? "jp" : "en";
-  const [mode, setMode] = React.useState(() => {
-    try { return document.documentElement.dataset.mode || readMode(); } catch (e) { return "light"; }
-  });
+  // Start 'light' to match SSR (no hydration mismatch); apply real mode on mount.
+  const [mode, setMode] = React.useState("light");
   React.useEffect(() => {
+    try { setMode(document.documentElement.dataset.mode || readMode()); } catch (e) {}
     const h = (e) => setMode((e && e.detail) || readMode());
     window.addEventListener("nihon:mode", h);
     return () => window.removeEventListener("nihon:mode", h);
