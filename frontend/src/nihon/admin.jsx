@@ -64,6 +64,7 @@ const ICONS = {
   history: <><circle cx="12" cy="12" r="10" /><path d="M12 7v5l3 2" /></>,
   chevron: <path d="M6 9l6 6 6-6" />,
   chevronR: <path d="M9 6l6 6-6 6" />,
+  tag: <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><path d="M7 7h.01" /></>,
 };
 function Ic({ name, size = 16 }) {
   return (
@@ -204,6 +205,7 @@ export default function AdminConsole({ locale }) {
     ["posts", T("記事", "Posts")(loc), "file"],
     ["users", T("ユーザー", "Users")(loc), "users"],
     ["media", T("メディア", "Media")(loc), "image"],
+    ["content", T("カテゴリ・タグ", "Content")(loc), "tag"],
     ["featured", T("注目記事", "Featured")(loc), "star"],
     ["settings", T("設定", "Settings")(loc), "sliders"],
     ["audit", T("監査ログ", "Audit")(loc), "clipboard"],
@@ -227,6 +229,7 @@ export default function AdminConsole({ locale }) {
       {tab === "posts" && <Posts loc={loc} api={api} onChange={refreshStats} />}
       {tab === "users" && <Users loc={loc} api={api} />}
       {tab === "media" && <Media loc={loc} api={api} />}
+      {tab === "content" && <Content loc={loc} api={api} />}
       {tab === "featured" && <Featured loc={loc} api={api} />}
       {tab === "settings" && <Settings loc={loc} api={api} />}
       {tab === "audit" && <Audit loc={loc} api={api} />}
@@ -727,6 +730,110 @@ function Media({ loc, api }) {
             <span className="adm-pill red">{T("未参照", "orphan")(loc)}</span>
           </label>
         ))}
+    </div>
+  );
+}
+
+/* ───────────── Content: categories + tags ───────────── */
+const TINTS = ["rose", "amber", "blue", "lilac", "peach", "sage", "clay", "mauve", "sky", "cream"];
+const TINT_HEX = {
+  rose: "#FBC5CC", amber: "#FFD27A", blue: "#A6C7F0", lilac: "#D6B8F0", peach: "#FBB58B",
+  sage: "#B6D58E", clay: "#E89A7E", mauve: "#D89DBE", sky: "#9BC2EE", cream: "#FFE6B5",
+};
+
+function Content({ loc, api }) {
+  const [cats, setCats] = React.useState(null);
+  const [tags, setTags] = React.useState(null);
+  const load = React.useCallback(() => {
+    api("/admin/categories").then((d) => setCats(d.categories)).catch(() => setCats([]));
+    api("/admin/tags").then((d) => setTags(d.tags)).catch(() => setTags([]));
+  }, [api]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const saveCat = async (id, patch) => {
+    try { await api(`/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify(patch) }); emitToast(T("カテゴリを保存しました。", "Category saved.")(loc), "success"); load(); }
+    catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
+  };
+  const delCat = async (c) => {
+    if (c.postCount > 0) return emitToast(T(`「${c.labelEn}」には ${c.postCount} 件の記事があり削除できません。`, `“${c.labelEn}” has ${c.postCount} post(s) — can't delete.`)(loc), "error");
+    const ok = await confirmDialog({ loc, danger: true, confirmLabel: T("削除", "Delete")(loc), title: T(`「${c.labelEn}」を削除？`, `Delete “${c.labelEn}”?`)(loc), message: T("空のカテゴリのみ削除できます。", "Only empty categories can be deleted.")(loc) });
+    if (!ok) return;
+    try { await api(`/admin/categories/${c.id}`, { method: "DELETE" }); emitToast(T("カテゴリを削除しました。", "Category deleted.")(loc), "success"); load(); }
+    catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
+  };
+  const renameTag = async (id, label) => {
+    try { await api(`/admin/tags/${id}`, { method: "PATCH", body: JSON.stringify({ label }) }); emitToast(T("タグ名を変更しました。", "Tag renamed.")(loc), "success"); load(); }
+    catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
+  };
+  const delTag = async (t) => {
+    if (t.postCount > 0) return emitToast(T(`#${t.label} は ${t.postCount} 件の記事で使用中のため削除できません。`, `#${t.label} is on ${t.postCount} post(s) — can't delete.`)(loc), "error");
+    const ok = await confirmDialog({ loc, danger: true, confirmLabel: T("削除", "Delete")(loc), title: T(`#${t.label} を削除？`, `Delete #${t.label}?`)(loc), message: T("未使用のタグのみ削除できます。", "Only unused tags can be deleted.")(loc) });
+    if (!ok) return;
+    try { await api(`/admin/tags/${t.id}`, { method: "DELETE" }); emitToast(T("タグを削除しました。", "Tag deleted.")(loc), "success"); load(); }
+    catch (e) { emitToast(e.code || e.message || "Failed", "error"); }
+  };
+
+  return (
+    <div>
+      <TabHead icon="tag" title={T("カテゴリ・タグ", "Content")(loc)}
+        sub={T("カテゴリのラベル・漢字・色を編集します。タグの名前変更・削除も可能です。使用中のカテゴリ・タグは削除できません。", "Edit category labels, kanji, and colours. Rename or remove tags. In-use categories and tags can't be deleted.")(loc)} />
+      <div className="adm-col-h">{T("カテゴリ", "Categories")(loc)}</div>
+      {cats === null ? <div className="adm-empty">…</div>
+        : !cats.length ? <div className="adm-empty">{T("カテゴリなし", "No categories")(loc)}</div>
+        : cats.map((c) => <CatRow key={c.id} loc={loc} cat={c} onSave={saveCat} onDelete={delCat} />)}
+
+      <div className="adm-col-h" style={{ marginTop: 26 }}>{T("タグ", "Tags")(loc)}</div>
+      {tags === null ? <div className="adm-empty">…</div>
+        : !tags.length ? <div className="adm-empty">{T("タグなし", "No tags")(loc)}</div>
+        : tags.map((t) => <TagRow key={t.id} loc={loc} tag={t} onRename={renameTag} onDelete={delTag} />)}
+    </div>
+  );
+}
+
+function CatRow({ loc, cat, onSave, onDelete }) {
+  const [labelEn, setLabelEn] = React.useState(cat.labelEn);
+  const [labelJa, setLabelJa] = React.useState(cat.labelJa);
+  const [kanji, setKanji] = React.useState(cat.kanji || "");
+  const [tint, setTint] = React.useState(cat.tint);
+  const dirty = labelEn.trim() !== cat.labelEn || labelJa.trim() !== cat.labelJa || kanji.trim() !== (cat.kanji || "") || tint !== cat.tint;
+  return (
+    <div className="adm-card" style={{ padding: "14px 16px" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ width: 30, height: 30, borderRadius: 8, flexShrink: 0, background: TINT_HEX[tint] || "var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#3a2a2a" }}>{kanji || "•"}</span>
+        <input className="adm-in" style={{ maxWidth: 180, height: 36 }} value={labelEn} maxLength={40} placeholder="English label" onChange={(e) => setLabelEn(e.target.value)} />
+        <input className="adm-in" style={{ maxWidth: 140, height: 36 }} value={labelJa} maxLength={40} placeholder="日本語" onChange={(e) => setLabelJa(e.target.value)} />
+        <input className="adm-in" style={{ maxWidth: 56, height: 36, textAlign: "center" }} value={kanji} maxLength={2} placeholder="漢" onChange={(e) => setKanji(e.target.value)} />
+        <span className="adm-mono" style={{ marginLeft: "auto" }}>{cat.postCount} {T("記事", cat.postCount === 1 ? "post" : "posts")(loc)}</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        {TINTS.map((h) => (
+          <button key={h} title={h} onClick={() => setTint(h)}
+            style={{ width: 22, height: 22, borderRadius: "50%", background: TINT_HEX[h], cursor: "pointer",
+              border: tint === h ? "2px solid var(--ink)" : "2px solid transparent" }} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="adm-btn primary" disabled={!dirty} onClick={() => onSave(cat.id, { labelEn: labelEn.trim(), labelJa: labelJa.trim(), kanji: kanji.trim(), tint })}>{T("保存", "Save")(loc)}</button>
+        <button className="adm-btn danger" disabled={cat.postCount > 0} onClick={() => onDelete(cat)}>{T("削除", "Delete")(loc)}</button>
+      </div>
+    </div>
+  );
+}
+
+function TagRow({ loc, tag, onRename, onDelete }) {
+  const [label, setLabel] = React.useState(tag.label);
+  const dirty = label.trim() !== tag.label && label.trim().length > 0;
+  return (
+    <div className="adm-card adm-row" style={{ padding: "10px 14px" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+        <span className="adm-muted">#</span>
+        <input className="adm-in" style={{ maxWidth: 220, height: 34 }} value={label} maxLength={50} onChange={(e) => setLabel(e.target.value)} />
+        <span className="adm-mono">{tag.postCount}</span>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="adm-btn primary" disabled={!dirty} onClick={() => onRename(tag.id, label.trim())}>{T("名前変更", "Rename")(loc)}</button>
+        <button className="adm-btn danger" disabled={tag.postCount > 0} onClick={() => onDelete(tag)}>{T("削除", "Delete")(loc)}</button>
+      </div>
     </div>
   );
 }

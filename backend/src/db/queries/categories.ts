@@ -45,7 +45,10 @@ export interface NewCategoryInput {
   createdBy: string;
 }
 
-const TINTS = ['rose', 'amber', 'blue', 'lilac', 'peach', 'sage', 'clay', 'mauve', 'sky'];
+const TINTS = ['rose', 'amber', 'blue', 'lilac', 'peach', 'sage', 'clay', 'mauve', 'sky', 'cream'];
+
+/** The valid category tints (admin colour picker + create). */
+export const CATEGORY_TINTS = TINTS;
 
 /** Create a user category. Derives a unique slug id from the English label. */
 export async function createCategory(db: DB, input: NewCategoryInput): Promise<CategoryRow> {
@@ -68,6 +71,29 @@ export async function createCategory(db: DB, input: NewCategoryInput): Promise<C
   };
   await db.insert(categories).values(row);
   return row;
+}
+
+/** Admin: edit a category's bilingual labels, kanji glyph, and/or tint. Returns
+ * the new row, or undefined if the id doesn't exist. Only passed fields change. */
+export async function updateCategory(
+  db: DB,
+  id: string,
+  patch: { labelEn?: string; labelJa?: string; kanji?: string; tint?: string },
+): Promise<CategoryRow | undefined> {
+  const set: Partial<CategoryRow> = {};
+  if (patch.labelEn !== undefined) set.labelEn = patch.labelEn.trim();
+  if (patch.labelJa !== undefined) set.labelJa = patch.labelJa.trim();
+  if (patch.kanji !== undefined) set.kanji = patch.kanji.trim();
+  if (patch.tint !== undefined) set.tint = patch.tint;
+  if (!Object.keys(set).length) return getCategoryById(db, id);
+  const [row] = await db.update(categories).set(set).where(eq(categories.id, id)).returning();
+  return row;
+}
+
+/** Admin: delete a category. The posts FK is ON DELETE RESTRICT, so a category
+ * with posts can't be removed — guarded by the caller via postCount. */
+export async function deleteCategory(db: DB, id: string): Promise<void> {
+  await db.delete(categories).where(eq(categories.id, id));
 }
 
 /** Bump a category's published-post counter by delta (never below 0). */
