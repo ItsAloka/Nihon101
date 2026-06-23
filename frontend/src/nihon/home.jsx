@@ -1,7 +1,7 @@
 // home.jsx — landing page
 import React from "react";
 import "./ui.jsx";
-const { WavyBG, CategoryChip, AuthorChip, Photo, Hanko, WaveMark, gradStyle, ArrowRight, BookmarkIcon, HeartIcon, CommentIcon, tintBg } = window;
+const { WavyBG, CategoryChip, AuthorChip, Photo, Hanko, WaveMark, gradStyle, ArrowRight, BookmarkIcon, HeartIcon, CommentIcon, tintBg } = (typeof window !== 'undefined' ? window : {});
 
 function HomePage({ p, lang, posts, t, savedSet, likedMap, onLike, onSave }) {
   const D = window.NIHON_DATA;
@@ -574,6 +574,6 @@ function CardSkeleton({p, compact=false}) {
   );
 }
 
-Object.assign(window, {
+if (typeof window !== 'undefined') Object.assign(window, {
   HomePage, ArticleCard, CardSkeleton, SectionHeader, AuthorGrid, NewsletterBlock, maxWrap,
 });

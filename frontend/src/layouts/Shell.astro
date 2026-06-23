@@ -169,8 +169,8 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
     </style>
   </head>
   <body>
-    <HomeHeader client:only="react" locale={locale} active={active} />
+    <HomeHeader client:load locale={locale} active={active} />
     <slot />
-    <HomeFooter client:only="react" locale={locale} />
+    <HomeFooter client:load locale={locale} />
   </body>
 </html>

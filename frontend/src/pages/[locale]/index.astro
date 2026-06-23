@@ -284,7 +284,7 @@ const pageDesc = jp
     </style>
   </head>
   <body>
-    <HomeHeader client:only="react" locale={locale} />
+    <HomeHeader client:load locale={locale} />
 
     <div class="ribbon">
       <div class="wrap">
@@ -502,7 +502,7 @@ const pageDesc = jp
       </section>
     </div>
 
-    <HomeFooter client:only="react" locale={locale} />
+    <HomeFooter client:load locale={locale} />
 
     <script>
       // Hero carousel — all slides are SSR'd; this only toggles which is visible.
