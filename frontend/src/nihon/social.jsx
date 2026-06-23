@@ -1280,6 +1280,8 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   // and topic chips — all real. Refetch when sign-in or the follow set changes so
   // freshly-followed writers' posts get pulled into the server-side pool.
   const [posts, setPosts] = React.useState(null);   // po[] | null=loading (current page)
+  const [feedErr, setFeedErr] = React.useState(false); // fetch failed → show retry, not a fake empty
+  const [reloadKey, setReloadKey] = React.useState(0); // bump to refetch the current page
   const [personalized, setPersonalized] = React.useState(false);
   const [page, setPage] = React.useState(0);        // 0-based page index
   const [total, setTotal] = React.useState(0);      // total posts → page count
@@ -1296,12 +1298,12 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   // Fetch the current page (replace, not append — numbered pagination).
   React.useEffect(()=>{
     let live = true;
-    setPosts(null);
+    setPosts(null); setFeedErr(false);
     feedApi.forYou({ limit: PAGE, page })
       .then(r=>{ if(live){ setPosts(r.feed.map(hydrateReal)); setPersonalized(!!r.personalized); setTotal(r.total ?? 0); } })
-      .catch(()=>{ if(live){ setPosts([]); setTotal(0); } });
+      .catch(()=>{ if(live){ setFeedErr(true); setPosts([]); setTotal(0); } });
     return ()=>{ live = false; };
-  }, [currentUser, follows.size, page]);
+  }, [currentUser, follows.size, page, reloadKey]);
 
   const goPage = React.useCallback((n)=>{
     setPage(Math.max(0, Math.min(n, totalPages-1)));
@@ -1436,7 +1438,19 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
       <section style={{marginBottom:48}}>
         <FeedHeading p={p} lang={lang} en="Picked for you" jp="あなたへのおすすめ" kicker_en={hasAff?'follows · trending · your taste':'trending this week'} kicker_jp={hasAff?'フォロー・人気・好みから':'今週の人気'}/>
         {loading ? (
-          <div style={{fontFamily:'var(--fontBody)', fontSize:15, color:p.inkFaint, padding:'8px 0'}}>{lang==='jp'?'読み込み中…':'Loading…'}</div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+            {Array.from({length:6}).map((_,i)=>(<window.CardSkeleton key={i} p={p}/>))}
+          </div>
+        ) : feedErr ? (
+          <div style={{padding:'56px 0', textAlign:'center'}}>
+            <div style={{fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:20, color:p.inkSoft, marginBottom:16}}>
+              {lang==='jp'?'フィードを読み込めませんでした。':"Couldn't load your feed."}
+            </div>
+            <button onClick={()=>setReloadKey(k=>k+1)} style={{
+              appearance:'none', border:`1px solid ${p.ink}`, background:p.ink, color:p.surface,
+              padding:'10px 24px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600,
+            }}>{lang==='jp'?'再試行':'Try again'}</button>
+          </div>
         ) : (
           <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
             {stream.map(po=>(<RecCard key={po.slug} po={po}/>))}

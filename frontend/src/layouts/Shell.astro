@@ -93,6 +93,11 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
       .sort-pill { padding: 7px 15px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--inkSoft); white-space: nowrap; }
       .sort-pill.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px color-mix(in oklab, var(--ink) 12%, transparent); }
 
+      /* skeleton loading */
+      @keyframes skelShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      .skel { background: linear-gradient(90deg, color-mix(in oklab, var(--ink) 7%, transparent) 25%, color-mix(in oklab, var(--ink) 13%, transparent) 37%, color-mix(in oklab, var(--ink) 7%, transparent) 63%); background-size: 200% 100%; animation: skelShimmer 1.4s ease-in-out infinite; border-radius: 8px; }
+      @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+
       /* pagination */
       .pager { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 56px 0 8px; flex-wrap: wrap; }
       .pager a { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; font-weight: 600; color: var(--ink); }
