@@ -181,6 +181,7 @@ const canonical = `/${locale}/p/${post.slug}`;
     .rd-body :global(li) { margin: 6px 0; }
     .rd-body :global(li::marker) { color: var(--stamp); }
     .rd-body :global(a) { color: var(--stamp); text-decoration: underline; }
+    .rd-body :global(mark) { background: color-mix(in oklab, var(--stamp) 32%, transparent); color: inherit; padding: .05em .1em; border-radius: 3px; }
     .rd-body :global(hr) { border: none; border-top: 1px solid var(--line); margin: 32px 0; }
     .rd-body :global(pre) { background: var(--ink); color: var(--surface); padding: 16px; border-radius: 12px; overflow: auto; font-family: var(--fontMono); font-size: 14px; margin: 0 0 24px; }
     .rd-body :global(img) { max-width: 100%; height: auto; border-radius: 12px; }

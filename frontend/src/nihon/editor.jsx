@@ -3,8 +3,10 @@
 // stored as sanitized HTML. Custom nodes: resizable/float images + YouTube.
 // Exposes window.NihonEditor (the editor React component).
 import React from "react";
+import { createPortal } from "react-dom";
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Highlight from "@tiptap/extension-highlight";
 import Image from "@tiptap/extension-image";
 import { Youtube } from "@tiptap/extension-youtube";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
@@ -153,6 +155,7 @@ function stripEmptyParas(html) {
 function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel, onCycleDensity }) {
   const [linkBox, setLinkBox] = React.useState(null); // 'link'|'image'|'youtube'
   const [linkVal, setLinkVal] = React.useState("");
+  const [insertMenu, setInsertMenu] = React.useState(false);
   const imgFileRef = React.useRef(null);
 
   const insertImageFile = async (f) => {
@@ -165,6 +168,7 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2] }, link: { openOnClick: false } }),
+      Highlight, // single-colour <mark> highlighter
       ResizableImage,
       YoutubeNode.configure({ width: 720, height: 405, nocookie: true }),
       Table.configure({ resizable: true }),
@@ -183,6 +187,17 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
       handlePaste: (_v, event) => {
         const f = event.clipboardData?.files?.[0];
         if (f && f.type.startsWith("image/")) { event.preventDefault(); insertImageFile(f); return true; }
+        return false;
+      },
+      // "/" on an empty line opens the insert menu (Notion/Medium-style).
+      handleKeyDown: (view, event) => {
+        if (event.key !== "/") return false;
+        const { $from, empty } = view.state.selection;
+        if (empty && $from.parent.type.name === "paragraph" && $from.parent.content.size === 0) {
+          event.preventDefault();
+          setInsertMenu(true);
+          return true;
+        }
         return false;
       },
     },
@@ -216,6 +231,18 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
     else editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   };
 
+  // Block inserts surfaced via the ＋ button and the "/" slash menu.
+  const inserts = [
+    ["🖼", "Image", () => openBox("image")],
+    ["▶", "YouTube video", () => openBox("youtube")],
+    ["▦", "Table", () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()],
+    ["</>", "Code block", () => editor?.chain().focus().toggleCodeBlock().run()],
+    ["―", "Divider", () => editor?.chain().focus().setHorizontalRule().run()],
+    ["❝", "Quote", () => editor?.chain().focus().toggleBlockquote().run()],
+    ["•", "Bullet list", () => editor?.chain().focus().toggleBulletList().run()],
+  ];
+  const runInsert = (fn) => { setInsertMenu(false); fn(); };
+
   const isActive = (n, a) => editor?.isActive(n, a) ?? false;
   const tb = (label, name, fn, on, italic) => (
     <button key={name} type="button" title={name} className={on ? "on" : ""}
@@ -232,6 +259,7 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
         <span className="tdiv" />
         {tb("B", "Bold", () => editor?.chain().focus().toggleBold().run(), isActive("bold"))}
         {tb("I", "Italic", () => editor?.chain().focus().toggleItalic().run(), isActive("italic"), true)}
+        {tb("🖍", "Highlight", () => editor?.chain().focus().toggleHighlight().run(), isActive("highlight"))}
         <span className="tdiv" />
         {tb("H1", "Heading 1", () => editor?.chain().focus().toggleHeading({ level: 1 }).run(), isActive("heading", { level: 1 }))}
         {tb("H2", "Heading 2", () => editor?.chain().focus().toggleHeading({ level: 2 }).run(), isActive("heading", { level: 2 }))}
@@ -244,12 +272,29 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
         {tb("🖼", "Image", () => openBox("image"), false)}
         {tb("▶", "YouTube", () => openBox("youtube"), false)}
         {tb("▦", "Table", () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), false)}
+        <span className="tdiv" />
+        <button type="button" title="Insert block" aria-label="Insert block"
+          onMouseDown={(e) => e.preventDefault()} onClick={() => setInsertMenu(true)} style={{ fontWeight: 800 }}>＋</button>
         {onCycleDensity && (
           <button type="button" title={`Line spacing: ${densityLabel} (click to change)`}
             onMouseDown={(e) => e.preventDefault()} onClick={onCycleDensity}
             style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 600 }}>↕ {densityLabel}</button>
         )}
       </div>
+
+      {insertMenu && typeof document !== "undefined" && createPortal(
+        <div className="ed-insert-backdrop" onMouseDown={() => setInsertMenu(false)}>
+          <div className="ed-insert" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ed-insert-h">INSERT</div>
+            {inserts.map(([icon, name, fn]) => (
+              <button key={name} type="button" onClick={() => runInsert(fn)}>
+                <span className="ed-insert-ico">{icon}</span>{name}
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
 
       {linkBox && (
         <div className="ed-linkbox">
@@ -297,6 +342,7 @@ function EditorStyles({ p, density }) {
   .nihon-editor .ed-body h1 { font-size:34px; font-weight:600; margin:18px 0 8px; letter-spacing:-0.02em; }
   .nihon-editor .ed-body h2 { font-size:26px; font-weight:600; margin:16px 0 6px; }
   .nihon-editor .ed-body p { margin:0 0 ${gap}px; }
+  .nihon-editor .ed-body mark { background:color-mix(in oklab, ${p.stamp} 32%, transparent); color:inherit; padding:.05em .1em; border-radius:3px; }
   .nihon-editor .ed-body blockquote { border-left:3px solid ${p.stamp}; padding-left:16px; color:${p.inkSoft}; font-style:italic; margin:16px 0; }
   .nihon-editor .ed-body pre { background:${p.ink}; color:${p.surface}; padding:14px 16px; border-radius:10px; overflow:auto; font-family:var(--fontMono); font-size:14px; }
   .nihon-editor .ed-body ul { padding-left:28px; margin:0 0 16px; list-style:disc outside; }
@@ -319,6 +365,15 @@ function EditorStyles({ p, density }) {
   .nihon-editor .ri-del-btn { color:${p.surface}; }
   .nihon-editor .ri-del-float { position:absolute; top:8px; right:8px; background:${p.ink}; border:none; border-radius:7px; width:28px; height:28px; cursor:pointer; }
   .nihon-editor .ed-body::after { content:""; display:table; clear:both; }
+  .ed-insert-backdrop { position:fixed; inset:0; z-index:120; display:flex; align-items:flex-start; justify-content:center;
+    padding-top:18vh; background:rgba(0,0,0,.32); }
+  .ed-insert { width:280px; max-width:88vw; background:${p.surface}; border:1px solid ${p.line}; border-radius:14px;
+    box-shadow:0 24px 60px -20px rgba(0,0,0,.5); padding:8px; }
+  .ed-insert-h { font-family:var(--fontMono); font-size:11px; letter-spacing:.1em; color:${p.inkFaint}; padding:4px 8px 8px; }
+  .ed-insert button { display:flex; align-items:center; gap:12px; width:100%; appearance:none; border:none; background:transparent;
+    color:${p.ink}; cursor:pointer; padding:9px 10px; border-radius:9px; font-family:var(--fontBody); font-size:14.5px; text-align:left; }
+  .ed-insert button:hover { background:${p.bg}; }
+  .ed-insert-ico { display:inline-flex; align-items:center; justify-content:center; width:24px; font-size:15px; }
   `;
   return <style dangerouslySetInnerHTML={{ __html: css }} />;
 }
