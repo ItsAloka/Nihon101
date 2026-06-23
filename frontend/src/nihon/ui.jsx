@@ -252,9 +252,11 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
   return (
     <header style={{
       position:'sticky', top:0, zIndex:30,
-      background:`color-mix(in oklab, ${p.bg} 88%, transparent)`,
+      // CSS vars (not p.*) so the SSR'd header paints in the saved theme via
+      // the pre-paint data-mode script — no light→dark flash for dark-mode users.
+      background:`color-mix(in oklab, var(--bg) 88%, transparent)`,
       backdropFilter:'blur(14px)', WebkitBackdropFilter:'blur(14px)',
-      borderBottom:`1px solid ${p.line}`,
+      borderBottom:`1px solid var(--line)`,
     }}>
       <div style={{
         maxWidth:1320, margin:'0 auto', padding:'12px 32px',
@@ -948,7 +950,8 @@ function BrushUnderline({color, width='100%', h=10}) {
 function Footer({p, lang}) {
   return (
     <footer style={{
-      borderTop:`1px solid ${p.line}`, background:p.surface, marginTop:80,
+      // CSS vars so the SSR'd footer paints in the saved theme (no flash) — see Nav.
+      borderTop:`1px solid var(--line)`, background:'var(--surface)', marginTop:80,
     }}>
       <div style={{maxWidth:1320, margin:'0 auto', padding:'48px 32px 36px',
         display:'grid', gridTemplateColumns:'1.4fr 1fr 1fr 1fr', gap:48,
