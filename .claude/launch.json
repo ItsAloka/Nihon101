@@ -9,7 +9,8 @@
         "-lc",
         "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev"
       ],
-      "port": 4321
+      "port": 4321,
+      "autoPort": false
     },
     {
       "name": "enui",

@@ -376,6 +376,7 @@ function ArticleHtml({ p, html, density }) {
   .art-html li { margin:6px 0; }
   .art-html li::marker { color:${p.stamp}; }
   .art-html a { color:${p.stamp}; text-decoration:underline; }
+  .art-html mark { background:color-mix(in oklab, ${p.stamp} 32%, transparent); color:inherit; padding:.05em .1em; border-radius:3px; }
   .art-html hr { border:none; border-top:1px solid ${p.line}; margin:32px 0; }
   .art-html pre { background:${p.ink}; color:${p.surface}; padding:16px; border-radius:12px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0 0 24px; }
   .art-html img { max-width:100%; height:auto; border-radius:12px; }
