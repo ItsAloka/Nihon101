@@ -6,9 +6,9 @@ import "./screens.jsx";
 import FollowStats, { FollowListModal } from "./FollowStats.jsx";
 const { Photo, Avatar, CategoryChip, AuthorChip, gradStyle, Hanko,
         ArrowRight, ArrowLeft, HeartIcon, CommentIcon, PencilIcon,
-        BookmarkIcon, TrendIcon, BellIcon } = window;
-const ArticleCard = window.ArticleCard;
-const SectionHeader = window.SectionHeader;
+        BookmarkIcon, TrendIcon, BellIcon } = (typeof window !== 'undefined' ? window : {});
+const ArticleCard = (typeof window !== 'undefined' ? window.ArticleCard : undefined);
+const SectionHeader = (typeof window !== 'undefined' ? window.SectionHeader : undefined);
 
 function wrap() { return {maxWidth:1320, margin:'0 auto', padding:'0 32px'}; }
 
@@ -1250,7 +1250,10 @@ function SettingsPage({ p, lang, user, onUpdateUser, onLogout }) {
   );
 }
 
-Object.assign(window, { LoginModal, ComposerPage, ProfilePage, TrendingPage, FeedPage, SettingsPage, DEMO_USERS });
+if (typeof window !== 'undefined') Object.assign(window, { LoginModal, ComposerPage, ProfilePage, TrendingPage, FeedPage, SettingsPage, DEMO_USERS });
+
+// Real export so the SSR chrome can import LoginModal directly (see ui.jsx note).
+export { LoginModal };
 
 // ====== FOR YOU FEED (real backend /feed — ranked: follows + trending + fresh,
 // tilted by category affinity. We only split + label it here.) ======

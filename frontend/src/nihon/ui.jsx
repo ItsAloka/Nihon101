@@ -178,7 +178,7 @@ function deriveDark(p) {
   };
 }
 
-Object.assign(window, { getAuthor, getAllPosts, getPost, deriveDark, subjectGlyph, tintGradient });
+if (typeof window !== 'undefined') Object.assign(window, { getAuthor, getAllPosts, getPost, deriveDark, subjectGlyph, tintGradient });
 
 // ------- Live categories (from the backend table, post_count desc) -------
 // Shared hook over window.N101_CATS. Returns the cached list + helpers; loads
@@ -198,7 +198,7 @@ function useCategories() {
     refresh: () => (store ? store.refresh() : Promise.resolve()),
   };
 }
-Object.assign(window, { useCategories });
+if (typeof window !== 'undefined') Object.assign(window, { useCategories });
 
 // Tag slug — mirrors the backend slugify() so tag links resolve to /t/<slug>
 // (the SSR tag page slug-normalizes stored labels the same way).
@@ -207,7 +207,7 @@ function tagSlug(label) {
     .normalize('NFKD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
-Object.assign(window, { tagSlug });
+if (typeof window !== 'undefined') Object.assign(window, { tagSlug });
 
 // ------- Logo -------
 // The mark IS the wordmark: nihon + "1" + a hinomaru sun-disc (the "0") + "1".
@@ -698,7 +698,7 @@ function WaveMark({color, w=28, h=8}) {
   );
 }
 
-Object.assign(window, { WaveMark });
+if (typeof window !== 'undefined') Object.assign(window, { WaveMark });
 
 // Vibrant gradient pill style for primary CTAs
 function gradStyle(p, extra={}) {
@@ -735,7 +735,7 @@ function WavyBG({p, opacity=0.5}) {
   );
 }
 
-Object.assign(window, { gradStyle, WavyBG });
+if (typeof window !== 'undefined') Object.assign(window, { gradStyle, WavyBG });
 
 // ------- Photo placeholder (saturated, with kanji subject) -------
 function Photo({ hue, label, p, h='100%', aspect, radius=14, accent, subject, src }) {
@@ -1040,10 +1040,15 @@ function NewsletterMini({p, lang}) {
   );
 }
 
-Object.assign(window, {
+if (typeof window !== 'undefined') Object.assign(window, {
   PALETTES, FONT_PAIRINGS, tintBg,
   Logo, Nav, Photo, Hanko, CategoryChip, AuthorChip, Avatar,
   SearchIcon, BookmarkIcon, ClapIcon, ArrowRight, ArrowLeft,
   SunIcon, MoonIcon, BellIcon, HeartIcon, CommentIcon, PencilIcon, TrendIcon,
   BrushUnderline, Footer, gradStyle,
 });
+
+// Real ES exports so the SSR chrome (home-chrome.jsx) can import these directly
+// instead of pulling them off `window` — that's what lets the header/footer be
+// server-rendered (client:load) instead of client-only.
+export { Nav, Footer, PALETTES, deriveDark };
