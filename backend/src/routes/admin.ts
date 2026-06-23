@@ -10,6 +10,10 @@ import { getUserById, getUserByHandle } from '../db/queries/users';
 import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
 import { getComment, deleteComment } from '../db/queries/engagement';
 import {
+  listCategories, getCategoryById, updateCategory, deleteCategory, publicCategory, CATEGORY_TINTS,
+} from '../db/queries/categories';
+import { listAllTags, getTagById, renameTag, deleteTag } from '../db/queries/tags';
+import {
   createReport, listReports, getReportById, resolveReport, reopenReport,
   resolveReportsForTarget, dismissReportsForTarget,
   reportsAgainstUser, getDisplayNamesByIds,
@@ -387,6 +391,86 @@ app.put('/featured', async (c) => {
 app.get('/posts', async (c) => {
   const rows = await searchPostsAdmin(getDb(c), c.req.query('q'), Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30)));
   return c.json({ posts: rows.map(publicPostCard) });
+});
+
+/* ───────────── content: categories + tags ───────────── */
+
+app.get('/categories', async (c) => {
+  const rows = await listCategories(getDb(c));
+  return c.json({ categories: rows.map(publicCategory) });
+});
+
+// Edit a category's bilingual labels, kanji glyph, and/or tint.
+app.patch('/categories/:id', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const id = c.req.param('id');
+  const cur = await getCategoryById(db, id);
+  if (!cur) return c.json({ error: 'not_found' }, 404);
+  const body = (await c.req.json().catch(() => null)) as
+    { labelEn?: unknown; labelJa?: unknown; kanji?: unknown; tint?: unknown } | null;
+  const patch: { labelEn?: string; labelJa?: string; kanji?: string; tint?: string } = {};
+  if (typeof body?.labelEn === 'string') {
+    const v = body.labelEn.trim();
+    if (v.length < 2 || v.length > 40) return c.json({ error: 'invalid_label' }, 400);
+    patch.labelEn = v;
+  }
+  if (typeof body?.labelJa === 'string') {
+    const v = body.labelJa.trim();
+    if (v.length < 1 || v.length > 40) return c.json({ error: 'invalid_label' }, 400);
+    patch.labelJa = v;
+  }
+  if (body?.kanji !== undefined) patch.kanji = String(body.kanji).trim().slice(0, 2);
+  if (typeof body?.tint === 'string') {
+    if (!CATEGORY_TINTS.includes(body.tint)) return c.json({ error: 'invalid_tint' }, 400);
+    patch.tint = body.tint;
+  }
+  const row = await updateCategory(db, id, patch);
+  await logAdminAction(db, { actorId: actor.id, action: 'update_category', targetType: 'category', targetId: id, detail: { ...patch } });
+  return c.json({ category: row ? publicCategory(row) : null });
+});
+
+// Delete a category — only when no posts use it (FK is ON DELETE RESTRICT).
+app.delete('/categories/:id', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const id = c.req.param('id');
+  const cur = await getCategoryById(db, id);
+  if (!cur) return c.json({ error: 'not_found' }, 404);
+  if (cur.postCount > 0) return c.json({ error: 'category_in_use' }, 409);
+  await deleteCategory(db, id);
+  await logAdminAction(db, { actorId: actor.id, action: 'delete_category', targetType: 'category', targetId: id, detail: { label: cur.labelEn } });
+  return c.json({ ok: true });
+});
+
+app.get('/tags', async (c) => c.json({ tags: await listAllTags(getDb(c)) }));
+
+// Rename a tag's display label (slug stays fixed).
+app.patch('/tags/:id', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const id = c.req.param('id');
+  const cur = await getTagById(db, id);
+  if (!cur) return c.json({ error: 'not_found' }, 404);
+  const body = (await c.req.json().catch(() => null)) as { label?: unknown } | null;
+  const label = typeof body?.label === 'string' ? body.label.trim() : '';
+  if (label.length < 1 || label.length > 50) return c.json({ error: 'invalid_label' }, 400);
+  const row = await renameTag(db, id, label);
+  await logAdminAction(db, { actorId: actor.id, action: 'rename_tag', targetType: 'tag', targetId: id, detail: { label } });
+  return c.json({ tag: row });
+});
+
+// Delete a tag — only when unused (posts keep tags in jsonb, so it'd reappear).
+app.delete('/tags/:id', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const id = c.req.param('id');
+  const cur = await getTagById(db, id);
+  if (!cur) return c.json({ error: 'not_found' }, 404);
+  if (cur.postCount > 0) return c.json({ error: 'tag_in_use' }, 409);
+  await deleteTag(db, id);
+  await logAdminAction(db, { actorId: actor.id, action: 'delete_tag', targetType: 'tag', targetId: id, detail: { label: cur.label } });
+  return c.json({ ok: true });
 });
 
 /* ───────────── audit log ───────────── */

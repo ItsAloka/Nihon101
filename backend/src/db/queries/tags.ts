@@ -1,4 +1,4 @@
-import { sql, desc, gt } from 'drizzle-orm';
+import { sql, desc, gt, eq } from 'drizzle-orm';
 import type { DB } from '../client';
 import { tags } from '../schema';
 import { slugify } from './categories';
@@ -42,6 +42,28 @@ export function diffTags(before: string[], after: string[]): [string[], string[]
 /** Most-used tags (by published-post count) — feeds the search suggestion chips. */
 export function topTags(db: DB, limit = 6): Promise<TagRow[]> {
   return db.select().from(tags).where(gt(tags.postCount, 0)).orderBy(desc(tags.postCount)).limit(limit);
+}
+
+/** Admin: every tag, busiest first (includes unused tags, postCount 0). */
+export function listAllTags(db: DB): Promise<TagRow[]> {
+  return db.select().from(tags).orderBy(desc(tags.postCount));
+}
+
+export async function getTagById(db: DB, id: string): Promise<TagRow | undefined> {
+  const [row] = await db.select().from(tags).where(eq(tags.id, id));
+  return row;
+}
+
+/** Admin: rename a tag's display label (slug/id is immutable). */
+export async function renameTag(db: DB, id: string, label: string): Promise<TagRow | undefined> {
+  const [row] = await db.update(tags).set({ label: label.trim() }).where(eq(tags.id, id)).returning();
+  return row;
+}
+
+/** Admin: delete a tag row. Caller blocks this when postCount > 0 (posts keep
+ * their jsonb tags, so an in-use tag would just reappear). */
+export async function deleteTag(db: DB, id: string): Promise<void> {
+  await db.delete(tags).where(eq(tags.id, id));
 }
 
 /** Tags whose label contains the query — drives the autocomplete's "Tags" group. */
