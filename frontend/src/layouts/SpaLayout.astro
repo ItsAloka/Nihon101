@@ -60,6 +60,17 @@ const { lang = "ja", syncLang = false } = Astro.props;
         .nihon-mainnav, .nihon-searchwrap, .nav-hide-mobile { display: none !important; }
         .nav-burger { display: inline-flex !important; }
       }
+      @media (min-width: 821px) and (max-width: 1100px) {
+        .nav-inner { padding-left: 18px !important; padding-right: 18px !important; gap: 6px !important; }
+        .nihon-mainnav { margin-left: 2px !important; gap: 0 !important; }
+        .nav-link { padding: 8px 9px !important; }
+        .nihon-searchwrap { max-width: 168px; }
+        .nihon-search { min-width: 0 !important; padding-left: 11px !important; padding-right: 11px !important; }
+      }
+      @media (max-width: 560px) {
+        .nav-pop { position: fixed !important; left: 12px !important; right: 12px !important;
+                   width: auto !important; max-width: none !important; }
+      }
       /* SPA screen grids (inline gridTemplateColumns → !important beats them) */
       @media (max-width: 1024px) {
         .spa-g3 { grid-template-columns: repeat(2, 1fr) !important; }

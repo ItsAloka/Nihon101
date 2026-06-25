@@ -115,6 +115,24 @@ export function HomeHeader({ locale, active = "home" }) {
     };
   }, [loc]);
 
+  // Hydrate SSR card hearts: every .post-card heart renders OUTLINE by default
+  // (logged-out truth); once the session resolves, ask the server which of the
+  // visible posts this viewer actually liked and fill only those. Re-runs on
+  // login/logout. No viewer → leave them all outline.
+  React.useEffect(() => {
+    const nodes = Array.from(document.querySelectorAll('.post-card .stat.heart[data-like]'));
+    if (!nodes.length) return;
+    if (!currentUser) { nodes.forEach((n) => n.classList.remove('liked')); return; }
+    const ids = [...new Set(nodes.map((n) => n.getAttribute('data-like')).filter(Boolean))];
+    let live = true;
+    window.N101_API.likedState(ids).then((liked) => {
+      if (!live) return;
+      const set = new Set(liked);
+      nodes.forEach((n) => n.classList.toggle('liked', set.has(n.getAttribute('data-like'))));
+    });
+    return () => { live = false; };
+  }, [currentUser]);
+
   // Restore the session from the HttpOnly refresh cookie (same bootstrap as app.jsx).
   React.useEffect(() => {
     let live = true;

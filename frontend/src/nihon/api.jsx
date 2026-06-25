@@ -138,6 +138,18 @@ async function deleteAccount() {
   accessToken = null;
 }
 
+// Which of these post ids the signed-in viewer has liked (for hydrating SSR card
+// hearts). Logged out / no session → []. Ensures the session first via the
+// single-flight refresh, so it can't trip reuse-detection.
+async function likedState(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (!accessToken) { try { await refresh(); } catch (e) { return []; } }
+  try {
+    const d = await req('/posts/liked-state?ids=' + ids.map(encodeURIComponent).join(','));
+    return d.liked || [];
+  } catch (e) { return []; }
+}
+
 // Upload an avatar blob to R2 via /media; returns its public URL.
 async function uploadAvatar(blob) {
   const form = new FormData();
@@ -154,5 +166,5 @@ async function uploadAvatar(blob) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification, getAccount, changePassword, deleteAccount, forgot, resetPassword };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification, getAccount, changePassword, deleteAccount, forgot, resetPassword, likedState };
 }

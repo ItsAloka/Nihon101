@@ -5,6 +5,7 @@ import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { forYouFeed, recordRead, recordSearchClick } from '../db/queries/for-you';
+import { likedPostIds } from '../db/queries/engagement';
 
 const app = new Hono<AppEnv>();
 
@@ -25,12 +26,19 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
 // Logged out = pure trending+fresh (also what SSR and crawlers get).
 // ?limit caps the slice (default 12, max 50); ?page is the 0-based page index.
 app.get('/', limits.feed, async (c) => {
-  const result = await forYouFeed(getDb(c), {
-    userId: await optionalUserId(c),
+  const userId = await optionalUserId(c);
+  const db = getDb(c);
+  const result = await forYouFeed(db, {
+    userId,
     limit: Number(c.req.query('limit')) || undefined,
     page: Number(c.req.query('page')) || undefined,
     kv: c.env.TRENDING_KV,
   });
+  // Honest hearts: tag each card with whether this viewer liked it.
+  if (userId && Array.isArray(result.feed) && result.feed.length) {
+    const liked = await likedPostIds(db, userId, result.feed.map((p: any) => p.id));
+    (result as any).feed = result.feed.map((p: any) => ({ ...p, liked: liked.has(p.id) }));
+  }
   return c.json(result);
 });
 

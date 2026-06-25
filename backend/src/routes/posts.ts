@@ -33,6 +33,7 @@ import { getUserById } from '../db/queries/users';
 import {
   togglePostLike,
   hasLikedPost,
+  likedPostIds,
   togglePostSave,
   savedPostIds,
   listComments,
@@ -212,6 +213,18 @@ app.get('/saved', requireAuth, async (c) => {
   const ids = await savedPostIds(d, c.var.user!.id);
   const cards = await listCardsByIds(d, ids);
   return c.json({ posts: cards.map(publicPostCard) });
+});
+
+// Batched viewer like-state for a list of cards (SSR pages hydrate their hearts
+// with this after the session resolves). Optional auth: logged-out → empty.
+// Registered before `/:id` so "liked-state" isn't read as a post id.
+app.get('/liked-state', limits.publicRead, async (c) => {
+  const raw = (c.req.query('ids') || '').trim();
+  if (!raw) return c.json({ liked: [] });
+  const ids = raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 100);
+  const viewer = await currentUser(c);
+  const set = await likedPostIds(db(c), viewer?.id ?? null, ids);
+  return c.json({ liked: [...set] });
 });
 
 // Single post. Drafts visible only to their author.
