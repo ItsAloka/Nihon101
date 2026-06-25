@@ -5,13 +5,14 @@ import React from "react";
 import "./api.jsx";
 import "./content.jsx";
 import "./social.jsx"; // sets window.FeedPage (+ PALETTES, deriveDark, gradStyle…)
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 const readMode = () => { try { return localStorage.getItem("nihon.mode") || "light"; } catch (e) { return "light"; } };
 const readSaved = () => { try { return new Set(JSON.parse(localStorage.getItem("nihon.saved") || "[]")); } catch (e) { return new Set(); } };
 const readClaps = () => { try { return JSON.parse(localStorage.getItem("nihon.claps") || "{}"); } catch (e) { return {}; } };
 const TWEAKS = { palette: "hakuji", font: "shippori", cardStyle: "clean", density: "regular" };
 
-export default function ForYouFeed({ locale }) {
+function ForYouFeed({ locale }) {
   const loc = locale === "ja" ? "ja" : "en";
   const lang = loc === "ja" ? "jp" : "en";
   const [mode, setMode] = React.useState(readMode);
@@ -74,3 +75,5 @@ export default function ForYouFeed({ locale }) {
     />
   );
 }
+
+export default withBoundary(ForYouFeed, "for-you");

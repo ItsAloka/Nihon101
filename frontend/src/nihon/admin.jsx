@@ -1,5 +1,6 @@
 import React from "react";
 import "./api.jsx";  // ensures window.N101_API is registered in THIS island's bundle
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 /* Admin console island. Bootstraps the session from the refresh cookie, gates on
  * role=admin, then drives the /admin/* API. All data is fetched client-side with
@@ -167,7 +168,7 @@ function ConfirmHost({ loc }) {
   );
 }
 
-export default function AdminConsole({ locale }) {
+function AdminConsole({ locale }) {
   const loc = locale === "ja" ? "ja" : "en";
   const api = useApi();
   const [boot, setBoot] = React.useState("loading"); // loading | denied | ok
@@ -988,3 +989,5 @@ function Audit({ loc, api }) {
     </div>
   );
 }
+
+export default withBoundary(AdminConsole, "admin");

@@ -1,6 +1,7 @@
 // api.jsx — backend auth client. Access token lives in memory ONLY (never
 // localStorage); the session is restored from the HttpOnly refresh cookie via
 // /auth/refresh on load. Loaded before app.jsx.
+import "./report.js"; // installs global error / unhandledrejection hooks (SSR-safe)
 
 // Dev (localhost) is same-origin: Vite proxies /auth,/posts,/categories,/media,
 // /translate to :8787, so cookies (Path=/auth) work natively. Prod uses the API host.

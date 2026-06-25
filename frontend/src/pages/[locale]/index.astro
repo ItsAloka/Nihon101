@@ -12,7 +12,7 @@ const jp = locale === 'ja';
 
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
 const res = await fetch(`${API}/home`);
-if (!res.ok) return new Response(null, { status: 502 });
+if (!res.ok) throw new Error(`home: upstream ${res.status}`); // → branded 500.astro
 const { hero, feature, picks, recent, categories, topAuthors, weather } = await res.json();
 const heroSlides = (hero || []).filter(Boolean);
 const catById = new Map(categories.map((c: any) => [c.id, c]));

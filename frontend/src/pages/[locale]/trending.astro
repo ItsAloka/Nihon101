@@ -21,7 +21,7 @@ const [tRes, cRes] = await Promise.all([
   fetch(`${API}/trending?limit=${LIMIT}&page=${page}${cat ? `&cat=${encodeURIComponent(cat)}` : ''}`),
   fetch(`${API}/categories`),
 ]);
-if (!tRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+if (!tRes.ok || !cRes.ok) throw new Error(`trending: upstream ${tRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await tRes.json();
 const { categories } = await cRes.json();
 const totalPages = Math.ceil(total / LIMIT);

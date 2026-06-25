@@ -30,7 +30,7 @@ const [sRes, cRes] = await Promise.all([
   fetch(`${API}/search?${qs}`),
   fetch(`${API}/categories`),
 ]);
-if (!sRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+if (!sRes.ok || !cRes.ok) throw new Error(`search: upstream ${sRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await sRes.json();
 const { categories } = await cRes.json();
 const topCats = categories.slice(0, 9);

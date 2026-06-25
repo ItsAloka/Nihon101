@@ -10,6 +10,7 @@ import "./api.jsx";      // window.N101_API
 import "./content.jsx";  // window.N101_CONTENT (postApi, feedApi)
 import "./ui.jsx";       // icons, PALETTES, deriveDark, gradStyle
 import "./social.jsx";   // chains screens.jsx → window.CommentSection
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 const readMode = () => { try { return localStorage.getItem("nihon.mode") || "light"; } catch (e) { return "light"; } };
 const initials = (name) => (name || "?").trim().split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
@@ -23,7 +24,7 @@ const toCommentView = (c) => ({
   text: c.body, ts: c.createdAt, likes: c.likes, liked: c.liked, _real: true, userId: c.userId,
 });
 
-export default function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
+function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
   const loc = locale === "ja" ? "ja" : "en";
   const lang = loc === "ja" ? "jp" : "en";
   const [mode, setMode] = React.useState(readMode);
@@ -35,6 +36,8 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
   const [likeCount, setLikeCount] = React.useState(likes);
   const [saved, setSaved] = React.useState(false);
   const [comments, setComments] = React.useState([]);
+  const [commentsErr, setCommentsErr] = React.useState(false);
+  const [commentsReload, setCommentsReload] = React.useState(0);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const [delBusy, setDelBusy] = React.useState(false);
   const isOwner = !!(user && user.id === authorId);
@@ -67,9 +70,12 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
   // is cheap to keep consistent).
   React.useEffect(() => {
     let live = true;
-    window.N101_CONTENT.postApi.listComments(postId).then((rows) => { if (live) setComments(rows.map(toCommentView)); }).catch(() => {});
+    setCommentsErr(false);
+    window.N101_CONTENT.postApi.listComments(postId)
+      .then((rows) => { if (live) setComments(rows.map(toCommentView)); })
+      .catch(() => { if (live) setCommentsErr(true); });
     return () => { live = false; };
-  }, [postId]);
+  }, [postId, commentsReload]);
 
   // Deep-link from a comment/reply notification (#comment-<id>): once comments are
   // in the DOM, scroll to the target and flash it. Runs after comments load so the
@@ -238,6 +244,12 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
       )}
 
       <div id="comments">
+        {commentsErr && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "14px 18px", marginBottom: 16, border: `1px solid ${p.line}`, borderRadius: 12, background: p.surface }}>
+            <span style={{ fontFamily: "var(--fontBody)", fontSize: 13.5, color: p.inkSoft }}>{lang === "jp" ? "コメントを読み込めませんでした。" : "Couldn’t load comments."}</span>
+            <button onClick={() => setCommentsReload((k) => k + 1)} style={pill({ padding: "8px 16px", fontSize: 13, fontWeight: 600 })}>{lang === "jp" ? "再試行" : "Try again"}</button>
+          </div>
+        )}
         <CommentSection p={p} lang={lang} slug={slug} comments={comments}
           onAdd={onAddComment} onLike={onLikeComment} onDelete={onDeleteComment}
           onReport={openReportComment}
@@ -272,6 +284,8 @@ export default function ReaderIsland({ slot, postId, slug, locale, authorId, lik
     </>
   );
 }
+
+export default withBoundary(ReaderIsland, "reader");
 
 function DeleteModal({ p, lang, busy, onCancel, onConfirm }) {
   return (

@@ -22,7 +22,7 @@ const [sRes, cRes] = await Promise.all([
   fetch(`${API}/search?cat=${encodeURIComponent(cat)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`),
   fetch(`${API}/categories`),
 ]);
-if (!sRes.ok || !cRes.ok) return new Response(null, { status: 502 });
+if (!sRes.ok || !cRes.ok) throw new Error(`category: upstream ${sRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await sRes.json();
 const { categories } = await cRes.json();
 const category = categories.find((c: any) => c.id === cat);
