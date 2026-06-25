@@ -247,9 +247,14 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
   ];
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
-  React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); }, [route.name, route.slug]);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); setDrawerOpen(false); }, [route.name, route.slug]);
+  React.useEffect(()=>{ document.body.style.overflow = drawerOpen ? 'hidden' : ''; return ()=>{ document.body.style.overflow=''; }; }, [drawerOpen]);
   const unread = (notifs || []).filter(n => !n.read).length;
+  const drawerRow = { appearance:'none', border:'1px solid var(--line)', background:'var(--surface)', textAlign:'left', padding:'11px 14px', borderRadius:12, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:'var(--ink)', display:'flex', alignItems:'center', gap:10 };
+  const loc = lang==='jp' ? 'ja' : 'en';
   return (
+    <>
     <header style={{
       position:'sticky', top:0, zIndex:30,
       // CSS vars (not p.*) so the SSR'd header paints in the saved theme via
@@ -293,7 +298,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
         </button>
 
         {/* Saved */}
-        <button onClick={()=>window.__nihon_go({name:'saved'})} title="Saved"
+        <button onClick={()=>window.__nihon_go({name:'saved'})} title="Saved" className="nav-hide-mobile"
           style={{...iconBtn(p), flexShrink:0}}>
           <BookmarkIcon filled={savedCount>0} color={p.ink}/>
           {savedCount>0 && <span style={badgeStyle(p)}>{savedCount}</span>}
@@ -314,7 +319,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
 
         {/* Lang — locked while composing (can't flip site lang mid-write) */}
         {(() => { const langLocked = route.name === 'compose'; return (
-        <button onClick={()=>{ if(!langLocked) onLang(lang==='en'?'jp':'en'); }} disabled={langLocked}
+        <button onClick={()=>{ if(!langLocked) onLang(lang==='en'?'jp':'en'); }} disabled={langLocked} className="nav-hide-mobile"
           title={langLocked ? (lang==='jp'?'記事を保存してから言語を切り替えてください':'Save your post to switch language') : undefined}
           style={{
           appearance:'none', border:`1px solid ${p.line}`, background:p.surface,
@@ -328,7 +333,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
 
         {currentUser ? (
           <>
-            <button onClick={()=>window.__nihon_go({name:'compose'})} style={{...gradStyle(p), padding:'9px 16px', fontSize:13, flexShrink:0}}>
+            <button onClick={()=>window.__nihon_go({name:'compose'})} className="nav-hide-mobile" style={{...gradStyle(p), padding:'9px 16px', fontSize:13, flexShrink:0}}>
               <PencilIcon color="#fff"/> {lang==='jp' ? '書く' : 'Write'}
             </button>
             <div style={{position:'relative', flexShrink:0}}>
@@ -344,12 +349,66 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
             </div>
           </>
         ) : (
-          <button onClick={onLogin} style={{...gradStyle(p), padding:'10px 20px', fontSize:13, flexShrink:0}}>
+          <button onClick={onLogin} className="nav-hide-mobile" style={{...gradStyle(p), padding:'10px 20px', fontSize:13, flexShrink:0}}>
             {lang==='jp' ? 'ログイン' : 'Sign in'}
           </button>
         )}
+
+        {/* Mobile hamburger — hidden on desktop, flipped on by the .nav-burger media rule */}
+        <button onClick={()=>setDrawerOpen(true)} className="nav-burger"
+          aria-label={lang==='jp'?'メニュー':'Menu'} aria-haspopup="menu" aria-expanded={drawerOpen}
+          style={{...iconBtn(p), flexShrink:0, display:'none'}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.ink} strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
       </div>
     </header>
+
+    {/* Mobile navigation drawer (rendered outside <header> so position:fixed isn't
+        trapped by the header's backdrop-filter containing block). */}
+    {drawerOpen && (
+      <div onClick={()=>setDrawerOpen(false)} style={{position:'fixed', inset:0, zIndex:60, background:'color-mix(in oklab, var(--ink) 45%, transparent)', backdropFilter:'blur(3px)', display:'flex', justifyContent:'flex-end'}}>
+        <div onClick={(e)=>e.stopPropagation()} style={{width:'min(84vw, 340px)', height:'100%', background:'var(--surface)', borderLeft:'1px solid var(--line)', display:'flex', flexDirection:'column', boxShadow:'-30px 0 60px -30px rgba(0,0,0,0.4)', animation:'navDrawerIn .22s ease'}}>
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 18px', borderBottom:'1px solid var(--line)'}}>
+            <span style={{fontFamily:'var(--fontDisplay)', fontWeight:700, fontSize:18, color:'var(--ink)'}}>{lang==='jp'?'メニュー':'Menu'}</span>
+            <button onClick={()=>setDrawerOpen(false)} aria-label={lang==='jp'?'閉じる':'Close'} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', fontSize:26, lineHeight:1, color:'var(--inkFaint)', padding:4}}>×</button>
+          </div>
+          <form onSubmit={(e)=>{e.preventDefault(); const q=e.currentTarget.q.value.trim(); window.location.href=`/${loc}/search${q?`?q=${encodeURIComponent(q)}`:''}`;}}
+            style={{display:'flex', alignItems:'center', gap:8, margin:'14px 16px 4px', padding:'10px 14px', borderRadius:999, border:'1px solid var(--line)', background:'var(--surface2)'}}>
+            <SearchIcon color={p.inkFaint}/>
+            <input name="q" placeholder={lang==='jp'?'記事を探す…':'Search nihon101…'} aria-label="Search" style={{flex:1, minWidth:0, border:'none', outline:'none', background:'transparent', fontFamily:'var(--fontBody)', fontSize:14, color:'var(--ink)'}}/>
+          </form>
+          <nav style={{display:'flex', flexDirection:'column', padding:'8px', gap:2}}>
+            {items.map((it,i)=>{ const active=route.name===it.route.name; return (
+              <button key={i} onClick={()=>{ setDrawerOpen(false); window.__nihon_go(it.route); }}
+                style={{appearance:'none', border:'none', background: active?'var(--surface2)':'transparent', textAlign:'left', padding:'12px 14px', borderRadius:12, cursor:'pointer', fontFamily:'var(--fontDisplay)', fontSize:17, fontWeight: active?700:500, color: active?'var(--ink)':'var(--inkSoft)'}}>
+                {it.label}
+              </button>
+            ); })}
+          </nav>
+          <div style={{flex:1}}/>
+          <div style={{borderTop:'1px solid var(--line)', padding:'14px 16px', display:'flex', flexDirection:'column', gap:10}}>
+            <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'saved'}); }} style={drawerRow}>
+              <BookmarkIcon filled={savedCount>0} color="var(--ink)"/> {lang==='jp'?'保存した記事':'Saved'}{savedCount>0?` · ${savedCount}`:''}
+            </button>
+            {currentUser ? (
+              <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'compose'}); }} style={{...gradStyle(p), justifyContent:'center', padding:'12px', fontSize:14}}>
+                <PencilIcon color="#fff"/> {lang==='jp'?'書く':'Write'}
+              </button>
+            ) : (
+              <button onClick={()=>{ setDrawerOpen(false); onLogin(); }} style={{...gradStyle(p), justifyContent:'center', padding:'12px', fontSize:14}}>
+                {lang==='jp'?'ログイン':'Sign in'}
+              </button>
+            )}
+            {route.name!=='compose' && (
+              <button onClick={()=>{ onLang(lang==='en'?'jp':'en'); }} style={drawerRow}>
+                🌐 {lang==='en'?'日本語に切り替え':'Switch to English'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -606,7 +665,7 @@ function SearchBar({p, onSearch, lang}) {
   };
 
   return (
-    <div ref={wrapRef} style={{position:'relative', flexShrink:1, minWidth:0}}>
+    <div ref={wrapRef} className="nihon-searchwrap" style={{position:'relative', flexShrink:1, minWidth:0}}>
       <form className="nihon-search" onSubmit={(e)=>{e.preventDefault(); goSearch(v);}} style={{
         display:'flex', alignItems:'center', gap:8,
         background:p.surface, border:`1px solid ${showPanel ? p.accent : p.line}`, borderRadius:999,
