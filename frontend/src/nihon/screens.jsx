@@ -334,7 +334,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         <SectionHeader p={p} lang={lang}
           en={`More in ${cat?.en || ''}`} jp={`もっと ${cat?.jp || ''}`}
           kicker_en="related reading" kicker_jp="関連する記事"/>
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
+        <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {related.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
         </div>
       </div>}
@@ -781,7 +781,7 @@ function CategoryPage({p, lang, slug, t, savedSet, onSave}) {
         background:`linear-gradient(135deg, color-mix(in oklab, ${c} 50%, ${p.bg}), ${p.bg})`,
         borderBottom:`1px solid ${p.line}`, position:'relative', overflow:'hidden',
       }}>
-        <div style={{...maxWrap(), padding:'72px 32px 56px', display:'grid', gridTemplateColumns:'1fr auto', alignItems:'end', gap:32}}>
+        <div className="spa-split spa-pad" style={{...maxWrap(), padding:'72px 32px 56px', display:'grid', gridTemplateColumns:'1fr auto', alignItems:'end', gap:32}}>
           <div>
             <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.18em', textTransform:'uppercase', color:p.inkSoft, marginBottom:14}}>
               {lang==='jp'?'カテゴリー':'Topic'} / {String(window.NIHON_DATA.CATEGORIES.findIndex(x=>x.slug===slug)+1).padStart(2,'0')}
@@ -812,7 +812,7 @@ function CategoryPage({p, lang, slug, t, savedSet, onSave}) {
             {lang==='jp'?'まだ記事がありません。最初の書き手になりませんか？':'No pieces yet. Want to be the first writer here?'}
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, marginTop:32}}>
+          <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, marginTop:32}}>
             {posts.map(post=>(<ArticleCard key={post.slug} p={p} lang={lang} post={post} t={t} saved={savedSet.has(post.slug)} onSave={onSave}/>))}
           </div>
         )}
@@ -912,7 +912,7 @@ function SearchPage({p, lang, initialQuery, t, savedSet, onSave}) {
             </div>
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
+          <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
             {results.map(post=>(<ArticleCard key={post.slug} p={p} lang={lang} post={post} t={t} saved={savedSet.has(post.slug)} onSave={onSave}/>))}
           </div>
         )}
@@ -934,7 +934,7 @@ function AuthorPage({p, lang, slug, t, savedSet, onSave, follows, onToggleFollow
         background:`linear-gradient(135deg, color-mix(in oklab, ${c} 40%, ${p.bg}), ${p.bg})`,
         borderBottom:`1px solid ${p.line}`,
       }}>
-        <div style={{...maxWrap(), padding:'72px 32px 56px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:32, alignItems:'center'}}>
+        <div className="spa-split spa-pad" style={{...maxWrap(), padding:'72px 32px 56px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:32, alignItems:'center'}}>
           <div style={{
             width:160, height:160, borderRadius:'50%',
             background:`linear-gradient(135deg, ${c}, color-mix(in oklab, ${c} 50%, ${p.surface2}))`,
@@ -984,7 +984,7 @@ function AuthorPage({p, lang, slug, t, savedSet, onSave, follows, onToggleFollow
           kicker_en={`${posts.length} stories`}
           kicker_jp={`${posts.length}本の記事`}
         />
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
+        <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {posts.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>))}
         </div>
       </div>
@@ -1100,7 +1100,7 @@ function SavedPage({p, lang, savedSet, t, onSave}) {
           </div>
         </div>
       ) : (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
+        <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24}}>
           {posts.map(po=>(<ArticleCard key={po.slug} p={p} lang={lang} post={po} t={t} saved={true} onSave={onSave}/>))}
         </div>
       )}
@@ -1193,7 +1193,7 @@ function ContactPage({p, lang}) {
         en="Say hello." jp="こんにちは。"
         sub={lang==='jp'?'寄稿のご相談、誤りのご指摘、ただのご挨拶も歓迎です。':'Pitches, corrections, or just a hello — we read everything.'}/>
       <div style={{...maxWrap(), marginTop:40}}>
-        <div style={{maxWidth:980, margin:'0 auto', display:'grid', gridTemplateColumns:'1.3fr 1fr', gap:48, alignItems:'start'}}>
+        <div className="spa-split" style={{maxWidth:980, margin:'0 auto', display:'grid', gridTemplateColumns:'1.3fr 1fr', gap:48, alignItems:'start'}}>
           {/* form */}
           <div style={{background:p.surface, border:`1px solid ${p.line}`, borderRadius:20, padding:32}}>
             {sent ? (
@@ -1211,7 +1211,7 @@ function ContactPage({p, lang}) {
               </div>
             ) : (
               <>
-                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14}}>
+                <div className="spa-g2" style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:14}}>
                   <Field p={p} label={lang==='jp'?'お名前':'Your name'}>
                     <input value={form.name} onChange={(e)=>set('name', e.target.value)} placeholder={lang==='jp'?'山田 太郎':'Jane Doe'} style={cInput(p)}/>
                   </Field>

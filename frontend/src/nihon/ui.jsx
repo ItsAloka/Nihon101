@@ -1012,7 +1012,7 @@ function Footer({p, lang}) {
       // CSS vars so the SSR'd footer paints in the saved theme (no flash) — see Nav.
       borderTop:`1px solid var(--line)`, background:'var(--surface)', marginTop:80,
     }}>
-      <div style={{maxWidth:1320, margin:'0 auto', padding:'48px 32px 36px',
+      <div className="site-footer-grid" style={{maxWidth:1320, margin:'0 auto', padding:'48px 32px 36px',
         display:'grid', gridTemplateColumns:'1.4fr 1fr 1fr 1fr', gap:48,
       }}>
         <div>

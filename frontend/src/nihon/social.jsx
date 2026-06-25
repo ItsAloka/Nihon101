@@ -799,7 +799,7 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
   return (
     <div>
       <div style={{background:`linear-gradient(135deg, color-mix(in oklab, ${c} 40%, ${p.bg}), ${p.bg})`, borderBottom:`1px solid ${p.line}`}}>
-        <div style={{...wrap(), padding:'56px 32px 44px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:28, alignItems:'center'}}>
+        <div className="spa-split spa-pad" style={{...wrap(), padding:'56px 32px 44px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:28, alignItems:'center'}}>
           <div onClick={()=>{ if(editing) fileRef.current?.click(); }} style={{position:'relative', cursor: editing?'pointer':'default'}}>
             <Avatar user={user} p={p} size={132}/>
             {editing && (
@@ -921,13 +921,13 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
           </div>
         ) : (
           isMine ? (
-            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
+            <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
               {list.map(po=>(
                 <MyPostCard key={po.id} p={p} lang={lang} post={po} onChanged={refreshMine}/>
               ))}
             </div>
           ) : (
-            <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
+            <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:24, paddingBottom:20}}>
               {list.map(po=>(
                 <div key={po.slug} style={{position:'relative'}}>
                   <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>
@@ -1046,7 +1046,7 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
         ))}
       </div>
 
-      <div style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:56, alignItems:'start'}}>
+      <div className="spa-split" style={{display:'grid', gridTemplateColumns:'1.4fr 1fr', gap:56, alignItems:'start'}}>
         {/* leaderboard */}
         <div style={{display:'flex', flexDirection:'column', gap:4}}>
           {top.map((po,i)=>(
@@ -1420,7 +1420,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
       {currentUser && follows.size < 3 && suggestions.length>0 && (
         <section style={{marginBottom:56}}>
           <FeedHeading p={p} lang={lang} en="Writers to follow" jp="おすすめの書き手" kicker_en="suggested for you" kicker_jp="あなたへのおすすめ"/>
-          <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16}}>
+          <div className="spa-g4" style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16}}>
             {suggestions.map(a=>(
               <div key={a.slug} style={{padding:20, borderRadius:16, background:p.surface, border:`1px solid ${p.line}`, display:'flex', flexDirection:'column', alignItems:'center', textAlign:'center', gap:10}}>
                 <div onClick={()=>{ window.location.href = `/${loc}/u/${a.slug}`; }} style={{cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:10}}>
@@ -1441,7 +1441,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
       <section style={{marginBottom:48}}>
         <FeedHeading p={p} lang={lang} en="Picked for you" jp="あなたへのおすすめ" kicker_en={hasAff?'follows · trending · your taste':'trending this week'} kicker_jp={hasAff?'フォロー・人気・好みから':'今週の人気'}/>
         {loading ? (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+          <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
             {Array.from({length:6}).map((_,i)=>(<window.CardSkeleton key={i} p={p}/>))}
           </div>
         ) : feedErr ? (
@@ -1455,7 +1455,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
             }}>{lang==='jp'?'再試行':'Try again'}</button>
           </div>
         ) : (
-          <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
+          <div className="spa-g3" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32}}>
             {stream.map(po=>(<RecCard key={po.slug} po={po}/>))}
           </div>
         )}
