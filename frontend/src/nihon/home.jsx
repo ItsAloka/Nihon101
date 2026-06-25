@@ -22,7 +22,7 @@ function HomePage({ p, lang, posts, t, savedSet, likedMap, onLike, onSave }) {
 
       <div style={maxWrap()}>
         {/* Secondary featured + categories rail */}
-        <section style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:48, marginTop:64, alignItems:'start'}}>
+        <section className="spa-split" style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:48, marginTop:64, alignItems:'start'}}>
           <SecondaryFeature p={p} lang={lang} post={sub} t={t}/>
           <CategoryRail p={p} lang={lang} categories={D.CATEGORIES}/>
         </section>
@@ -45,7 +45,7 @@ function HomePage({ p, lang, posts, t, savedSet, likedMap, onLike, onSave }) {
             </a>
           }
         />
-        <div style={{
+        <div className="spa-g3" style={{
           display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap,
         }}>
           {recent.map(post=>(
@@ -121,7 +121,7 @@ function HeroSplit({p, lang, post, t, saved, onSave}) {
   return (
     <section style={{...maxWrap(), paddingTop:48, paddingBottom:16, position:'relative'}}>
       <WavyBG p={p}/>
-      <div style={{display:'grid', gridTemplateColumns:'1.05fr 1fr', gap:56, alignItems:'center', position:'relative'}}>
+      <div className="spa-split" style={{display:'grid', gridTemplateColumns:'1.05fr 1fr', gap:56, alignItems:'center', position:'relative'}}>
         <div>
           <div style={{display:'flex', alignItems:'center', gap:14, marginBottom:24}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
@@ -186,7 +186,7 @@ function HeroStack({p, lang, post, t, saved, onSave}) {
   return (
     <section style={{...maxWrap(), paddingTop:32, paddingBottom:16}}>
       <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={460} radius={20} accent={'文化'}/>
-      <div style={{marginTop:28, display:'grid', gridTemplateColumns:'1.5fr 1fr', gap:48, alignItems:'end'}}>
+      <div className="spa-split" style={{marginTop:28, display:'grid', gridTemplateColumns:'1.5fr 1fr', gap:48, alignItems:'end'}}>
         <div>
           <div style={{display:'flex', gap:14, marginBottom:18}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
@@ -283,7 +283,7 @@ function SecondaryFeature({p, lang, post, t}) {
   const title = lang==='jp'?post.title_jp:post.title_en;
   const excerpt = lang==='jp'?post.excerpt_jp:post.excerpt_en;
   return (
-    <div onClick={()=>window.__nihon_go({name:'article', slug:post.slug})}
+    <div onClick={()=>window.__nihon_go({name:'article', slug:post.slug})} className="spa-g2"
       style={{
        display:'grid', gridTemplateColumns:'1fr 1fr', gap:28,
        background: p.surface,
@@ -362,7 +362,7 @@ function CategoryRail({p, lang, categories}) {
 // ------- Editor's list (numbered, magazine-style) -------
 function EditorList({p, lang, posts, t}) {
   return (
-    <ol style={{
+    <ol className="spa-g3" style={{
       listStyle:'none', display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:32,
     }}>
       {posts.map((post, i)=>(
@@ -466,7 +466,7 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
 // ------- Author grid -------
 function AuthorGrid({p, lang}) {
   return (
-    <div style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:18}}>
+    <div className="spa-g5" style={{display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:18}}>
       {window.NIHON_DATA.AUTHORS.map(a=>(
         <a key={a.slug} href={`#/author/${a.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'author', slug:a.slug});}}
           style={{

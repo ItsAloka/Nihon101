@@ -169,6 +169,20 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
         .nihon-mainnav, .nihon-searchwrap, .nav-hide-mobile { display: none !important; }
         .nav-burger { display: inline-flex !important; }
       }
+      @media (max-width: 820px) { .site-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; padding: 36px 16px 28px !important; } }
+      @media (max-width: 440px) { .site-footer-grid { grid-template-columns: 1fr !important; } }
+      /* SPA-island grids that also render on Shell pages (e.g. the feed on /for-you) */
+      @media (max-width: 1024px) {
+        .spa-g3 { grid-template-columns: repeat(2, 1fr) !important; }
+        .spa-g4, .spa-g5 { grid-template-columns: repeat(3, 1fr) !important; }
+      }
+      @media (max-width: 820px) {
+        .spa-g2, .spa-g3, .spa-split { grid-template-columns: 1fr !important; gap: 28px !important; }
+        .spa-pad { padding-left: 16px !important; padding-right: 16px !important; padding-top: 40px !important; }
+      }
+      @media (max-width: 480px) {
+        .spa-g4, .spa-g5 { grid-template-columns: 1fr 1fr !important; }
+      }
 
       /* ---- responsive: tablet ---- */
       @media (max-width: 1024px) {
