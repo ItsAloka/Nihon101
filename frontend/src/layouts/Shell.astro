@@ -160,7 +160,10 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
       .empty .mu { font-family: var(--fontDisplay); font-size: 48px; color: var(--stamp); margin-bottom: 8px; }
       .empty .msg { font-family: var(--fontDisplay); font-style: italic; font-size: 22px; color: var(--inkSoft); }
 
-      .section { padding: 48px 0 96px; }
+      /* vertical only — must NOT reset the horizontal gutter that .wrap sets
+         (these pages use class="wrap section"; a `padding` shorthand here would
+         zero .wrap's left/right padding and make content touch the screen edge). */
+      .section { padding-top: 48px; padding-bottom: 96px; }
 
       /* ---- responsive header (Nav island uses inline styles → !important beats them) ---- */
       .nav-burger { display: none; }
@@ -192,9 +195,9 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
       }
       /* ---- responsive: mobile ---- */
       @media (max-width: 640px) {
-        .wrap { padding: 0 16px; }
+        .wrap { padding: 0 20px; }
         .recent-grid { grid-template-columns: 1fr; gap: 20px; }
-        .section { padding: 32px 0 64px; }
+        .section { padding-top: 32px; padding-bottom: 64px; }
         .banner .wrap { grid-template-columns: 1fr; gap: 16px; padding: 36px 16px 30px; }
         .banner .hanko { width: 68px; height: 68px; font-size: 32px; }
         .banner .blurb { font-size: 16px; }
