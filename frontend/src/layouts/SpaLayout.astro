@@ -53,6 +53,13 @@ const { lang = "ja", syncLang = false } = Astro.props;
         background: #f58fa3;
         color: #fff;
       }
+      /* responsive header (Nav island inline styles → !important beats them) */
+      .nav-burger { display: none; }
+      @keyframes navDrawerIn { from { transform: translateX(100%); } to { transform: none; } }
+      @media (max-width: 820px) {
+        .nihon-mainnav, .nihon-searchwrap, .nav-hide-mobile { display: none !important; }
+        .nav-burger { display: inline-flex !important; }
+      }
     </style>
   </head>
   <body>
