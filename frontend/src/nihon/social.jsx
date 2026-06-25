@@ -113,12 +113,12 @@ function LoginModal({ p, lang, onLogin, onClose }) {
 
   return (
     <div style={{
-      position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'center', justifyContent:'center',
-      background:'rgba(20,14,20,0.45)', backdropFilter:'blur(4px)', padding:20,
+      position:'fixed', inset:0, zIndex:60, display:'flex', alignItems:'flex-start', justifyContent:'center',
+      background:'rgba(20,14,20,0.45)', backdropFilter:'blur(4px)', padding:20, overflowY:'auto',
     }} onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={isReg ? T(lang,'Create your account','アカウントを作成') : T(lang,'Sign in','ログイン')}
         onClick={(e)=>e.stopPropagation()} style={{
-        width:'100%', maxWidth:440, background:p.surface, borderRadius:24, overflow:'hidden',
+        width:'100%', maxWidth:440, margin:'auto', background:p.surface, borderRadius:24, overflow:'hidden',
         border:`1px solid ${p.line}`, boxShadow:'0 40px 80px -30px rgba(0,0,0,0.5)', position:'relative',
       }}>
         {/* header */}

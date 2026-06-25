@@ -125,5 +125,11 @@ const canonical = `/${locale}/u/${user.handle}`;
       /* Drop the follow button to a full-width row under the avatar+info. */
       .pf-follow-slot { grid-column: 1 / -1; justify-self: start; }
     }
+    @media (max-width: 640px) {
+      .pf-hero .wrap { grid-template-columns: 1fr; padding: 40px 16px 34px; gap: 18px; }
+      .pf-avatar { width: 96px; height: 96px; }
+      .pf-bio { font-size: 17px; }
+      .pf-stats { flex-wrap: wrap; gap: 12px 16px; }
+    }
   </style>
 </Shell>
