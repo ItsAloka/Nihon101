@@ -7,6 +7,7 @@ import "./ui.jsx";
 import "./home.jsx";
 import "./screens.jsx";
 import "./social.jsx";
+import { withBoundary } from "./ErrorBoundary.jsx";
 const { HomePage, ArticlePage, CategoryPage, SearchPage, AuthorPage, FeedPage,
         AboutPage, PrivacyPage, ContactPage, SavedPage, TrendingPage, ComposerPage, ProfilePage,
         LoginModal, Nav, Footer, SettingsPage, PALETTES, deriveDark, FONT_PAIRINGS, getAllPosts, getPost } = window;
@@ -371,4 +372,4 @@ function NotFound({p, lang}) {
   );
 }
 
-export default App;
+export default withBoundary(App, "app");

@@ -1,12 +1,13 @@
 import React from "react";
 import "./api.jsx"; // registers window.N101_API in THIS island's bundle
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 const T = (loc, ja, en) => (loc === "ja" ? ja : en);
 
 /** Landing page for the emailed verification link. Reads ?token=, confirms it
  *  against the backend, and reports the outcome. On an invalid/expired token it
  *  offers to resend (which needs a live session, restored from the refresh cookie). */
-export default function VerifyEmail({ locale = "ja" }) {
+function VerifyEmail({ locale = "ja" }) {
   const [state, setState] = React.useState("checking"); // checking|ok|invalid|error|missing
   const [resent, setResent] = React.useState("");        // ''|sending|sent|signin|failed
 
@@ -65,3 +66,5 @@ export default function VerifyEmail({ locale = "ja" }) {
     </div>
   );
 }
+
+export default withBoundary(VerifyEmail, "verify-email");

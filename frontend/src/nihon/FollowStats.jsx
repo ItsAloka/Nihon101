@@ -6,6 +6,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import "./api.jsx";       // window.N101_API
 import "./content.jsx";   // window.N101_CONTENT (followApi)
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 const TINTS = ["#FBC5CC", "#FFD27A", "#A6C7F0", "#D6B8F0", "#FBB58B", "#B6D58E", "#E89A7E", "#D89DBE", "#9BC2EE"];
 const tintFor = (s) => { let h = 0; for (const c of String(s || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return TINTS[h % TINTS.length]; };
@@ -62,6 +63,8 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [rows, setRows] = React.useState(null);
+  const [err, setErr] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
   const [viewerId, setViewerId] = React.useState(null);
   const [q, setQ] = React.useState("");
 
@@ -72,16 +75,17 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
   // Reset the search box when switching tabs.
   React.useEffect(() => { setQ(""); }, [tab]);
 
-  // Fetch the list, refetching (debounced) as the search query changes.
+  // Fetch the list, refetching (debounced) as the search query changes. A failed
+  // fetch shows a distinct error + retry — never a silent empty "no readers".
   React.useEffect(() => {
     let live = true;
-    setRows(null);
+    setRows(null); setErr(false);
     const fetcher = tab === "readers" ? window.N101_CONTENT.followApi.followers : window.N101_CONTENT.followApi.followingOf;
     const t = setTimeout(() => {
-      fetcher(handle, { q }).then((r) => { if (live) setRows(r); }).catch(() => { if (live) setRows([]); });
+      fetcher(handle, { q }).then((r) => { if (live) setRows(r); }).catch(() => { if (live) { setErr(true); setRows([]); } });
     }, q ? 220 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [tab, handle, q]);
+  }, [tab, handle, q, reloadKey]);
 
   React.useEffect(() => {
     const onEsc = (e) => { if (e.key === "Escape") onClose(); };
@@ -140,6 +144,11 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
         <div style={{ overflowY: "auto", padding: "4px 0 10px" }}>
           {rows === null ? (
             <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkFaint)" }}>{jp ? "読み込み中…" : "Loading…"}</div>
+          ) : err ? (
+            <div style={{ padding: "40px 24px", textAlign: "center" }}>
+              <div style={{ fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkSoft)" }}>{jp ? "読み込めませんでした。" : "Couldn’t load this list."}</div>
+              <button onClick={() => setReloadKey((k) => k + 1)} style={{ marginTop: 12, appearance: "none", cursor: "pointer", border: "1px solid var(--line)", background: "var(--surface2)", borderRadius: 999, padding: "8px 18px", fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{jp ? "再試行" : "Try again"}</button>
+            </div>
           ) : rows.length === 0 ? (
             <div style={{ padding: "48px 24px", textAlign: "center", fontFamily: "var(--fontDisplay)", fontStyle: "italic", fontSize: 18, color: "var(--inkSoft)" }}>
               {q ? (jp ? "見つかりませんでした。" : "No matches.")
@@ -154,7 +163,7 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
 
 // The two clickable stat chips ("N Readers" / "N Writers") that open the modal.
 // Fetches its own counts from the profile endpoint when not provided.
-export default function FollowStats({ handle, locale = "ja", followers = null, following = null, tone = "soft" }) {
+function FollowStats({ handle, locale = "ja", followers = null, following = null, tone = "soft" }) {
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [counts, setCounts] = React.useState({ followers, following });
@@ -184,3 +193,5 @@ export default function FollowStats({ handle, locale = "ja", followers = null, f
     </span>
   );
 }
+
+export default withBoundary(FollowStats, "follow-stats");

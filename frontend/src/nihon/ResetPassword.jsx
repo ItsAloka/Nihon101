@@ -1,5 +1,6 @@
 import React from "react";
 import "./api.jsx"; // registers window.N101_API in THIS island's bundle
+import { withBoundary } from "./ErrorBoundary.jsx";
 
 const T = (loc, ja, en) => (loc === "ja" ? ja : en);
 
@@ -14,7 +15,7 @@ const label = {
 
 /** Landing page for the emailed reset link (/{loc}/reset?token=…). Reads ?token=,
  *  lets the user set a new password, then sends them to sign in. */
-export default function ResetPassword({ locale = "ja" }) {
+function ResetPassword({ locale = "ja" }) {
   const jp = locale === "ja";
   const [token, setToken] = React.useState(null); // null until read; '' = missing
   const [pw, setPw] = React.useState("");
@@ -76,3 +77,5 @@ export default function ResetPassword({ locale = "ja" }) {
     </div>
   );
 }
+
+export default withBoundary(ResetPassword, "reset-password");
