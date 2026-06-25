@@ -451,8 +451,8 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginTop:'auto', paddingTop:12, borderTop:`1px solid ${p.line}`}}>
         <AuthorChip name={post.author} nameJp={post.author_jp} handle={post.authorHandle} avatarUrl={post.authorAvatarUrl} p={p} lang={lang} size="sm" date={post.date}/>
         <div style={{display:'flex', alignItems:'center', gap:14, flexShrink:0}}>
-          <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
-            <HeartIcon color={p.stamp} filled size={15}/> {(post.likes||0).toLocaleString()}
+          <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color: post.liked ? p.stamp : p.inkSoft}}>
+            <HeartIcon color={post.liked ? p.stamp : p.inkFaint} filled={!!post.liked} size={15}/> {(post.likes||0).toLocaleString()}
           </span>
           <span style={{display:'inline-flex', alignItems:'center', gap:5, fontFamily:'var(--fontMono)', fontSize:12.5, fontWeight:600, color:p.inkSoft}}>
             <CommentIcon color={p.inkFaint} size={15}/> {(post.commentCount ?? post.comments ?? 0).toLocaleString()}

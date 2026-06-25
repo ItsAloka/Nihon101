@@ -140,7 +140,11 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
       .post-card .stats { display: flex; align-items: center; gap: 14px; flex: none; }
       .post-card .stat { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fontMono); font-size: 12.5px; font-weight: 600; color: var(--inkSoft); }
       .post-card .stat svg { width: 15px; height: 15px; }
-      .post-card .stat.heart svg { fill: var(--stamp); }
+      /* outline heart by default; only a heart the viewer actually liked fills red
+         (hydrated client-side via /posts/liked-state after the session resolves). */
+      .post-card .stat.heart svg { fill: none; stroke: var(--inkFaint); stroke-width: 2; stroke-linejoin: round; }
+      .post-card .stat.heart.liked svg { fill: var(--stamp); stroke: none; }
+      .post-card .stat.heart.liked { color: var(--stamp); }
       .post-card .stat.chat svg { fill: none; stroke: var(--inkFaint); stroke-width: 2; stroke-linejoin: round; }
       .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--line); background: var(--surface); }
       .chip .kanji { font-family: var(--fontDisplay); color: var(--stamp); text-transform: none; letter-spacing: 0; }
@@ -168,9 +172,25 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
       /* ---- responsive header (Nav island uses inline styles → !important beats them) ---- */
       .nav-burger { display: none; }
       @keyframes navDrawerIn { from { transform: translateX(100%); } to { transform: none; } }
+      /* phones: collapse the whole header to a hamburger drawer */
       @media (max-width: 820px) {
         .nihon-mainnav, .nihon-searchwrap, .nav-hide-mobile { display: none !important; }
         .nav-burger { display: inline-flex !important; }
+      }
+      /* tablet (821–1100): KEEP the full desktop nav, but tighten spacing + shrink
+         the search pill so it never overlaps the Saved / notification icons. */
+      @media (min-width: 821px) and (max-width: 1100px) {
+        .nav-inner { padding-left: 18px !important; padding-right: 18px !important; gap: 6px !important; }
+        .nihon-mainnav { margin-left: 2px !important; gap: 0 !important; }
+        .nav-link { padding: 8px 9px !important; }
+        .nihon-searchwrap { max-width: 168px; }
+        .nihon-search { min-width: 0 !important; padding-left: 11px !important; padding-right: 11px !important; }
+      }
+      /* header popovers (notifications / account / search) become an anchored
+         full-width sheet on phones instead of a 360px box that runs off-screen. */
+      @media (max-width: 560px) {
+        .nav-pop { position: fixed !important; left: 12px !important; right: 12px !important;
+                   width: auto !important; max-width: none !important; }
       }
       @media (max-width: 820px) { .site-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; padding: 36px 16px 28px !important; } }
       @media (max-width: 440px) { .site-footer-grid { grid-template-columns: 1fr !important; } }

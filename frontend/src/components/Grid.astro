@@ -58,7 +58,7 @@ const CHAT = "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 
           </a>
         )}
         <div class="stats">
-          <span class="stat heart"><svg viewBox="0 0 24 24"><path d={HEART}></path></svg>{po.likes.toLocaleString()}</span>
+          <span class="stat heart" data-like={po.id}><svg viewBox="0 0 24 24"><path d={HEART}></path></svg>{po.likes.toLocaleString()}</span>
           <span class="stat chat"><svg viewBox="0 0 24 24"><path d={CHAT}></path></svg>{(po.comments ?? 0).toLocaleString()}</span>
         </div>
       </div>

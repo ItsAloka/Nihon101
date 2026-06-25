@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, postLikes, postComments, commentLikes, postSaves, userSignals, users } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -54,6 +54,18 @@ export async function hasLikedPost(db: DB, postId: string, userId: string | null
     .from(postLikes)
     .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
   return !!row;
+}
+
+/** Which of `postIds` the viewer has liked — one batched query for a card list
+ *  (null viewer / empty list → empty set). Lets every card render an honest
+ *  filled-vs-outline heart instead of always-filled. */
+export async function likedPostIds(db: DB, viewerId: string | null, postIds: string[]): Promise<Set<string>> {
+  if (!viewerId || postIds.length === 0) return new Set();
+  const rows = await db
+    .select({ postId: postLikes.postId })
+    .from(postLikes)
+    .where(and(eq(postLikes.userId, viewerId), inArray(postLikes.postId, postIds)));
+  return new Set(rows.map((r) => r.postId));
 }
 
 // ---- Post saves (toggle) -------------------------------------------------
