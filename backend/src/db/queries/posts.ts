@@ -161,21 +161,60 @@ export interface ListPostsFilter {
   authorId?: string;
   status?: PostStatus;
   includeHidden?: boolean; // owner/admin views pass true; public reads exclude hidden
+  limit?: number;          // hard cap — no list query is ever unbounded
+  offset?: number;         // simple page offset (owner "my posts" / drafts)
 }
 
-export function listPosts(db: DB, f: ListPostsFilter): Promise<PostWithAuthor[]> {
-  const where = [
+// Owner/admin "my posts" + drafts. A single author's own corpus, so it carries
+// full bodies (the editor list reads them) but is still BOUNDED — never load an
+// author's entire history into memory at 50k-user scale.
+const OWNER_LIST_CAP = 200;
+
+function listWhere(f: ListPostsFilter) {
+  return [
     f.categoryId ? eq(posts.categoryId, f.categoryId) : undefined,
     f.authorId ? eq(posts.authorId, f.authorId) : undefined,
     f.status ? eq(posts.status, f.status) : undefined,
     f.includeHidden ? undefined : notHidden,
   ].filter(Boolean);
+}
+
+export function listPosts(db: DB, f: ListPostsFilter): Promise<PostWithAuthor[]> {
+  const where = listWhere(f);
   return db
     .select({ ...getTableColumns(posts), ...authorCols })
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(where.length ? and(...where) : undefined)
-    .orderBy(desc(posts.publishedAt), desc(posts.createdAt)) as Promise<PostWithAuthor[]>;
+    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+    .limit(Math.min(f.limit ?? OWNER_LIST_CAP, OWNER_LIST_CAP))
+    .offset(f.offset ?? 0) as Promise<PostWithAuthor[]>;
+}
+
+// Public list surface (the default /posts read). CARD shape — bodies are never
+// selected, so a category/author listing can't ship megabytes of HTML — and always
+// paginated. Fetches limit+1 to tell the caller whether another page exists.
+export const PUBLIC_LIST_LIMIT = 24;
+export const PUBLIC_LIST_MAX = 60;
+
+export async function listPostCards(
+  db: DB,
+  f: ListPostsFilter,
+  limit = PUBLIC_LIST_LIMIT,
+  offset = 0,
+): Promise<{ cards: PostCardRow[]; hasMore: boolean }> {
+  const where = listWhere(f);
+  const capped = Math.min(Math.max(1, limit), PUBLIC_LIST_MAX);
+  const rows = (await db
+    .select(cardCols)
+    .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
+    .where(where.length ? and(...where) : undefined)
+    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+    .limit(capped + 1)
+    .offset(Math.max(0, offset))) as PostCardRow[];
+  const hasMore = rows.length > capped;
+  return { cards: hasMore ? rows.slice(0, capped) : rows, hasMore };
 }
 
 export interface UpdatePostInput {

@@ -88,7 +88,7 @@ const canonical = `/${locale}/search${q ? `?q=${encodeURIComponent(q)}` : ''}`;
     </div>
 
     <div class="list-bar">
-      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件' : 'results'}{q && ` · “${q}”`}</div>
+      <div class="results-count">{total === 0 ? (jp ? '該当なし' : 'No results') : `${String(total).padStart(2, '0')} ${jp ? '件' : 'results'}`}{q && ` · “${q}”`}</div>
       {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
     </div>
 

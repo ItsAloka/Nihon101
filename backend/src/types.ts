@@ -17,8 +17,10 @@ export type AppVars = {
   JWT_SECRET: string;
   REFRESH_PEPPER: string;
   FRONTEND_ORIGIN: string;
+  API_ORIGIN: string;             // this Worker's public origin (for unsubscribe links in emails)
   RESEND_API_KEY: string;
-  RESEND_FROM: string;
+  RESEND_FROM: string;            // transactional sender (auth.nihon101.com subdomain)
+  RESEND_FROM_NEWSLETTER: string; // Sunday Letter sender (news.nihon101.com subdomain)
   DEEPL_API_KEY: string;
   OPENAI_API_KEY: string;
   OPENAI_EMBED_API_KEY: string; // separate key for embeddings (feed + search semantic layer)

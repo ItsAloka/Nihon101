@@ -42,7 +42,7 @@ const canonical = `/${locale}/t/${tag}`;
     </div>
     <h1 class="ex"><span style="color:var(--accent);">#</span>{tag}</h1>
     <div class="list-bar">
-      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件の記事' : 'pieces'}</div>
+      <div class="results-count">{total === 0 ? (jp ? '該当なし' : 'No results') : `${String(total).padStart(2, '0')} ${jp ? '件の記事' : 'pieces'}`}</div>
       {total > 0 && <SortBar current={sort} options={sortOptions} hrefBase={sortHrefBase} />}
     </div>
     {posts.length === 0 ? (

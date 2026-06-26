@@ -13,6 +13,7 @@ import { sendEmail, resetEmailHtml, verifyEmailHtml, loginOtpHtml, welcomeEmailH
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { startSession, revokeFamily } from '../lib/session';
+import { deleteUserMedia } from '../lib/media';
 import { uniqueHandle, handleTaken, HANDLE_RE } from '../db/queries/users';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -492,6 +493,11 @@ auth.delete('/me', requireAuth, async (c) => {
   await db(c).delete(emailVerifications).where(eq(emailVerifications.userId, sess.id));
   await db(c).delete(googleLinks).where(eq(googleLinks.userId, sess.id));
   await db(c).delete(users).where(eq(users.id, sess.id));
+  // GDPR erasure isn't complete until the user's uploads are gone too. Every blob
+  // they own (avatar + post covers + in-body images) lives under the `<userId>/`
+  // R2 prefix, so one prefix sweep removes all of it. Background so the delete
+  // response stays instant; the FK cascade already cleared their DB rows.
+  c.executionCtx.waitUntil(deleteUserMedia(c.env, sess.id));
   clearRefreshCookie(c);
   return c.json({ ok: true });
 });
@@ -516,13 +522,14 @@ auth.post('/forgot', limits.forgot, async (c) => {
       });
       const link = `${c.env.FRONTEND_ORIGIN}/${loc}/reset?token=${raw}`;
       const { subject, html } = resetEmailHtml(link, loc);
-      await sendEmail({
-        apiKey: c.env.RESEND_API_KEY,
-        from: c.env.RESEND_FROM,
-        to: mail,
-        subject,
-        html,
-      });
+      // Fire in the background, exactly like register/verify/otp. Awaiting the send
+      // made the "account exists" path observably slower (and able to 500 on a mail
+      // outage) while the "no such account" path returned instantly — a timing/
+      // behavior enumeration oracle. Deferring makes both paths identical.
+      c.executionCtx.waitUntil(
+        sendEmail({ apiKey: c.env.RESEND_API_KEY, from: c.env.RESEND_FROM, to: mail, subject, html })
+          .catch((e: unknown) => console.error('[forgot] send failed', e)),
+      );
     }
   }
   return c.json({ ok: true });

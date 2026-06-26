@@ -32,7 +32,8 @@ new_classes = ["RateLimiterDO"]
 [triggers]
 # Every 5 min: rescore momentum for the ACTIVE set (recent + freshly-engaged posts,
 # not the whole corpus) + bake the top-20 to KV. Minute-0 also ages out stale reports.
-crons = ["*/5 * * * *"]
+# Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday Letter (kill-switchable).
+crons = ["*/5 * * * *", "0 0 * * 0"]
 
 # In prod, set DB_POOLED = "true" here once Hyperdrive / Neon's pooler is in front
 # (and point DATABASE_URL at it) so the Worker reuses one per-isolate pool instead
@@ -40,5 +41,7 @@ crons = ["*/5 * * * *"]
 # db/client.ts.
 [vars]
 FRONTEND_ORIGIN = "http://localhost:4321"
-RESEND_FROM = "Nihon101 <no-reply@nihon101.com>"
+API_ORIGIN = "http://localhost:8787"
+RESEND_FROM = "Nihon101 <no-reply@auth.nihon101.com>"
+RESEND_FROM_NEWSLETTER = "Nihon101 Sunday Letter <sunday@news.nihon101.com>"
 GOOGLE_REDIRECT_URI = "http://localhost:8787/auth/google/callback"

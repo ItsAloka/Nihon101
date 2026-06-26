@@ -1,0 +1,4 @@
+# Root-level dev artifacts (each app also ignores its own copies)
+node_modules/
+.wrangler/
+.DS_Store

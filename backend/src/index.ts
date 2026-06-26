@@ -21,6 +21,7 @@ import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
 import { recomputeWeatherCache } from './lib/weather';
+import { sendSundayLetter } from './lib/sunday-letter';
 import weather from './routes/weather';
 
 // Durable Object class must be exported from the Worker entry to be bound.
@@ -111,18 +112,23 @@ app.route('/newsletter', newsletter);
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledEvent, env: AppEnv['Bindings']) {
-    // Every 5 min: rescore the active set's momentum trend score, then bake the
-    // top-20 cards to KV for the zero-Postgres hot path.
+  async scheduled(event: ScheduledEvent, env: AppEnv['Bindings']) {
     const { db, pool } = standaloneDb(env);
     try {
-      // Trending needs the DB; weather is a throttled external fetch (≈ every
-      // 30 min) baked to the same KV. Run both; weather failures are swallowed.
-      const tasks: Promise<unknown>[] = [
+      // Sunday 00:00 UTC (09:00 JST): the weekly Sunday Letter. Its own trigger so
+      // it never piggybacks the per-5-min trending pass.
+      if (event.cron === '0 0 * * 0') {
+        const r = await sendSundayLetter(db, env);
+        console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
+        return;
+      }
+      // Every 5 min: rescore the active set's momentum, then bake the top-20 cards
+      // to KV for the zero-Postgres hot path. Weather is a throttled external fetch
+      // baked to the same KV; its failures are swallowed.
+      await Promise.all([
         recomputeTrendingCache(db, env.TRENDING_KV),
         recomputeWeatherCache(env.TRENDING_KV),
-      ];
-      await Promise.all(tasks);
+      ]);
     } finally {
       await pool.end();
     }

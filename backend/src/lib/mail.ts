@@ -12,9 +12,10 @@ type SendArgs = {
   subject: string;
   html: string;
   replyTo?: string;  // so an admin reply / contact notice can be replied to directly
+  headers?: Record<string, string>;  // e.g. List-Unsubscribe for the newsletter
 };
 
-export async function sendEmail({ apiKey, from, to, subject, html, replyTo }: SendArgs): Promise<void> {
+export async function sendEmail({ apiKey, from, to, subject, html, replyTo, headers }: SendArgs): Promise<void> {
   if (!apiKey) {
     console.log(`[mail:dev] would send to ${to}${replyTo ? ` (reply-to ${replyTo})` : ''} — "${subject}"\n${html}`);
     return;
@@ -22,7 +23,7 @@ export async function sendEmail({ apiKey, from, to, subject, html, replyTo }: Se
   const res = await fetchWithTimeout('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+    body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}), ...(headers ? { headers } : {}) }),
     timeoutMs: 10_000,
     retries: 1, // a reset/verify email is worth one retry over a transient blip
   });
@@ -30,6 +31,40 @@ export async function sendEmail({ apiKey, from, to, subject, html, replyTo }: Se
     console.error('[mail] resend failed', res.status, await res.text());
     throw new Error('mail_send_failed');
   }
+}
+
+export type BatchEmail = {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+  headers?: Record<string, string>;
+};
+
+/** Send up to 100 distinct emails in one Resend call (POST /emails/batch). The
+ *  Sunday Letter personalises each body (its unsubscribe link), so this is the
+ *  per-recipient path, chunked by the caller. Returns false on failure so the
+ *  caller can keep going to the next chunk rather than aborting the whole run. */
+export async function sendBatch(apiKey: string, emails: BatchEmail[]): Promise<boolean> {
+  if (!emails.length) return true;
+  if (!apiKey) {
+    console.log(`[mail:dev] would batch-send ${emails.length} emails — first: ${emails[0].to} "${emails[0].subject}"`);
+    return true;
+  }
+  const res = await fetchWithTimeout('https://api.resend.com/emails/batch', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(emails.map((e) => ({
+      from: e.from, to: e.to, subject: e.subject, html: e.html, ...(e.headers ? { headers: e.headers } : {}),
+    }))),
+    timeoutMs: 20_000,
+    retries: 1,
+  });
+  if (!res.ok) {
+    console.error('[mail] resend batch failed', res.status, await res.text());
+    return false;
+  }
+  return true;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -199,7 +234,7 @@ export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: s
       html: shell(
         center(block('メールアドレスの確認',
           `<p style="margin:0 0 24px">下のボタンを押して、メールアドレスの確認を完了してください。リンクは24時間有効です。</p>
-           <p style="margin:0">${button(link, 'メールを確認', INDIGO)}</p>`)),
+           <p style="margin:0">${button(link, 'メールを確認')}</p>`)),
         '心当たりがない場合は、このメールを無視してください。',
       ),
     };
@@ -209,8 +244,110 @@ export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: s
     html: shell(
       center(block('Verify your email',
         `<p style="margin:0 0 24px">Click the button below to confirm your email address. This link expires in 24 hours.</p>
-         <p style="margin:0">${button(link, 'Verify email', INDIGO)}</p>`)),
+         <p style="margin:0">${button(link, 'Verify email')}</p>`)),
       "If you didn't create this account, you can ignore this email.",
     ),
   };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Sunday Letter — the weekly newsletter (picker variant B, "The Letter").
+ * Personal intro → one feature read with cover → 2 smaller reads → word of the
+ * week. Sent to newsletter_subscribers; gated by the admin kill switch upstream.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type LetterPost = {
+  title: string;
+  excerpt: string;
+  url: string;
+  cover?: string | null;           // absolute image URL (post cover)
+  category: string;                // already-localized label, e.g. "Language" / "言語"
+};
+
+export type WordOfWeek = { term: string; reading: string; gloss: string };
+
+const CAT_COLORS = [ROSE, GOLD, INDIGO];
+
+/** A small "also this week" row: thumbnail + category + title + read link. */
+function letterRow(p: LetterPost, color: string, readLabel: string): string {
+  const thumb = p.cover
+    ? `<img src="${esc(p.cover)}" width="56" height="56" alt="" style="display:block;border-radius:8px;object-fit:cover">`
+    : `<div style="width:56px;height:56px;border-radius:8px;background:${PAPER}"></div>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px"><tr>
+    <td width="56" style="vertical-align:middle;padding-right:12px">${thumb}</td>
+    <td style="vertical-align:middle">
+      <p style="margin:0 0 3px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;font-weight:700;color:${color};text-transform:uppercase;letter-spacing:0.06em">${esc(p.category)}</p>
+      <p style="margin:0 0 4px;font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:600;color:${INK};line-height:1.3">${esc(p.title)}</p>
+      <a href="${esc(p.url)}" style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;color:${ROSE};text-decoration:none;font-weight:700">${readLabel} →</a>
+    </td>
+  </tr></table>`;
+}
+
+/**
+ * Build the Sunday Letter. `posts[0]` is the feature; up to two more become the
+ * "also this week" rows. `intro` is the editorial lede; `word` is optional.
+ */
+export function sundayLetterHtml(
+  args: {
+    issue: number;
+    dateLabel: string;          // e.g. "29 June 2025" / "2025年6月29日"
+    intro: string;
+    posts: LetterPost[];
+    word?: WordOfWeek | null;
+    seeAllUrl: string;
+    unsubscribeUrl: string;
+  },
+  locale: 'ja' | 'en',
+): { subject: string; html: string } {
+  const jp = locale === 'ja';
+  const feature = args.posts[0];
+  const rest = args.posts.slice(1, 3);
+  const t = jp
+    ? { kicker: 'ゆっくり読む週刊レター', read: 'この一週間の一本', cta: '全文を読む', also: '今週はほかにも', more: '読む', seeAll: '今週のトレンドをすべて見る', word: '今週のことば', sub: 'nihon101.com で購読中', unsub: '配信停止', subject: `日曜レター #${args.issue} — 今週の三本` }
+    : { kicker: 'A slow weekly letter', read: "This week's read", cta: 'Read the full story', also: 'Also this week', more: 'Read', seeAll: 'See all trending this week', word: 'Word of the week', sub: 'You subscribed at nihon101.com', unsub: 'Unsubscribe', subject: `Sunday Letter #${args.issue} — this week's three reads` };
+
+  const issueLabel = jp ? `第${args.issue}号` : `Issue #${args.issue}`;
+  const cover = feature?.cover
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:22px"><tr><td>
+        <img src="${esc(feature.cover)}" width="100%" alt="" style="display:block;width:100%;border-radius:10px;object-fit:cover;max-height:220px">
+      </td></tr></table>`
+    : '';
+
+  const wordBox = args.word
+    ? `<div style="height:1px;background:${LINE};margin:24px 0"></div>
+       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+         <td style="background:${ROSE_SOFT};border-radius:12px;padding:18px 22px">
+           <p style="margin:0 0 4px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:${ROSE};text-transform:uppercase">${t.word}</p>
+           <p style="margin:0 0 6px;font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:600;color:${INK}">${esc(args.word.term)} <span style="font-size:16px;color:#9C948A;font-weight:400">· ${esc(args.word.reading)}</span></p>
+           <p style="margin:0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:13px;line-height:1.6;color:${INK_SOFT}">${esc(args.word.gloss)}</p>
+         </td>
+       </tr></table>`
+    : '';
+
+  const restRows = rest.length
+    ? `<div style="height:1px;background:${LINE};margin:24px 0"></div>
+       <p style="margin:0 0 12px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#9C948A">${t.also}</p>
+       ${rest.map((p, i) => letterRow(p, CAT_COLORS[(i + 1) % CAT_COLORS.length], t.more)).join('')}`
+    : '';
+
+  const inner = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:-38px -40px 0;width:auto">
+      <tr><td style="background:${ROSE_SOFT};border-bottom:1px solid #F0D4DB;padding:12px 40px">
+        <p style="margin:0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:${ROSE}">${esc(args.dateLabel)} · ${t.kicker}</p>
+      </td></tr>
+    </table>
+    <div style="padding-top:30px">
+      <p style="margin:0 0 22px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.75;color:${INK_SOFT};font-style:italic">${esc(args.intro)}</p>
+      <div style="height:1px;background:${LINE};margin:0 0 24px"></div>
+      <p style="margin:0 0 8px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${ROSE}">${t.read}</p>
+      <h2 style="margin:0 0 10px;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:600;line-height:1.3;color:${INK}">${esc(feature?.title ?? '')}</h2>
+      <p style="margin:0 0 16px;font-family:'Helvetica Neue',Arial,sans-serif;font-size:15px;line-height:1.65;color:${INK_SOFT}">${esc(feature?.excerpt ?? '')}</p>
+      ${cover}
+      <p style="margin:0 0 4px;text-align:center">${button(feature?.url ?? args.seeAllUrl, t.cta)}</p>
+      ${restRows}
+      ${wordBox}
+    </div>`;
+
+  const footnote = `${t.sub} · <a href="${esc(args.unsubscribeUrl)}" style="color:${ROSE};text-decoration:none">${t.unsub}</a> · ${issueLabel}`;
+  return { subject: t.subject, html: shell(inner, footnote) };
 }

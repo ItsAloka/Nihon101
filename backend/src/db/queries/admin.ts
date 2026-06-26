@@ -384,16 +384,16 @@ const SETTINGS_ID = 'singleton';
 // surface threshold to stay conservative about no-human takedowns.
 const DEFAULT_REPORT_THRESHOLD = 3;
 const DEFAULT_AUTO_HIDE_THRESHOLD = 8;
-export interface ModSettings { reportThreshold: number; autoHideThreshold: number; contactEmail: string; }
+export interface ModSettings { reportThreshold: number; autoHideThreshold: number; contactEmail: string; newsletterEnabled: boolean; }
 
 /** Read the singleton config, lazily creating it with defaults on first access. */
 export async function getSettings(db: DB): Promise<ModSettings> {
   const [row] = await db.select().from(adminSettings).where(eq(adminSettings.id, SETTINGS_ID));
-  if (row) return { reportThreshold: row.reportThreshold, autoHideThreshold: row.autoHideThreshold, contactEmail: row.contactEmail };
+  if (row) return { reportThreshold: row.reportThreshold, autoHideThreshold: row.autoHideThreshold, contactEmail: row.contactEmail, newsletterEnabled: row.newsletterEnabled };
   await db.insert(adminSettings)
-    .values({ id: SETTINGS_ID, reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '', updatedAt: now() })
+    .values({ id: SETTINGS_ID, reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '', newsletterEnabled: true, updatedAt: now() })
     .onConflictDoNothing();
-  return { reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '' };
+  return { reportThreshold: DEFAULT_REPORT_THRESHOLD, autoHideThreshold: DEFAULT_AUTO_HIDE_THRESHOLD, contactEmail: '', newsletterEnabled: true };
 }
 
 const SETTINGS_KV_KEY = 'mod:settings';

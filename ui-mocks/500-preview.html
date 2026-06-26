@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>500 Error Page Preview · nihon101</title>
+<style>
+  /* Site CSS variable approximation */
+  :root {
+    --ink: #1A1817;
+    --inkSoft: #5C544C;
+    --inkFaint: #9C948A;
+    --surface: #FFFFFF;
+    --bg: #F4EEE4;
+    --line: #EAE2D6;
+    --stamp: #D63752;
+    --accent: #D63752;
+    --accentDeep: #BE2C45;
+    --fontDisplay: Georgia, 'Times New Roman', serif;
+    --fontBody: 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--fontBody); }
+
+  /* mock nav */
+  .mock-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 40px; border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .mock-logo { font-family: var(--fontDisplay); font-size: 22px; font-weight: 700; color: var(--ink); }
+  .mock-logo span { color: var(--stamp); }
+  .mock-links { display: flex; gap: 24px; font-size: 14px; color: var(--inkSoft); }
+  .mock-btn { background: var(--stamp); color: #fff; border-radius: 999px; padding: 8px 18px; font-size: 14px; font-weight: 600; }
+
+  /* toggle */
+  .preview-toggle { display: flex; gap: 8px; justify-content: center; padding: 16px; background: #1A1817; }
+  .toggle-btn { padding: 6px 16px; border-radius: 8px; border: 1.5px solid #444; color: #ccc; background: transparent; cursor: pointer; font-size: 13px; }
+  .toggle-btn.active { background: var(--stamp); border-color: var(--stamp); color: #fff; }
+
+  /* ── page ── */
+  .er-page {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 62vh;
+    padding: 80px 24px 100px;
+    overflow: hidden;
+    text-align: center;
+  }
+  .er-bg-num {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -52%);
+    font-family: var(--fontDisplay);
+    font-weight: 800;
+    font-size: clamp(160px, 28vw, 340px);
+    letter-spacing: -0.06em;
+    color: transparent;
+    -webkit-text-stroke: 1.5px color-mix(in oklab, #D63752 14%, transparent);
+    user-select: none; pointer-events: none;
+    white-space: nowrap; line-height: 1;
+  }
+  .er-center {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center;
+    max-width: 560px; width: 100%;
+  }
+  .er-stamp {
+    width: 88px; height: 88px; border-radius: 14px;
+    border: 3px solid var(--stamp); color: var(--stamp);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--fontDisplay); font-weight: 700; font-size: 44px;
+    transform: rotate(-5deg); margin-bottom: 28px;
+    background: rgba(214,55,82,.04);
+    box-shadow: inset 0 0 0 1px rgba(214,55,82,.2);
+    flex-shrink: 0;
+  }
+  .er-pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 13px; border-radius: 999px;
+    border: 1px solid rgba(214,55,82,.3);
+    background: rgba(214,55,82,.06);
+    font-family: var(--fontBody); font-size: 12px; font-weight: 600;
+    letter-spacing: .04em; color: var(--stamp); text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .er-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stamp); flex-shrink: 0; }
+  .er-head {
+    font-family: var(--fontDisplay); font-weight: 600;
+    font-size: clamp(30px, 5.5vw, 54px); letter-spacing: -0.03em;
+    line-height: 1.1; color: var(--ink); margin: 0 0 18px; white-space: pre-line;
+  }
+  .er-lede {
+    font-family: var(--fontBody); font-size: clamp(15px, 2vw, 17px);
+    color: var(--inkSoft); line-height: 1.65;
+    margin: 0 auto 36px; max-width: 420px;
+  }
+  .er-cta { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 40px; }
+  .er-btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 13px 26px; border-radius: 999px;
+    background: var(--stamp); color: #fff;
+    font-family: var(--fontBody); font-size: 14px; font-weight: 600;
+    text-decoration: none; transition: opacity .15s;
+  }
+  .er-btn-primary:hover { opacity: .88; }
+  .er-btn-ghost {
+    display: inline-flex; align-items: center;
+    padding: 13px 26px; border-radius: 999px;
+    border: 1.5px solid var(--line); background: var(--surface);
+    color: var(--ink); font-family: var(--fontBody);
+    font-size: 14px; font-weight: 600; text-decoration: none;
+    transition: border-color .15s;
+  }
+  .er-btn-ghost:hover { border-color: var(--stamp); }
+  .er-rule {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; max-width: 220px;
+  }
+  .er-rule::before, .er-rule::after {
+    content: ""; flex: 1; height: 1px; background: var(--line);
+  }
+  .er-rule-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(214,55,82,.4); flex-shrink: 0;
+  }
+
+  /* mock footer */
+  .mock-footer {
+    border-top: 1px solid var(--line); padding: 40px;
+    display: flex; gap: 40px; flex-wrap: wrap;
+    font-size: 13px; color: var(--inkSoft);
+    background: var(--surface);
+  }
+  .mock-footer .logo { font-family: var(--fontDisplay); font-size: 20px; font-weight: 700; color: var(--ink); }
+  .mock-footer .logo span { color: var(--stamp); }
+</style>
+</head>
+<body>
+
+<div class="preview-toggle">
+  <button class="toggle-btn active" onclick="setLang('en', this)">English</button>
+  <button class="toggle-btn" onclick="setLang('ja', this)">日本語</button>
+  <button class="toggle-btn" onclick="setDark(this)" style="margin-left:12px">🌙 Dark</button>
+</div>
+
+<div class="mock-nav">
+  <span class="mock-logo">nihon1<span>●</span>1</span>
+  <div class="mock-links">
+    <span>Today</span><span>Explore</span><span>Trending</span>
+  </div>
+  <span class="mock-btn">Sign in</span>
+</div>
+
+<!-- ─── error page ─── -->
+<div class="er-page">
+  <div class="er-bg-num">500</div>
+  <div class="er-center">
+    <div class="er-stamp">詫</div>
+    <div class="er-pill"><span class="er-dot"></span><span id="pill-text">500 · Server error</span></div>
+    <h1 class="er-head" id="head-text">Something went&#10;wrong on our side.</h1>
+    <p class="er-lede" id="lede-text">It looks like a temporary hiccup. Give it a moment, then try again.</p>
+    <div class="er-cta">
+      <a class="er-btn-primary" href="#">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.8-3.4L23 10M1 14l4.7 4.4A9 9 0 0 0 20.5 15"/></svg>
+        <span id="retry-text">Try again</span>
+      </a>
+      <a class="er-btn-ghost" href="#"><span id="home-text">Back to home</span></a>
+    </div>
+    <div class="er-rule"><span class="er-rule-dot"></span></div>
+  </div>
+</div>
+
+<div class="mock-footer">
+  <div><div class="logo">nihon1<span>●</span>1</div><p style="margin-top:6px;max-width:220px">A bilingual blog about Japan — every story, in both English and 日本語.</p></div>
+</div>
+
+<script>
+const copy = {
+  en: { pill: '500 · Server error', head: 'Something went\nwrong on our side.', lede: 'It looks like a temporary hiccup. Give it a moment, then try again.', retry: 'Try again', home: 'Back to home' },
+  ja: { pill: '500 · 一時的な問題', head: 'うまく\n読み込めませんでした。', lede: 'サーバー側で何かが起きているようです。少し待ってから、もう一度お試しください。', retry: '再読み込み', home: 'ホームへ戻る' },
+};
+function setLang(lang, btn) {
+  const c = copy[lang];
+  document.getElementById('pill-text').textContent = c.pill;
+  document.getElementById('head-text').textContent = c.head;
+  document.getElementById('lede-text').textContent = c.lede;
+  document.getElementById('retry-text').textContent = c.retry;
+  document.getElementById('home-text').textContent = c.home;
+  document.querySelectorAll('.toggle-btn').forEach(b => { if (b.textContent.includes('Dark') || b.textContent.includes('🌙')) return; b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+function setDark(btn) {
+  const on = document.documentElement.style.getPropertyValue('--bg') === '#1A1817';
+  if (on) {
+    document.documentElement.style.setProperty('--bg', '#F4EEE4');
+    document.documentElement.style.setProperty('--ink', '#1A1817');
+    document.documentElement.style.setProperty('--inkSoft', '#5C544C');
+    document.documentElement.style.setProperty('--surface', '#FFFFFF');
+    document.documentElement.style.setProperty('--line', '#EAE2D6');
+    btn.classList.remove('active');
+  } else {
+    document.documentElement.style.setProperty('--bg', '#1A1817');
+    document.documentElement.style.setProperty('--ink', '#F4EEE4');
+    document.documentElement.style.setProperty('--inkSoft', '#9C948A');
+    document.documentElement.style.setProperty('--surface', '#272320');
+    document.documentElement.style.setProperty('--line', '#322C27');
+    btn.classList.add('active');
+  }
+}
+</script>
+</body>
+</html>

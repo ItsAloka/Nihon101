@@ -7,9 +7,20 @@
       "runtimeArgs": [
         "bash",
         "-lc",
-        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev"
+        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev -- --host"
       ],
       "port": 4321,
+      "autoPort": false
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": [
+        "bash",
+        "-lc",
+        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/backend && exec bun run dev"
+      ],
+      "port": 8787,
       "autoPort": false
     },
     {
@@ -17,6 +28,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4555", "--directory", "ui-mocks/enui"],
       "port": 4555
+    },
+    {
+      "name": "mocks",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "4556", "--directory", "ui-mocks"],
+      "port": 4556
     }
   ]
 }

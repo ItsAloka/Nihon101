@@ -120,6 +120,7 @@ const pageDesc = jp
       @media (max-width: 820px) {
         .nihon-mainnav, .nihon-searchwrap, .nav-hide-mobile { display: none !important; }
         .nav-burger { display: inline-flex !important; }
+        .nav-inner { padding-left: 16px !important; padding-right: 16px !important; gap: 10px !important; }
       }
       @media (min-width: 821px) and (max-width: 1100px) {
         .nav-inner { padding-left: 18px !important; padding-right: 18px !important; gap: 6px !important; }
@@ -157,7 +158,10 @@ const pageDesc = jp
         color-scheme: dark;
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: var(--bg); color: var(--ink); font-family: var(--fontBody); -webkit-font-smoothing: antialiased; }
+      body { background: var(--bg); color: var(--ink); font-family: var(--fontBody); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+      /* Proportional-alternate widths tighten Japanese kana/punctuation on display
+         headings (a no-op on Latin glyphs, so EN headlines are untouched). */
+      h1, h2, h3 { font-feature-settings: "palt" 1; }
       a { color: inherit; text-decoration: none; }
       button { font-family: inherit; }
       ::selection { background: #f58fa3; color: #fff; }
@@ -384,7 +388,7 @@ const pageDesc = jp
               </div>
               <div class="hero-photo">
                 <a class="photo" style={`height:520px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={read(po.slug)}>
-                  {po.cover ? <img src={po.cover} alt={title(po)} /> : <span class="glyph">{glyphFor(po.categoryId)}</span>}
+                  {po.cover ? <img src={po.cover} alt={title(po)} fetchpriority="high" decoding="async" /> : <span class="glyph">{glyphFor(po.categoryId)}</span>}
                   {!po.cover && <span class="blob"></span>}
                   <span class="vignette"></span>
                   <span class="cover-hanko">{catKanji(po.categoryId)}</span>
