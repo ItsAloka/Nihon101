@@ -114,7 +114,7 @@ const canonical = `/${locale}/p/${post.slug}`;
     )}
 
     <div class="wrap">
-      <div class="rd-body" set:html={bodyHtml}></div>
+      <div class={`rd-body${jp ? "" : " rd-dropcap"}`} set:html={bodyHtml}></div>
 
       {post.tags && post.tags.length > 0 && (
         <div class="rd-tags">
@@ -190,7 +190,9 @@ const canonical = `/${locale}/p/${post.slug}`;
     .rd-body :global(table) { border-collapse: collapse; width: 100%; margin: 24px 0; }
     .rd-body :global(td), .rd-body :global(th) { border: 1px solid var(--line); padding: 8px 10px; }
     .rd-body :global(th) { background: var(--bg); font-weight: 700; }
-    .rd-body :global(> p:first-of-type::first-letter) { float: left; font-family: var(--fontDisplay); font-weight: 600; font-size: 96px; line-height: 0.8; color: var(--stamp); margin: 8px 14px 0 0; }
+    /* Drop-cap only in English. A 96px serif initial on a leading kanji/kana looks
+       off (CJK glyphs aren't designed to drop), so JA bodies skip it. */
+    .rd-dropcap :global(> p:first-of-type::first-letter) { float: left; font-family: var(--fontDisplay); font-weight: 600; font-size: 96px; line-height: 0.8; color: var(--stamp); margin: 8px 14px 0 0; }
     .rd-body :global([data-youtube-video] iframe), .rd-body :global(iframe) { width: 100%; aspect-ratio: 16/9; height: auto; border: 0; border-radius: 12px; margin: 24px 0; display: block; }
     .rd-body::after { content: ""; display: table; clear: both; }
 

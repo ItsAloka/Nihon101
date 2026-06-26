@@ -1,10 +1,11 @@
 /* Admin + moderation API. Everything here is gated by requireAdmin (valid access
  * token + role=admin). Each state change writes an audit row. Mounted at /admin. */
 import { Hono } from 'hono';
-import { isNotNull } from 'drizzle-orm';
+import { isNotNull, or, like } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAdmin } from '../middleware/requireAdmin';
+import { keyFromUrl, postMediaKeys, deleteMediaKeys } from '../lib/media';
 import { users, posts } from '../db/schema';
 import { getUserById, getUserByHandle } from '../db/queries/users';
 import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
@@ -26,6 +27,7 @@ import {
   listFeatured, setFeatured, searchPostsAdmin,
   type ReportStatus, type BanDuration, type FeaturedSection,
 } from '../db/queries/admin';
+import { newsletterStats, listSubscribers } from '../db/queries/newsletter';
 
 const app = new Hono<AppEnv>();
 app.use('*', requireAdmin);
@@ -175,11 +177,10 @@ app.delete('/posts/:id', async (c) => {
   const note = typeof dbody?.note === 'string' ? dbody.note : '';
   const post = await getPostById(db, c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  // Free the cover's R2 object (cascades handle likes/saves/comments/featured rows).
-  if (post.cover) {
-    const key = post.cover.split('/media/')[1];
-    if (key) await c.env.MEDIA.delete(key).catch(() => {});
-  }
+  // Free the post's R2 objects — cover AND every in-body image — so an admin delete
+  // can't orphan blobs (cascades handle likes/saves/comments/featured rows).
+  const mediaKeys = postMediaKeys(post);
+  if (mediaKeys.length) await deleteMediaKeys(c.env, mediaKeys);
   // Resolve the case BEFORE the post row goes (reports keep the targetId as history).
   await resolveReportsForTarget(db, 'post', post.id, actor.id, note || 'post deleted');
   await deletePost(db, post.id);
@@ -279,26 +280,27 @@ app.post('/users/:id/role', async (c) => {
 
 /* ───────────── media library (R2 orphan finder) ───────────── */
 
-// Pull the bare R2 key out of a stored media URL (`<origin>/media/<key>`).
-function keyFromUrl(url: string | null): string | null {
-  if (!url) return null;
-  const k = url.split('/media/')[1];
-  return k ? k.trim() : null;
-}
-
 // Every R2 key a live DB row points at → who points at it.
 type MediaRef = { type: 'post' | 'user'; id: string; title: string };
 async function collectReferencedKeys(db: ReturnType<typeof getDb>): Promise<Map<string, MediaRef>> {
   const map = new Map<string, MediaRef>();
-  const add = (url: string | null, ref: MediaRef) => { const k = keyFromUrl(url); if (k && !map.has(k)) map.set(k, ref); };
-  // Only rows that actually carry a media URL — most users have no avatar and many
-  // posts no cover, so this keeps the scan from loading the whole users/posts tables.
+  const add = (key: string | null, ref: MediaRef) => { if (key && !map.has(key)) map.set(key, ref); };
+  // Only rows that actually carry media — most users have no avatar, and we only
+  // pull a post's (big) body when it embeds a /media/ URL — so the scan never loads
+  // the whole posts/users tables. CRUCIAL: a post references its cover AND every
+  // in-body <img> key. Miss the body images and the scanner reports them as orphans;
+  // a bulk-delete would then wipe images out of live published posts.
   const [ps, us] = await Promise.all([
-    db.select({ id: posts.id, title: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover }).from(posts).where(isNotNull(posts.cover)),
+    db.select({ id: posts.id, title: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover, bodyEn: posts.bodyEn, bodyJa: posts.bodyJa })
+      .from(posts)
+      .where(or(isNotNull(posts.cover), like(posts.bodyEn, '%/media/%'), like(posts.bodyJa, '%/media/%'))),
     db.select({ id: users.id, handle: users.handle, avatarUrl: users.avatarUrl }).from(users).where(isNotNull(users.avatarUrl)),
   ]);
-  for (const p of ps) add(p.cover, { type: 'post', id: p.id, title: p.title || p.titleJa });
-  for (const u of us) add(u.avatarUrl, { type: 'user', id: u.id, title: u.handle });
+  for (const p of ps) {
+    const ref: MediaRef = { type: 'post', id: p.id, title: p.title || p.titleJa };
+    for (const key of postMediaKeys(p)) add(key, ref);
+  }
+  for (const u of us) add(keyFromUrl(u.avatarUrl), { type: 'user', id: u.id, title: u.handle });
   return map;
 }
 
@@ -471,6 +473,38 @@ app.delete('/tags/:id', async (c) => {
   await deleteTag(db, id);
   await logAdminAction(db, { actorId: actor.id, action: 'delete_tag', targetType: 'tag', targetId: id, detail: { label: cur.label } });
   return c.json({ ok: true });
+});
+
+/* ───────────── sunday letter / newsletter admin ───────────── */
+
+app.get('/newsletter', async (c) => {
+  const db = getDb(c);
+  const [stats, settings] = await Promise.all([newsletterStats(db), getSettings(db)]);
+  const subscribers = await listSubscribers(db, { limit: 50 });
+  // Next send = next Sunday 09:00 JST (UTC+9). Pure calculation, no KV needed.
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun
+  const daysUntilSunday = dayOfWeek === 0 ? 7 : 7 - dayOfWeek;
+  const nextSunday = new Date(now);
+  nextSunday.setUTCDate(now.getUTCDate() + daysUntilSunday);
+  nextSunday.setUTCHours(0, 0, 0, 0); // 09:00 JST = 00:00 UTC
+  return c.json({
+    enabled: settings.newsletterEnabled,
+    stats,
+    nextSendAt: nextSunday.getTime(),
+    subscribers,
+  });
+});
+
+app.put('/newsletter', async (c) => {
+  const db = getDb(c);
+  const actor = c.var.user!;
+  const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null;
+  if (typeof body?.enabled !== 'boolean') return c.json({ error: 'invalid_body' }, 400);
+  const settings = await updateSettings(db, { newsletterEnabled: body.enabled });
+  await invalidateSettingsCache(c.env.TRENDING_KV);
+  await logAdminAction(db, { actorId: actor.id, action: body.enabled ? 'newsletter_enable' : 'newsletter_disable', detail: {} });
+  return c.json({ enabled: settings.newsletterEnabled });
 });
 
 /* ───────────── audit log ───────────── */

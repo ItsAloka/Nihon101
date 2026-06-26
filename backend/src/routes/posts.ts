@@ -4,6 +4,7 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { sanitizeHtml } from '../lib/sanitizeHtml';
+import { postMediaKeys, deleteMediaKeys } from '../lib/media';
 import { embedText, postEmbedText, toVectorLiteral } from '../lib/embeddings';
 import { posts } from '../db/schema';
 import { sql, eq } from 'drizzle-orm';
@@ -17,12 +18,15 @@ import {
   getPostWithAuthor,
   getPostWithAuthorBySlug,
   listPosts,
+  listPostCards,
   listCardsByIds,
   updatePost,
   setPublishedAt,
   deletePost,
   publicPost,
   publicPostCard,
+  PUBLIC_LIST_LIMIT,
+  PUBLIC_LIST_MAX,
   type PostRow,
   type PostStatus,
   type PostDensity,
@@ -187,9 +191,18 @@ app.get('/', limits.publicRead, async (c) => {
     return c.json({ posts: rows.map(publicPost) });
   }
 
-  // Default and 'published' → public.
-  const rows = await listPosts(db(c), { categoryId, authorId, status: 'published' });
-  return c.json({ posts: rows.map(publicPost) });
+  // Default and 'published' → public. CARD shape (no bodies) + paginated, so a
+  // public category/author listing can't be turned into an unbounded full-body
+  // scrape. `page` is 0-based; `hasMore` lets a caller page without a COUNT.
+  const limit = Math.min(PUBLIC_LIST_MAX, Math.max(1, Number(c.req.query('limit')) || PUBLIC_LIST_LIMIT));
+  const page = Math.max(0, Number(c.req.query('page')) || 0);
+  const { cards, hasMore } = await listPostCards(
+    db(c),
+    { categoryId, authorId, status: 'published' },
+    limit,
+    page * limit,
+  );
+  return c.json({ posts: cards.map(publicPostCard), page, hasMore });
 });
 
 // Single post by slug (reading view). Drafts visible only to their author.
@@ -373,6 +386,11 @@ app.delete('/:id', requireAuth, limits.postDelete, async (c) => {
     await bumpCategoryCount(d, existing.categoryId, -1);
     await bumpTagCounts(d, (existing.tags ?? []) as string[], -1);
   }
+  // Free the post's blobs (cover + every in-body image) so a delete can't orphan
+  // R2 objects. Background — the row is already gone, so this never delays the
+  // response, and a slow/failed R2 delete is recoverable via the admin scanner.
+  const keys = postMediaKeys(existing);
+  if (keys.length) c.executionCtx.waitUntil(deleteMediaKeys(c.env, keys));
   return c.json({ ok: true });
 });
 

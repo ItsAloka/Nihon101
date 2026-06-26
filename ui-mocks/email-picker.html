@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Email UI Picker · nihon101</title>
+<style>
+:root {
+  --ink:#1A1817;--soft:#5C544C;--faint:#9C948A;--rose:#D63752;--rose-dark:#BE2C45;
+  --rose-bg:#FBE9EC;--indigo:#3B5168;--gold:#C9923B;--paper:#F4EEE4;--card:#fff;--line:#EAE2D6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#2A2421;font-family:system-ui,sans-serif;color:#eee}
+
+/* chrome */
+.bar{background:#1A1817;padding:12px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #333}
+.bar-logo{font-family:Georgia,serif;font-size:18px;font-weight:700;color:#F4EEE4}
+.bar-logo span{color:#D63752}
+.bar-tag{background:rgba(214,55,82,.18);color:#D63752;border:1px solid rgba(214,55,82,.35);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700}
+
+/* tabs */
+.tabs{display:flex;gap:0;padding:0 20px;background:#201C19;border-bottom:1px solid #333;overflow-x:auto}
+.tab{padding:12px 18px;font-size:13px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-top:none;border-left:none;border-right:none}
+.tab.on{color:#D63752;border-bottom-color:#D63752}
+
+/* variant bar */
+.vbar{display:flex;gap:8px;padding:14px 20px;background:#251F1C;border-bottom:1px solid #333;flex-wrap:wrap;align-items:center}
+.vbar-label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.08em}
+.vbtn{padding:6px 14px;border-radius:8px;border:1.5px solid #444;color:#aaa;background:transparent;cursor:pointer;font-size:12px;font-weight:600}
+.vbtn.on{border-color:#D63752;color:#D63752;background:rgba(214,55,82,.1)}
+
+/* email stage */
+.stage{padding:24px 20px 48px;overflow:auto}
+.stage-label{font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+.email-frame{max-width:600px;margin:0 auto}
+
+/* sections hidden */
+.section{display:none}.section.on{display:block}
+.variant{display:none}.variant.on{display:block}
+
+/* ── email palette (inline in emails) ── already inlined below */
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="bar-logo">nihon1<span>●</span>1</span>
+  <span style="color:#555">Email UI Picker</span>
+  <span class="bar-tag">choose styles → tell Claude the names</span>
+</div>
+
+<div class="tabs">
+  <button class="tab on" onclick="showSection('sunday')">☀️ Sunday Letter</button>
+  <button class="tab" onclick="showSection('welcome')">👋 Welcome</button>
+  <button class="tab" onclick="showSection('otp')">🔐 Login Code</button>
+  <button class="tab" onclick="showSection('reset')">🔑 Password Reset</button>
+  <button class="tab" onclick="showSection('verify')">✉️ Verify Email</button>
+</div>
+
+<!-- ══════════════════════════════════
+  SUNDAY LETTER
+══════════════════════════════════ -->
+<div id="s-sunday" class="section on">
+  <div class="vbar">
+    <span class="vbar-label">Variant:</span>
+    <button class="vbtn on" onclick="showVariant('sunday','digest')">A — The Digest</button>
+    <button class="vbtn" onclick="showVariant('sunday','letter')">B — The Letter</button>
+    <button class="vbtn" onclick="showVariant('sunday','minimal')">C — Minimal</button>
+  </div>
+  <div class="stage">
+
+    <!-- A: DIGEST — 3 cards, editorial feel -->
+    <div id="sunday-digest" class="variant on">
+      <div class="stage-label">A — The Digest · top 3 trending this week · editorial card layout</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px;font-family:'Helvetica Neue',Arial,sans-serif">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%">
+
+          <!-- wordmark -->
+          <tr><td align="center" style="padding:0 0 20px">
+            <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span>
+          </td></tr>
+
+          <!-- header card -->
+          <tr><td style="background:#1A1817;border-radius:16px 16px 0 0;padding:28px 36px 24px">
+            <p style="margin:0 0 6px;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#D63752">SUNDAY LETTER · 29 JUNE 2025</p>
+            <h1 style="margin:0 0 10px;font-family:Georgia,serif;font-size:28px;font-weight:600;line-height:1.2;color:#F4EEE4">This week's three best reads.</h1>
+            <p style="margin:0;font-size:14px;line-height:1.6;color:#9C948A">Handpicked from what Japan's readers loved most this week.</p>
+          </td></tr>
+
+          <!-- article 1 — featured (big) -->
+          <tr><td style="background:#fff;padding:0">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:24px 28px">
+                  <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#D63752">① TRENDING · LANGUAGE</p>
+                  <h2 style="margin:0 0 8px;font-family:Georgia,serif;font-size:20px;font-weight:600;line-height:1.3;color:#1A1817">間 (ma) — the pause that holds everything together</h2>
+                  <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#5C544C">Why Japanese silence is never empty, and why that matters far beyond the language itself. By Yuki Shirakawa.</p>
+                  <a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:13px;font-weight:700;text-decoration:none;padding:10px 22px;border-radius:8px">Read the story →</a>
+                </td>
+                <td width="140" style="padding:24px 28px 24px 0;vertical-align:top">
+                  <div style="width:120px;height:120px;border-radius:12px;background:#F4EEE4;overflow:hidden">
+                    <img src="https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=240&q=75" width="120" height="120" alt="" style="display:block;object-fit:cover">
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td></tr>
+
+          <!-- divider -->
+          <tr><td style="background:#fff;padding:0 28px"><div style="height:1px;background:#EAE2D6"></div></td></tr>
+
+          <!-- article 2 — medium -->
+          <tr><td style="background:#fff;padding:0">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:20px 28px;vertical-align:top">
+                  <p style="margin:0 0 3px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#C9923B">② FOOD</p>
+                  <h3 style="margin:0 0 6px;font-family:Georgia,serif;font-size:17px;font-weight:600;line-height:1.35;color:#1A1817">Konbini rice balls: a short history of convenience made careful</h3>
+                  <a href="#" style="font-size:12px;color:#D63752;text-decoration:none;font-weight:700">Read →</a>
+                </td>
+                <td width="88" style="padding:20px 28px 20px 0;vertical-align:top">
+                  <img src="https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?w=160&q=75" width="80" height="80" alt="" style="display:block;border-radius:10px;object-fit:cover">
+                </td>
+              </tr>
+            </table>
+          </td></tr>
+
+          <tr><td style="background:#fff;padding:0 28px"><div style="height:1px;background:#EAE2D6"></div></td></tr>
+
+          <!-- article 3 -->
+          <tr><td style="background:#fff;border-radius:0 0 0 0;padding:0">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:20px 28px;vertical-align:top">
+                  <p style="margin:0 0 3px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#3B5168">③ TRAVEL</p>
+                  <h3 style="margin:0 0 6px;font-family:Georgia,serif;font-size:17px;font-weight:600;line-height:1.35;color:#1A1817">Kanazawa: the city that time forgot to rush</h3>
+                  <a href="#" style="font-size:12px;color:#D63752;text-decoration:none;font-weight:700">Read →</a>
+                </td>
+                <td width="88" style="padding:20px 28px 20px 0;vertical-align:top">
+                  <img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=160&q=75" width="80" height="80" alt="" style="display:block;border-radius:10px;object-fit:cover">
+                </td>
+              </tr>
+            </table>
+          </td></tr>
+
+          <!-- footer card -->
+          <tr><td style="background:#F4EEE4;border:1px solid #EAE2D6;border-radius:0 0 16px 16px;padding:20px 28px;text-align:center">
+            <a href="#" style="font-size:13px;font-weight:700;color:#D63752;text-decoration:none">See all trending this week →</a>
+          </td></tr>
+
+          <!-- email footer -->
+          <tr><td align="center" style="padding:20px 0 4px">
+            <p style="font-size:11px;color:#9C948A">You're getting this because you subscribed · <a href="#" style="color:#D63752;text-decoration:none">Unsubscribe</a></p>
+            <p style="margin:4px 0 0;font-size:11px;color:#C4BAB0">Nihon101 · nihon101.com</p>
+          </td></tr>
+
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+    <!-- B: THE LETTER — personal, editorial, one big + word of week -->
+    <div id="sunday-letter" class="variant">
+      <div class="stage-label">B — The Letter · personal intro + feature + word of the week</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
+
+          <!-- wordmark + date -->
+          <tr><td style="padding:0 0 18px;text-align:center">
+            <span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span><br>
+            <span style="font-size:11px;color:#9C948A;letter-spacing:.06em;text-transform:uppercase">Sunday Letter · Issue #4</span>
+          </td></tr>
+
+          <!-- card -->
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;overflow:hidden;padding:0">
+
+            <!-- pink kicker strip -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="background:#FBE9EC;border-bottom:1px solid #F0D4DB;padding:12px 36px">
+                <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#D63752">29 JUNE 2025 · A SLOW WEEKLY LETTER</p>
+              </td></tr>
+            </table>
+
+            <div style="padding:32px 36px">
+
+              <!-- personal intro -->
+              <p style="margin:0 0 22px;font-family:Georgia,serif;font-size:17px;line-height:1.75;color:#5C544C;font-style:italic">This week we kept coming back to one idea: the things that aren't said. In Japanese, there's a word for it. In the food, the architecture, the art — it keeps showing up.</p>
+
+              <div style="height:1px;background:#EAE2D6;margin:0 0 24px"></div>
+
+              <!-- feature read -->
+              <p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#D63752">THIS WEEK'S READ</p>
+              <h2 style="margin:0 0 10px;font-family:Georgia,serif;font-size:22px;font-weight:600;line-height:1.3;color:#1A1817">間 (ma) — the pause that holds everything together</h2>
+              <p style="margin:0 0 16px;font-size:14.5px;line-height:1.65;color:#5C544C">Why Japanese silence is never empty, and why that matters far beyond the language.</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                <tr>
+                  <td>
+                    <img src="https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=500&q=80" width="488" alt="" style="display:block;width:100%;border-radius:10px;object-fit:cover;max-height:220px">
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 20px;text-align:center">
+                <a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Read the full story →</a>
+              </p>
+
+              <div style="height:1px;background:#EAE2D6;margin:0 0 24px"></div>
+
+              <!-- also this week -->
+              <p style="margin:0 0 12px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#9C948A">ALSO THIS WEEK</p>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:10px">
+                <tr>
+                  <td style="vertical-align:middle;padding-right:12px" width="60">
+                    <img src="https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?w=120&q=75" width="56" height="56" alt="" style="display:block;border-radius:8px;object-fit:cover">
+                  </td>
+                  <td style="vertical-align:middle">
+                    <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#C9923B;text-transform:uppercase;letter-spacing:.06em">Food</p>
+                    <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:15px;font-weight:600;color:#1A1817;line-height:1.3">Konbini rice balls: convenience made careful</p>
+                    <a href="#" style="font-size:12px;color:#D63752;text-decoration:none;font-weight:700">Read →</a>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+                <tr>
+                  <td style="vertical-align:middle;padding-right:12px" width="60">
+                    <img src="https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=120&q=75" width="56" height="56" alt="" style="display:block;border-radius:8px;object-fit:cover">
+                  </td>
+                  <td style="vertical-align:middle">
+                    <p style="margin:0 0 3px;font-size:11px;font-weight:700;color:#3B5168;text-transform:uppercase;letter-spacing:.06em">Travel</p>
+                    <p style="margin:0 0 4px;font-family:Georgia,serif;font-size:15px;font-weight:600;color:#1A1817;line-height:1.3">Kanazawa: the city that time forgot to rush</p>
+                    <a href="#" style="font-size:12px;color:#D63752;text-decoration:none;font-weight:700">Read →</a>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="height:1px;background:#EAE2D6;margin:0 0 22px"></div>
+
+              <!-- word of week -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr><td style="background:#FBE9EC;border-radius:12px;padding:18px 22px">
+                  <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#D63752;text-transform:uppercase">Word of the week</p>
+                  <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:34px;font-weight:600;color:#1A1817">間 <span style="font-size:16px;color:#9C948A;font-weight:400">· ma</span></p>
+                  <p style="margin:0;font-size:13px;line-height:1.65;color:#5C544C">Pause. Gap. Interval. The silence between notes that makes music, not noise.</p>
+                </td></tr>
+              </table>
+
+            </div>
+          </td></tr>
+
+          <tr><td align="center" style="padding:18px 0 4px">
+            <p style="font-size:11px;color:#9C948A">You subscribed at nihon101.com · <a href="#" style="color:#D63752;text-decoration:none">Unsubscribe</a></p>
+          </td></tr>
+
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+    <!-- C: MINIMAL — ultra clean, just titles, Japan editorial feel -->
+    <div id="sunday-minimal" class="variant">
+      <div class="stage-label">C — Minimal · clean list, Japan newspaper feel, no images</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+
+          <tr><td style="padding:0 0 24px;text-align:center">
+            <span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span>
+          </td></tr>
+
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:36px 40px">
+
+            <div style="text-align:center;margin-bottom:28px">
+              <!-- sakura petal SVG (inline, strips in Gmail but graceful fallback) -->
+              <svg viewBox="0 0 80 80" width="56" height="56" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 10px" aria-hidden="true">
+                <g transform="translate(40,40)">
+                  <path d="M0 -28 C7 -20 7 -10 0 -5 C-7 -10 -7 -20 0 -28Z" fill="#FBE9EC" stroke="#D63752" stroke-width="1.5" transform="rotate(0)"/>
+                  <path d="M0 -28 C7 -20 7 -10 0 -5 C-7 -10 -7 -20 0 -28Z" fill="#FBE9EC" stroke="#D63752" stroke-width="1.5" transform="rotate(72)"/>
+                  <path d="M0 -28 C7 -20 7 -10 0 -5 C-7 -10 -7 -20 0 -28Z" fill="#FBE9EC" stroke="#D63752" stroke-width="1.5" transform="rotate(144)"/>
+                  <path d="M0 -28 C7 -20 7 -10 0 -5 C-7 -10 -7 -20 0 -28Z" fill="#FBE9EC" stroke="#D63752" stroke-width="1.5" transform="rotate(216)"/>
+                  <path d="M0 -28 C7 -20 7 -10 0 -5 C-7 -10 -7 -20 0 -28Z" fill="#FBE9EC" stroke="#D63752" stroke-width="1.5" transform="rotate(288)"/>
+                  <circle r="4" fill="#C9923B"/>
+                </g>
+              </svg>
+              <p style="margin:0 0 3px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#D63752;font-weight:700">SUNDAY LETTER · 29 JUNE 2025</p>
+              <h1 style="margin:0;font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1A1817">Three reads. One word.</h1>
+            </div>
+
+            <div style="height:1px;background:#EAE2D6;margin:0 0 24px"></div>
+
+            <!-- read 1 -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+              <tr><td style="border-left:3px solid #D63752;padding-left:14px">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#D63752">Language</p>
+                <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:17px;font-weight:600;line-height:1.35;color:#1A1817">間 (ma) — the pause that holds everything together</p>
+                <p style="margin:0 0 8px;font-size:13.5px;line-height:1.55;color:#5C544C">Why Japanese silence is never empty, and why that matters far beyond the language.</p>
+                <a href="#" style="font-size:12px;font-weight:700;color:#D63752;text-decoration:none">Read the story →</a>
+              </td></tr>
+            </table>
+
+            <!-- read 2 -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px">
+              <tr><td style="border-left:3px solid #C9923B;padding-left:14px">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#C9923B">Food</p>
+                <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:17px;font-weight:600;line-height:1.35;color:#1A1817">Konbini rice balls: a short history of convenience made careful</p>
+                <p style="margin:0 0 8px;font-size:13.5px;line-height:1.55;color:#5C544C">The onigiri is simple. The system behind it is anything but.</p>
+                <a href="#" style="font-size:12px;font-weight:700;color:#D63752;text-decoration:none">Read the story →</a>
+              </td></tr>
+            </table>
+
+            <!-- read 3 -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px">
+              <tr><td style="border-left:3px solid #3B5168;padding-left:14px">
+                <p style="margin:0 0 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#3B5168">Travel</p>
+                <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:17px;font-weight:600;line-height:1.35;color:#1A1817">Kanazawa: the city that time forgot to rush</p>
+                <p style="margin:0 0 8px;font-size:13.5px;line-height:1.55;color:#5C544C">A weekend in the city that survived the war and kept its soul.</p>
+                <a href="#" style="font-size:12px;font-weight:700;color:#D63752;text-decoration:none">Read the story →</a>
+              </td></tr>
+            </table>
+
+            <div style="height:1px;background:#EAE2D6;margin:0 0 24px"></div>
+
+            <!-- word box -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="background:#F4EEE4;border-radius:10px;padding:18px 22px;text-align:center">
+                <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.12em;color:#D63752;text-transform:uppercase">Word of the week</p>
+                <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:42px;font-weight:600;color:#1A1817;letter-spacing:-.01em">間</p>
+                <p style="margin:0;font-size:13px;color:#5C544C;line-height:1.6;font-style:italic">ma · pause · gap · interval · the space that gives meaning to everything around it</p>
+              </td></tr>
+            </table>
+
+          </td></tr>
+
+          <tr><td align="center" style="padding:18px 0 4px">
+            <p style="font-size:11px;color:#9C948A">You subscribed at nihon101.com · <a href="#" style="color:#D63752;text-decoration:none">Unsubscribe</a></p>
+          </td></tr>
+
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+  WELCOME
+══════════════════════════════════ -->
+<div id="s-welcome" class="section">
+  <div class="vbar">
+    <span class="vbar-label">Variant:</span>
+    <button class="vbtn on" onclick="showVariant('welcome','a')">A — Sakura</button>
+    <button class="vbtn" onclick="showVariant('welcome','b')">B — Bold</button>
+  </div>
+  <div class="stage">
+
+    <div id="welcome-a" class="variant on">
+      <div class="stage-label">A — Sakura hero (current style, refined)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px">
+            <span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span>
+          </td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px 40px 36px;text-align:center">
+            <svg viewBox="0 0 100 100" width="80" height="80" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto 16px" aria-hidden="true">
+              <g transform="translate(50,50)">
+                <path d="M0 -38 C9 -27 9 -14 0 -7 C-9 -14 -9 -27 0 -38Z" fill="#FBE9EC" stroke="#D63752" stroke-width="2" transform="rotate(0)"/>
+                <path d="M0 -38 C9 -27 9 -14 0 -7 C-9 -14 -9 -27 0 -38Z" fill="#FBE9EC" stroke="#D63752" stroke-width="2" transform="rotate(72)"/>
+                <path d="M0 -38 C9 -27 9 -14 0 -7 C-9 -14 -9 -27 0 -38Z" fill="#FBE9EC" stroke="#D63752" stroke-width="2" transform="rotate(144)"/>
+                <path d="M0 -38 C9 -27 9 -14 0 -7 C-9 -14 -9 -27 0 -38Z" fill="#FBE9EC" stroke="#D63752" stroke-width="2" transform="rotate(216)"/>
+                <path d="M0 -38 C9 -27 9 -14 0 -7 C-9 -14 -9 -27 0 -38Z" fill="#FBE9EC" stroke="#D63752" stroke-width="2" transform="rotate(288)"/>
+                <circle r="5" fill="#C9923B"/>
+              </g>
+            </svg>
+            <h1 style="margin:0 0 10px;font-family:Georgia,serif;font-size:24px;font-weight:600;color:#1A1817">Welcome, Aloka.</h1>
+            <p style="margin:0 0 18px;font-size:15px;line-height:1.65;color:#5C544C">Thanks for joining Nihon101 — a quiet corner of the internet for Japan's culture, food, travel, language, anime, and history.</p>
+            <a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Start reading →</a>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px">
+            <p style="font-size:11px;color:#9C948A">If you didn't create this account, ignore this email.</p>
+          </td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div id="welcome-b" class="variant">
+      <div class="stage-label">B — Bold dark header + clean body</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px">
+            <span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span>
+          </td></tr>
+          <tr><td style="background:#1A1817;border-radius:16px 16px 0 0;padding:32px 36px;text-align:center">
+            <p style="margin:0 0 8px;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#D63752">YOU'RE IN</p>
+            <h1 style="margin:0;font-family:Georgia,serif;font-size:28px;font-weight:600;color:#F4EEE4;line-height:1.2">Welcome to<br>nihon1<span style="color:#D63752">●</span>1</h1>
+          </td></tr>
+          <tr><td style="background:#fff;border-radius:0 0 16px 16px;padding:32px 36px;text-align:center">
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:#5C544C">Japan's culture, food, travel, language, anime, and history — told slowly, in both English and 日本語.</p>
+            <a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Start reading →</a>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px">
+            <p style="font-size:11px;color:#9C948A">If you didn't create this account, ignore this email.</p>
+          </td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+  OTP
+══════════════════════════════════ -->
+<div id="s-otp" class="section">
+  <div class="vbar">
+    <span class="vbar-label">Variant:</span>
+    <button class="vbtn on" onclick="showVariant('otp','a')">A — Red Seal (current)</button>
+    <button class="vbtn" onclick="showVariant('otp','b')">B — Tile Digits</button>
+    <button class="vbtn" onclick="showVariant('otp','c')">C — Clean Mono</button>
+  </div>
+  <div class="stage">
+
+    <div id="otp-a" class="variant on">
+      <div class="stage-label">A — Red hanko seal (current style)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px;text-align:center">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#D63752">LOGIN CODE</p>
+            <h1 style="margin:0 0 20px;font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1A1817">Your sign-in code</h1>
+            <!-- seal -->
+            <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:0 auto 6px"><tr>
+              <td width="130" height="130" align="center" valign="middle" style="width:130px;height:130px;background:#D63752;border:5px solid #fff;border-radius:65px;box-shadow:0 0 0 4px #BE2C45">
+                <span style="font-family:'SFMono-Regular',Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:.14em;color:#fff">847 291</span>
+              </td>
+            </tr></table>
+            <p style="margin:14px 0 0;font-size:12px;color:#9C948A">Good for 10 minutes · one use only</p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't try to sign in? Ignore this.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div id="otp-b" class="variant">
+      <div class="stage-label">B — Sprinkle tiles (each digit in a bordered card)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px;text-align:center">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#D63752">LOGIN CODE</p>
+            <h1 style="margin:0 0 22px;font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1A1817">Your sign-in code</h1>
+            <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:0 auto 16px"><tr>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #D63752;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">8</div></td>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #3B5168;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">4</div></td>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #C9923B;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">7</div></td>
+              <td style="padding:0 8px;color:#EAE2D6;font-size:22px;line-height:58px">·</td>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #D63752;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">2</div></td>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #BE2C45;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">9</div></td>
+              <td style="padding:0 4px"><div style="width:46px;height:58px;line-height:58px;text-align:center;background:#F4EEE4;border:1px solid #EAE2D6;border-top:3px solid #69AC8C;border-radius:12px;font-family:monospace;font-size:26px;font-weight:700;color:#1A1817">1</div></td>
+            </tr></table>
+            <p style="margin:0;font-size:12px;color:#9C948A">Good for 10 minutes · one use only</p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't try to sign in? Ignore this.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div id="otp-c" class="variant">
+      <div class="stage-label">C — Clean mono pill (minimal)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px;text-align:center">
+            <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#D63752">LOGIN CODE</p>
+            <h1 style="margin:0 0 22px;font-family:Georgia,serif;font-size:22px;font-weight:600;color:#1A1817">Your sign-in code</h1>
+            <div style="display:inline-block;background:#1A1817;border-radius:12px;padding:14px 36px;margin-bottom:14px">
+              <span style="font-family:'SFMono-Regular',Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:.22em;color:#F4EEE4">847 291</span>
+            </div>
+            <p style="margin:0;font-size:12px;color:#9C948A">Good for 10 minutes · one use only</p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't try to sign in? Ignore this.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+  RESET
+══════════════════════════════════ -->
+<div id="s-reset" class="section">
+  <div class="vbar">
+    <span class="vbar-label">Variant:</span>
+    <button class="vbtn on" onclick="showVariant('reset','a')">A — Rose CTA (current)</button>
+    <button class="vbtn" onclick="showVariant('reset','b')">B — Dark header</button>
+  </div>
+  <div class="stage">
+    <div id="reset-a" class="variant on">
+      <div class="stage-label">A — Rose CTA (current style)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px">
+            <h1 style="margin:0 0 12px;font-family:Georgia,serif;font-size:23px;font-weight:600;color:#1A1817">Reset your password</h1>
+            <p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5C544C">Click below to set a new password. This link expires in 1 hour.</p>
+            <p style="margin:0"><a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Reset password →</a></p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't request this? Ignore it.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+    <div id="reset-b" class="variant">
+      <div class="stage-label">B — Dark header strip</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#3B5168;border-radius:16px 16px 0 0;padding:24px 36px">
+            <p style="margin:0;font-family:Georgia,serif;font-size:20px;font-weight:600;color:#fff">Reset your password</p>
+          </td></tr>
+          <tr><td style="background:#fff;border-radius:0 0 16px 16px;border:1px solid #EAE2D6;border-top:none;padding:28px 36px">
+            <p style="margin:0 0 22px;font-size:15px;line-height:1.65;color:#5C544C">Click below to set a new password. This link expires in 1 hour.</p>
+            <p style="margin:0"><a href="#" style="display:inline-block;background:#3B5168;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Reset password →</a></p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't request this? Ignore it.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+  VERIFY
+══════════════════════════════════ -->
+<div id="s-verify" class="section">
+  <div class="vbar">
+    <span class="vbar-label">Variant:</span>
+    <button class="vbtn on" onclick="showVariant('verify','a')">A — Indigo CTA (current)</button>
+    <button class="vbtn" onclick="showVariant('verify','b')">B — Rose CTA</button>
+  </div>
+  <div class="stage">
+    <div id="verify-a" class="variant on">
+      <div class="stage-label">A — Indigo CTA (current style)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px">
+            <h1 style="margin:0 0 12px;font-family:Georgia,serif;font-size:23px;font-weight:600;color:#1A1817">Verify your email</h1>
+            <p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5C544C">Click below to confirm your email address. This link expires in 24 hours.</p>
+            <p style="margin:0"><a href="#" style="display:inline-block;background:#3B5168;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Verify email →</a></p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't create an account? Ignore this.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+    <div id="verify-b" class="variant">
+      <div class="stage-label">B — Same but rose CTA (matches the site's primary colour)</div>
+      <div class="email-frame">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4EEE4;padding:28px 12px">
+        <tr><td align="center">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%">
+          <tr><td align="center" style="padding:0 0 18px"><span style="font-family:Georgia,serif;font-size:24px;font-weight:700;color:#1A1817">nihon1<span style="color:#D63752">●</span>1</span></td></tr>
+          <tr><td style="background:#fff;border:1px solid #EAE2D6;border-radius:18px;padding:40px">
+            <h1 style="margin:0 0 12px;font-family:Georgia,serif;font-size:23px;font-weight:600;color:#1A1817">Verify your email</h1>
+            <p style="margin:0 0 24px;font-size:15px;line-height:1.65;color:#5C544C">Click below to confirm your email address. This link expires in 24 hours.</p>
+            <p style="margin:0"><a href="#" style="display:inline-block;background:#D63752;color:#fff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 28px;border-radius:999px">Verify email →</a></p>
+          </td></tr>
+          <tr><td align="center" style="padding:16px 0 4px"><p style="font-size:11px;color:#9C948A">Didn't create an account? Ignore this.</p></td></tr>
+        </table>
+        </td></tr>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('s-'+name).classList.add('on');
+  event.target.classList.add('on');
+}
+function showVariant(section, name) {
+  const sec = document.getElementById('s-'+section);
+  sec.querySelectorAll('.variant').forEach(v=>v.classList.remove('on'));
+  sec.querySelectorAll('.vbtn').forEach(b=>b.classList.remove('on'));
+  document.getElementById(section+'-'+name).classList.add('on');
+  event.target.classList.add('on');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+ALTER TABLE "admin_settings" ADD COLUMN "newsletter_enabled" boolean DEFAULT true NOT NULL;

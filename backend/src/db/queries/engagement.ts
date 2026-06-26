@@ -130,8 +130,14 @@ export type CommentRow = typeof postComments.$inferSelect & {
   authorAvatarUrl: string | null;
 };
 
-/** List a post's comments (newest first) with author name and, when a viewer is
- * known, that viewer's per-comment liked state in one query. */
+// Hard cap on comments returned in one shot. A slow-reading magazine thread won't
+// realistically pass this, but the query must be bounded — without it a brigaded
+// post would load every comment row into the isolate's memory. (Keyset "load more"
+// can extend this later; newest-first means the cap drops the oldest tail.)
+export const MAX_COMMENTS = 500;
+
+/** List a post's comments (newest first, capped) with author name and, when a
+ * viewer is known, that viewer's per-comment liked state in one scoped query. */
 export async function listComments(db: DB, postId: string, viewerId: string | null): Promise<(CommentRow & { liked: boolean })[]> {
   const rows = await db
     .select({
@@ -152,14 +158,17 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
     .from(postComments)
     .leftJoin(users, eq(postComments.userId, users.id))
     .where(eq(postComments.postId, postId))
-    .orderBy(desc(postComments.createdAt));
+    .orderBy(desc(postComments.createdAt))
+    .limit(MAX_COMMENTS);
 
   if (!viewerId || rows.length === 0) return rows.map((r) => ({ ...r, liked: false }));
 
+  // Scope to the comments we're actually returning — not every like this viewer has
+  // ever made site-wide (that set grows unbounded with a power user's activity).
   const liked = await db
     .select({ commentId: commentLikes.commentId })
     .from(commentLikes)
-    .where(eq(commentLikes.userId, viewerId));
+    .where(and(eq(commentLikes.userId, viewerId), inArray(commentLikes.commentId, rows.map((r) => r.id))));
   const likedSet = new Set(liked.map((l) => l.commentId));
   return rows.map((r) => ({ ...r, liked: likedSet.has(r.id) }));
 }

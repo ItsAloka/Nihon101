@@ -141,6 +141,13 @@
       "when": 1782106368893,
       "tag": "0019_previous_omega_red",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782450417506,
+      "tag": "0020_early_maddog",
+      "breakpoints": true
     }
   ]
 }

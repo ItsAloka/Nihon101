@@ -17,7 +17,11 @@ async function withCode<T>(fn: () => Promise<T>): Promise<{ result: T; code: str
   console.log = (...a: unknown[]) => { lines.push(a.map(String).join(' ')); };
   try {
     const result = await fn();
-    const m = lines.join('\n').match(/letter-spacing:0\.32em;color:#1A1817">(\d{6})</);
+    // Pull the code from the email SUBJECT ("…ログインコード 123456" / "…login code
+    // 123456"), which the dev mailer logs. Far more robust than scraping the code
+    // out of the HTML body's inline styles — the email design can change freely
+    // (e.g. the hanko codeSeal) without breaking this test.
+    const m = lines.join('\n').match(/(?:ログインコード|login code)\s+(\d{6})/i);
     return { result, code: m ? m[1]! : '' };
   } finally { console.log = orig; }
 }

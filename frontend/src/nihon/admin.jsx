@@ -66,6 +66,9 @@ const ICONS = {
   chevron: <path d="M6 9l6 6 6-6" />,
   chevronR: <path d="M9 6l6 6-6 6" />,
   tag: <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><path d="M7 7h.01" /></>,
+  mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><path d="M22 6l-10 7L2 6" /></>,
+  send: <><path d="M22 2L11 13" /><path d="M22 2L15 22l-4-9-9-4 20-7z" /></>,
+  power: <><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><path d="M12 2v10" /></>,
 };
 function Ic({ name, size = 16 }) {
   return (
@@ -208,6 +211,7 @@ function AdminConsole({ locale }) {
     ["media", T("メディア", "Media")(loc), "image"],
     ["content", T("カテゴリ・タグ", "Content")(loc), "tag"],
     ["featured", T("注目記事", "Featured")(loc), "star"],
+    ["newsletter", T("日曜レター", "Sunday Letter")(loc), "mail"],
     ["settings", T("設定", "Settings")(loc), "sliders"],
     ["audit", T("監査ログ", "Audit")(loc), "clipboard"],
   ];
@@ -232,6 +236,7 @@ function AdminConsole({ locale }) {
       {tab === "media" && <Media loc={loc} api={api} />}
       {tab === "content" && <Content loc={loc} api={api} />}
       {tab === "featured" && <Featured loc={loc} api={api} />}
+      {tab === "newsletter" && <SundayLetter loc={loc} api={api} />}
       {tab === "settings" && <Settings loc={loc} api={api} />}
       {tab === "audit" && <Audit loc={loc} api={api} />}
 
@@ -929,6 +934,181 @@ function Featured({ loc, api }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── Sunday Letter (newsletter admin) ───────────── */
+function SundayLetter({ loc, api }) {
+  const [data, setData] = React.useState(null);
+  const [toggling, setToggling] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    api("/admin/newsletter").then(setData).catch(() => {});
+  }, [api]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  if (!data) return <div className="adm-empty">…</div>;
+
+  const { enabled, stats, nextSendAt, subscribers } = data;
+
+  const toggle = async () => {
+    setToggling(true);
+    try {
+      const res = await api("/admin/newsletter", { method: "PUT", body: JSON.stringify({ enabled: !enabled }) });
+      setData((d) => ({ ...d, enabled: res.enabled }));
+      emitToast(
+        res.enabled
+          ? T("ニュースレターを有効にしました。", "Newsletter enabled.")(loc)
+          : T("ニュースレターを無効にしました。", "Newsletter disabled.")(loc),
+        "info",
+      );
+    } catch (e) {
+      emitToast(e.code || "Failed", "error");
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const fmtNextSend = (ms) => {
+    const d = new Date(Number(ms));
+    return loc === "ja"
+      ? `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（日）09:00 JST`
+      : d.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + " · 09:00 JST";
+  };
+
+  const jaPercent = stats.total > 0 ? Math.round((stats.ja / stats.total) * 100) : 0;
+  const enPercent = stats.total > 0 ? 100 - jaPercent : 0;
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <TabHead
+        icon="mail"
+        title={T("日曜レター", "Sunday Letter")(loc)}
+        sub={T("毎週日曜の朝に届く、ゆっくりとした週刊レター。読者へのニュースレターを管理します。", "A slow weekly letter, delivered every Sunday morning. Manage your newsletter here.")(loc)}
+      />
+
+      {/* Kill switch */}
+      <div className="adm-card" style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ color: enabled ? "var(--stamp)" : "var(--inkFaint)" }}><Ic name="power" size={18} /></span>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>
+              {T("システム", "System")(loc)}
+              <span style={{
+                marginLeft: 8, padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                background: enabled ? "color-mix(in oklab, var(--stamp) 12%, transparent)" : "var(--line)",
+                color: enabled ? "var(--stamp)" : "var(--inkFaint)",
+              }}>
+                {enabled ? T("稼働中", "LIVE")(loc) : T("停止中", "OFF")(loc)}
+              </span>
+            </span>
+          </div>
+          <div className="adm-muted" style={{ fontSize: 13 }}>
+            {enabled
+              ? T("購読受付中・送信スケジュール有効。OFFにすると登録フォームが503を返します。", "Signups open · send schedule active. Turning OFF makes the signup form return 503.")(loc)
+              : T("システム停止中。登録フォームは503を返し、送信は行われません。", "System is OFF. Signup form returns 503 and no sends will occur.")(loc)
+            }
+          </div>
+        </div>
+        <button
+          className={enabled ? "adm-btn danger" : "adm-btn primary"}
+          disabled={toggling}
+          onClick={async () => {
+            const yes = await confirmDialog({
+              title: enabled ? T("システムを停止しますか？", "Disable the newsletter system?")(loc) : T("システムを有効にしますか？", "Enable the newsletter system?")(loc),
+              message: enabled
+                ? T("OFFにすると、登録フォームが503を返します。既存の読者リストは保持されます。", "Turning OFF makes the signup form return 503. Existing subscriber list is kept.")(loc)
+                : T("ONにすると、登録フォームが再び受付を開始します。", "Turning ON re-opens the signup form to new subscribers.")(loc),
+              confirmLabel: enabled ? T("停止する", "Disable")(loc) : T("有効にする", "Enable")(loc),
+              danger: enabled,
+            });
+            if (yes) toggle();
+          }}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          <Ic name="power" size={14} />
+          {" "}{enabled ? T("停止する", "Turn OFF")(loc) : T("有効にする", "Turn ON")(loc)}
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="adm-stats" style={{ marginBottom: 16 }}>
+        <div className="adm-stat">
+          <div className="n">{stats.total.toLocaleString()}</div>
+          <div className="l"><Ic name="users" size={13} />{T("購読者合計", "Total subscribers")(loc)}</div>
+        </div>
+        <div className="adm-stat">
+          <div className="n">{stats.last7Days}</div>
+          <div className="l"><Ic name="star" size={13} />{T("過去7日間", "Last 7 days")(loc)}</div>
+        </div>
+        <div className="adm-stat">
+          <div className="n">{stats.ja}</div>
+          <div className="l"><Ic name="file" size={13} />{T("日本語読者", "Japanese (JA)")(loc)}</div>
+        </div>
+        <div className="adm-stat">
+          <div className="n">{stats.en}</div>
+          <div className="l"><Ic name="file" size={13} />{T("英語読者", "English (EN)")(loc)}</div>
+        </div>
+      </div>
+
+      {/* Language split bar */}
+      {stats.total > 0 && (
+        <div className="adm-card" style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 10 }}>{T("言語別の内訳", "Language breakdown")(loc)}</div>
+          <div style={{ display: "flex", height: 10, borderRadius: 8, overflow: "hidden", gap: 2, marginBottom: 8 }}>
+            <div style={{ flex: jaPercent, background: "var(--stamp)", borderRadius: "8px 0 0 8px" }} />
+            <div style={{ flex: enPercent, background: "#3B5168", borderRadius: "0 8px 8px 0" }} />
+          </div>
+          <div style={{ display: "flex", gap: 20, fontSize: 12, color: "var(--inkSoft)" }}>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--stamp)", marginRight: 5 }} />JA {jaPercent}%</span>
+            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#3B5168", marginRight: 5 }} />EN {enPercent}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Send schedule */}
+      <div className="adm-card" style={{ marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 7 }}>
+            <Ic name="history" size={15} />{T("次回送信予定", "Next scheduled send")(loc)}
+          </div>
+          <div style={{ fontSize: 14, color: "var(--inkSoft)", marginBottom: 6 }}>{fmtNextSend(nextSendAt)}</div>
+          <div className="adm-muted" style={{ fontSize: 12 }}>
+            {T("毎週日曜日 09:00 JST に自動送信（実装後）。現在はキャプチャのみ。", "Auto-sends every Sunday at 09:00 JST once sending is implemented. Currently capture-only.")(loc)}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <span style={{
+            padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+            background: "color-mix(in oklab, #3B5168 12%, transparent)",
+            color: "#3B5168",
+          }}>{T("キャプチャ中", "Capture only")(loc)}</span>
+        </div>
+      </div>
+
+      {/* Subscriber list */}
+      <div className="adm-card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "14px 18px 12px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontWeight: 600 }}>{T("最近の購読者", "Recent subscribers")(loc)}</span>
+          <span className="adm-muted" style={{ fontSize: 12 }}>{T("最新50件", "Latest 50")(loc)}</span>
+        </div>
+        {!subscribers.length
+          ? <div className="adm-empty" style={{ padding: "28px 18px" }}>{T("まだ購読者がいません。", "No subscribers yet.")(loc)}</div>
+          : subscribers.map((s) => (
+            <div key={s.id} className="adm-row" style={{ padding: "10px 18px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, fontFamily: "var(--fontMono, monospace)", fontSize: 13, color: "var(--ink)" }}>{s.email}</div>
+              <span style={{
+                padding: "2px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600,
+                background: s.locale === "ja" ? "color-mix(in oklab, var(--stamp) 10%, transparent)" : "color-mix(in oklab, #3B5168 10%, transparent)",
+                color: s.locale === "ja" ? "var(--stamp)" : "#3B5168",
+              }}>{s.locale.toUpperCase()}</span>
+              <div className="adm-muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtDate(s.createdAt)}</div>
+            </div>
+          ))
+        }
       </div>
     </div>
   );

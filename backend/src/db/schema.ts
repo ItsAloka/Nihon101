@@ -385,6 +385,9 @@ export const adminSettings = pgTable('admin_settings', {
   // Destination for the contact form. '' = fall back to RESEND_FROM at send time.
   // Admin-editable from the moderation console Settings tab.
   contactEmail: text('contact_email').notNull().default(''),
+  // Kill switch for the entire Sunday Letter newsletter system. When false the
+  // public signup endpoint rejects new subscribers and the send cron is a no-op.
+  newsletterEnabled: boolean('newsletter_enabled').notNull().default(true),
   updatedAt: ms('updated_at').notNull(),
 });
 

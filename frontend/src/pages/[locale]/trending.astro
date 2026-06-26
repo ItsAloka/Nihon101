@@ -49,7 +49,7 @@ const canonical = `/${locale}/trending`;
     <p class="ex-sub">{jp ? 'いまの勢い — 直近のいいね・コメント・閲覧から、毎分更新。' : 'Ranked by momentum — recent likes, comments and reads, updated by the minute.'}</p>
 
     <div class="list-bar">
-      <div class="results-count">{String(total).padStart(2, '0')} {jp ? '件' : 'stories'}</div>
+      <div class="results-count">{total === 0 ? (jp ? '該当なし' : 'No results') : `${String(total).padStart(2, '0')} ${jp ? '件' : 'stories'}`}</div>
       <TrendingCatFilter categories={categories} current={cat} locale={locale} jp={jp} />
     </div>
 

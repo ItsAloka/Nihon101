@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'bun:test';
 import { validPassword } from '../src/routes/auth';
 import { sniffExt } from '../src/routes/media';
+import { keyFromUrl, bodyMediaKeys, postMediaKeys } from '../src/lib/media';
 
 describe('validPassword', () => {
   it('rejects too-short passwords', () => {
@@ -48,5 +49,42 @@ describe('sniffExt (image magic bytes, not client MIME)', () => {
   it('rejects a non-image masquerading as one', () => {
     expect(sniffExt(html)).toBeNull();
     expect(sniffExt(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+});
+
+describe('media key extraction (R2 orphan-scanner safety)', () => {
+  it('pulls the bare key out of a stored media URL', () => {
+    expect(keyFromUrl('https://api.nihon101.com/media/usr_abc/uuid.webp')).toBe('usr_abc/uuid.webp');
+    expect(keyFromUrl('http://localhost:8787/media/usr_x/y.png?v=2')).toBe('usr_x/y.png');
+    expect(keyFromUrl(null)).toBeNull();
+    expect(keyFromUrl('https://example.com/not-media/x.png')).toBeNull();
+  });
+
+  it('finds every in-body image key across an HTML body', () => {
+    const html = `<p>hi</p><img src="https://api.nihon101.com/media/usr_a/1.jpg">
+      <figure><img src="http://localhost:8787/media/usr_a/2.webp" alt="x"></figure>`;
+    expect(bodyMediaKeys(html).sort()).toEqual(['usr_a/1.jpg', 'usr_a/2.webp']);
+    expect(bodyMediaKeys('')).toEqual([]);
+    expect(bodyMediaKeys('<p>no images here</p>')).toEqual([]);
+  });
+
+  it('THE bug guard: a post owns its cover AND its body images', () => {
+    // If this set ever dropped body-image keys, the admin orphan scanner would flag
+    // images embedded in a LIVE post as unused and a bulk-delete would erase them.
+    const keys = postMediaKeys({
+      cover: 'https://api.nihon101.com/media/usr_a/cover.jpg',
+      bodyEn: '<img src="https://api.nihon101.com/media/usr_a/en1.png">',
+      bodyJa: '<img src="https://api.nihon101.com/media/usr_a/ja1.webp">',
+    }).sort();
+    expect(keys).toEqual(['usr_a/cover.jpg', 'usr_a/en1.png', 'usr_a/ja1.webp']);
+  });
+
+  it('dedupes a key reused as both cover and body image', () => {
+    const keys = postMediaKeys({
+      cover: 'https://api.nihon101.com/media/usr_a/shared.jpg',
+      bodyEn: '<img src="https://api.nihon101.com/media/usr_a/shared.jpg">',
+      bodyJa: '',
+    });
+    expect(keys).toEqual(['usr_a/shared.jpg']);
   });
 });
