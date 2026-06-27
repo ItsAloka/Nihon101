@@ -121,6 +121,9 @@ const postApi = {
   // Engagement (real posts only — seed posts have no backend row).
   toggleLike: (id) => req(`/posts/${id}/like`, { method: 'POST', auth: true }), // → {liked, likes}
   toggleSave: (slug) => req(`/posts/slug/${slug}/save`, { method: 'POST', auth: true }), // → {saved, saves}
+  // "Not interested": negative signal — fades this category/tag/author from the
+  // viewer's taste and drops the post from their For You feed. → {ok}
+  notInterested: (id) => req(`/posts/${id}/not-interested`, { method: 'POST', auth: true }),
   listSaved: () => req('/posts/saved', { auth: true }).then((r) => r.posts), // viewer's saved cards, newest first
   listComments: (id) => req(`/posts/${id}/comments`).then((r) => r.comments),
   addComment: (id, body, parentId) => req(`/posts/${id}/comments`, { method: 'POST', auth: true, body: { body, parentId: parentId || null } }).then((r) => r.comment),

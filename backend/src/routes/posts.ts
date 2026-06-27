@@ -34,6 +34,7 @@ import {
 import { translateFields, type Locale } from '../lib/openai';
 import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
 import { getUserById } from '../db/queries/users';
+import { recordNotInterested } from '../db/queries/for-you';
 import {
   togglePostLike,
   hasLikedPost,
@@ -419,6 +420,17 @@ app.post('/slug/:slug/save', requireAuth, limits.save, async (c) => {
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
   const res = await togglePostSave(d, post.id, c.var.user!.id);
   return c.json(res);
+});
+
+// "Not interested": a deliberate negative signal — fades this post's category/tag/
+// author from the user's taste profile AND drops it from their For You feed.
+// Returns { ok }.
+app.post('/:id/not-interested', requireAuth, limits.save, async (c) => {
+  const d = db(c);
+  const post = await getPostById(d, c.req.param('id'));
+  if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
+  await recordNotInterested(d, post.id, c.var.user!.id);
+  return c.json({ ok: true });
 });
 
 // List a post's comments (public). Includes the viewer's per-comment liked

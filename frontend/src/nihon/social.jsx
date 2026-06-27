@@ -1355,7 +1355,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
           {r.icon==='follow' ? <span style={{color:p.accentDeep, fontWeight:700}}>+</span> : r.icon==='like' ? <HeartIcon color={p.stamp} filled size={11}/> : <TrendIcon color={p.stamp} size={11}/>}
           {r.text}
         </div>
-        <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave}/>
+        <ArticleCard p={p} lang={lang} post={po} t={t} saved={savedSet.has(po.slug)} onSave={onSave} forYou/>
       </div>
     );
   };

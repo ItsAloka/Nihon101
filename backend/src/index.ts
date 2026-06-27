@@ -53,18 +53,24 @@ app.use('*', async (c, next) => {
   return corsMw(c, next);
 });
 
-// Security headers on every API response. This Worker only ever returns JSON or
-// media bytes (never an HTML document), so a deny-everything CSP is safe here and
-// gives defense-in-depth: even if a response were mis-rendered as HTML, nothing
-// could load or execute. The page-level CSP that governs the actual site lives on
-// the frontend (Astro). HSTS is harmless over http (dev) and enforced in prod.
+// Security headers on every API response. The Worker returns JSON or media bytes for
+// almost everything, where a deny-everything CSP is the right defense-in-depth. The
+// ONE exception is the newsletter unsubscribe page, which returns a real HTML document
+// with inline styles + a form — a blanket `default-src 'none'` (style-src falls back to
+// it) would render that page unstyled. So HTML responses get a narrowly-relaxed CSP
+// (inline styles + self form-action only); everything else stays deny-all. The
+// page-level CSP for the actual site lives on the frontend (Astro). HSTS is harmless
+// over http (dev) and enforced in prod.
 app.use('*', async (c, next) => {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('X-Frame-Options', 'DENY');
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   c.header('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), browsing-topics=()');
-  c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  const isHtml = (c.res.headers.get('content-type') || '').includes('text/html');
+  c.header('Content-Security-Policy', isHtml
+    ? "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    : "default-src 'none'; frame-ancestors 'none'");
   c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 });
 

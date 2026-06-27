@@ -1,7 +1,7 @@
 /* Newsletter list — capture only (the weekly digest sender ships later). Dedup by
  * unique email so a double-submit is a no-op. Open to logged-out visitors; userId
  * links the row to a signed-in subscriber when present. */
-import { desc, gte, eq, sql } from 'drizzle-orm';
+import { and, desc, gte, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { DB } from '../client';
 import { newsletterSubscribers } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -59,20 +59,34 @@ export interface SendRow {
   locale: 'ja' | 'en';
 }
 
-/** Stream the full list for a send, paged by id (keyset) so a 50k list is walked
- *  in bounded chunks instead of one giant result set. Pass the last id back as
- *  `after` to get the next page; empty array = done. */
+/** Stream the not-yet-sent list for a send, paged by id (keyset) so a 50k list is
+ *  walked in bounded chunks instead of one giant result set. Only rows whose
+ *  `lastSentIssue` is below the current issue are returned, so a cron that's retried
+ *  after a partial run resumes where it left off instead of re-mailing everyone. Pass
+ *  the last id back as `after` for the next page; empty array = done. */
 export async function subscribersForSend(
   db: DB,
-  opts: { limit: number; after?: string },
+  opts: { limit: number; after?: string; issue: number },
 ): Promise<SendRow[]> {
   const rows = await db
     .select({ id: newsletterSubscribers.id, email: newsletterSubscribers.email, locale: newsletterSubscribers.locale })
     .from(newsletterSubscribers)
-    .where(opts.after ? sql`${newsletterSubscribers.id} > ${opts.after}` : undefined)
+    .where(and(
+      lt(newsletterSubscribers.lastSentIssue, opts.issue),
+      opts.after ? sql`${newsletterSubscribers.id} > ${opts.after}` : undefined,
+    ))
     .orderBy(newsletterSubscribers.id)
     .limit(opts.limit);
   return rows.map((r) => ({ id: r.id, email: r.email, locale: r.locale === 'en' ? 'en' : 'ja' }));
+}
+
+/** Stamp this issue number onto the rows we just delivered, so a retried cron run
+ *  skips them (the idempotency checkpoint). Called once per successfully-sent batch. */
+export async function markSent(db: DB, ids: string[], issue: number): Promise<void> {
+  if (!ids.length) return;
+  await db.update(newsletterSubscribers)
+    .set({ lastSentIssue: issue })
+    .where(inArray(newsletterSubscribers.id, ids));
 }
 
 export interface SubscriberRow {
