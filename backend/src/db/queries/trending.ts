@@ -38,6 +38,10 @@ const HALF_LIFE = 24 * HOUR;   // a recent event loses half its weight every 24h
 const WINDOW = 72 * HOUR;      // only engagement inside this window counts as "recent"
 const RECENT = 24 * HOUR;      // the "is it accelerating?" sub-window (last 24h)
 const WEIGHT = 1.0;            // how hard momentum lifts a post above its all-time floor
+const VEL_PRIOR = 5;          // Bayesian small-sample damp: a post's velocity only counts at
+                              // full weight once it has ~K events, so on a quiet day a handful
+                              // of likes (n=3 → ×0.375) can't outrank a genuinely busy post
+                              // (n=300 → ×0.98). Same shrinkage idiom as For You's SHRINK_K.
 const FRESH = 14 * 24 * HOUR;  // age-decay only reorders posts younger than this; older
                                // ones are only rescored when they get fresh engagement
 
@@ -76,7 +80,8 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
       SELECT post_id,
         SUM(w) AS v,
         SUM(w) FILTER (WHERE created_at > ${recentSince}) AS recent_v,
-        COUNT(*) FILTER (WHERE base = 1.0) AS reads
+        COUNT(*) FILTER (WHERE base = 1.0) AS reads,
+        COUNT(*) AS n
       FROM ev GROUP BY post_id
     )
     UPDATE posts SET trend_score =
@@ -84,6 +89,7 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
         / power(((${now}::bigint - posts.published_at) / ${sql.raw(`${HOUR}.0`)}) + 2, 1.4)
       + COALESCE(
           ${WEIGHT} * vel.v
+            * (vel.n::float / (vel.n + ${VEL_PRIOR}))
             * (1 + COALESCE(vel.recent_v, 0) / (vel.v + 1))
             / power(vel.reads + 2, 0.15),
           0)

@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { eq, and, isNull, ne, desc } from 'drizzle-orm';
+import { eq, and, isNull, ne, desc, or, sql } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import bcrypt from 'bcryptjs';
 import type { AppEnv } from '../types';
-import { users, refreshTokens, passwordResets, googleLinks, emailVerifications, loginOtps, trustedDevices } from '../db/schema';
+import { users, refreshTokens, passwordResets, googleLinks, emailVerifications, loginOtps, trustedDevices, newsletterSubscribers } from '../db/schema';
 import { id } from '../lib/ids';
 import { randomToken, randomDigits, hashToken } from '../lib/crypto';
 import { signAccess, signOtpTicket, verifyOtpTicket } from '../lib/tokens';
@@ -492,6 +492,15 @@ auth.delete('/me', requireAuth, async (c) => {
   await db(c).delete(passwordResets).where(eq(passwordResets.userId, sess.id));
   await db(c).delete(emailVerifications).where(eq(emailVerifications.userId, sess.id));
   await db(c).delete(googleLinks).where(eq(googleLinks.userId, sess.id));
+  // The newsletter FK is `set null` (and a visitor may have subscribed while logged
+  // out), so cascade would leave this user's email (PII) on the Sunday Letter list,
+  // still receiving mail. Purge any subscription matching their id OR email first.
+  const [u] = await db(c).select({ email: users.email }).from(users).where(eq(users.id, sess.id));
+  await db(c).delete(newsletterSubscribers).where(
+    u
+      ? or(eq(newsletterSubscribers.userId, sess.id), sql`lower(${newsletterSubscribers.email}) = lower(${u.email})`)
+      : eq(newsletterSubscribers.userId, sess.id),
+  );
   await db(c).delete(users).where(eq(users.id, sess.id));
   // GDPR erasure isn't complete until the user's uploads are gone too. Every blob
   // they own (avatar + post covers + in-body images) lives under the `<userId>/`

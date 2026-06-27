@@ -33,7 +33,7 @@
  * is one candidate query + one cached profile read + in-memory scoring.
  * ========================================================================== */
 
-import { eq, and, desc, sql, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, or, gt, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, postSaves, postComments, tags, userAffinity, userSignals } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -229,14 +229,15 @@ const trendSignal = (p: FeedCard): number => p.trendScore ?? p.trend;
  *  pagination has a deterministic seam (publishedAt alone can tie to the ms). */
 const FEED_ORDER = [desc(posts.publishedAt), desc(posts.id)] as const;
 
-/** Run a candidate query with the live trend score, card shape (no bodies). */
-async function runCandidates(db: DB, where: SQL | undefined, limit: number, offset = 0): Promise<FeedCard[]> {
+/** Run a candidate query with the live trend score, card shape (no bodies). `order`
+ *  defaults to newest-first; taste retrieval passes a popularity order instead. */
+async function runCandidates(db: DB, where: SQL | undefined, limit: number, offset = 0, order: readonly SQL[] = FEED_ORDER): Promise<FeedCard[]> {
   return (await db
     .select({ ...cardCols, trend: trendExpr() })
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(where)
-    .orderBy(...FEED_ORDER)
+    .orderBy(...order)
     .limit(limit)
     .offset(offset)) as FeedCard[];
 }
@@ -245,6 +246,40 @@ async function runCandidates(db: DB, where: SQL | undefined, limit: number, offs
  *  chronological tail past the head for deep numbered pages. */
 export function feedCandidates(db: DB, opts: { poolSize?: number; offset?: number } = {}): Promise<FeedCard[]> {
   return runCandidates(db, and(eq(posts.status, 'published'), notHidden)!, opts.poolSize ?? 120, opts.offset ?? 0);
+}
+
+/** The user's strongest keys in a dimension (positive weight only), top N. */
+function topKeys(m: Map<string, number>, n: number): string[] {
+  return [...m].filter(([, w]) => w > 0).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+}
+
+/** Age-agnostic popularity order: retrieval should surface the most-loved on-taste
+ *  post regardless of age — the ranker re-applies recency afterward. Sorting by the
+ *  recency-decayed trend_score here would re-bury the very gems we're trying to find. */
+const TASTE_ORDER = [
+  sql`(${posts.likes} + 2 * ${posts.comments} + 0.5 * ${posts.saves}) DESC`,
+  desc(posts.publishedAt),
+] as const;
+
+/** TASTE-TARGETED retrieval (the real lever): the most-loved posts of ANY age that
+ *  match the user's strongest tastes — top categories OR authors OR tags. This is
+ *  what lets an older on-taste gem reach the ranker; feedCandidates only ever sees
+ *  the newest HEAD_SIZE, so without this an old perfect-match is unreachable except
+ *  in the chronological tail. Pure SQL — no embeddings, no API, no added cost. Empty
+ *  taste (new / logged-out) → empty, so the feed degrades to recency exactly as before. */
+export async function tasteCandidates(db: DB, aff: Affinity, opts: { poolSize?: number } = {}): Promise<FeedCard[]> {
+  const cats = topKeys(aff.cat, 3);
+  const authors = topKeys(aff.author, 3);
+  const tagKeys = topKeys(aff.tag, 5);
+  const match: SQL[] = [];
+  if (cats.length) match.push(inArray(posts.categoryId, cats));
+  if (authors.length) match.push(inArray(posts.authorId, authors));
+  // One containment term per tag (`tags @> '["x"]'`) — equivalent to `?|` but served
+  // by the existing jsonb_path_ops GIN index on posts.tags (migration 0006).
+  for (const t of tagKeys) match.push(sql`${posts.tags} @> ${JSON.stringify([t])}::jsonb`);
+  if (!match.length) return [];
+  const where = and(eq(posts.status, 'published'), notHidden, or(...match));
+  return runCandidates(db, where, opts.poolSize ?? 80, 0, TASTE_ORDER);
 }
 
 /** Total published posts — drives the page count for numbered pagination. */
@@ -502,6 +537,38 @@ export async function recordSearchClick(db: DB, postId: string, userId: string):
   `);
 }
 
+/** "Not interested": a deliberate negative. Drops a strong negative weight into
+ *  user_signals (computeAffinity folds it into the same decayed stream, so that
+ *  category/tag/author fades below baseline) AND, via its distinct base value, marks
+ *  the post dismissed so dismissedPostIds drops it from the feed on sight. Deduped
+ *  within the taste window so re-tapping doesn't pile up negatives; after the window
+ *  the signal has decayed out and the post can resurface. */
+const NOT_INTERESTED_SIGNAL = -4; // stronger than unlike(−3); distinct base ⇒ identifies a dismissal
+export async function recordNotInterested(db: DB, postId: string, userId: string): Promise<void> {
+  const now = Date.now();
+  await db.execute(sql`
+    INSERT INTO user_signals (id, post_id, user_id, base, created_at)
+    SELECT ${newId('sig')}, ${postId}, ${userId}, ${NOT_INTERESTED_SIGNAL}, ${now}
+    FROM posts WHERE id = ${postId}
+      AND NOT EXISTS (
+        SELECT 1 FROM user_signals s
+        WHERE s.post_id = ${postId} AND s.user_id = ${userId}
+          AND s.base = ${NOT_INTERESTED_SIGNAL} AND s.created_at > ${now - SLOW.window}
+      )
+  `);
+}
+
+/** Post ids the user dismissed via "not interested" within the taste window —
+ *  excluded from the feed entirely (the negative also fades their taste via the
+ *  affinity stream). Past the window the negative has decayed, so the post resurfaces. */
+export async function dismissedPostIds(db: DB, userId: string): Promise<Set<string>> {
+  const since = Date.now() - SLOW.window;
+  const rows = await db.selectDistinct({ id: userSignals.postId })
+    .from(userSignals)
+    .where(and(eq(userSignals.userId, userId), eq(userSignals.base, NOT_INTERESTED_SIGNAL), gt(userSignals.createdAt, since)));
+  return new Set(rows.map((r) => r.id));
+}
+
 /* ============================================================================
  * 4. ORCHESTRATOR
  * ----------------------------------------------------------------------------
@@ -515,6 +582,9 @@ export async function recordSearchClick(db: DB, postId: string, userId: string):
 /** Size of the smartly-ranked head. Past this, the feed continues chronologically.
  *  Bounded so a feed read stays cheap at 50K users (rank ≤ HEAD_SIZE in memory). */
 const HEAD_SIZE = 300;
+/** Extra taste-targeted candidates of ANY age, merged into the head pool so older
+ *  on-taste posts can be ranked (not just the newest HEAD_SIZE). */
+const TASTE_POOL = 80;
 
 export interface ForYouOpts {
   userId: string | null;
@@ -544,26 +614,40 @@ export async function forYouFeed(db: DB, opts: ForYouOpts): Promise<ForYouResult
   if (offset < headLen) {
     // ---- RANKED HEAD: score the newest HEAD_SIZE posts, slice this page. ----
     const following = uid ? await followedAuthorIds(db, uid) : new Set<string>();
-    const cands = await feedCandidates(db, { poolSize: HEAD_SIZE });
+
+    // Taste FIRST (slow cached + fast live, blended) so we can ALSO retrieve older
+    // on-taste posts — not just the newest HEAD_SIZE — then rank the union.
     let affinity: Affinity = emptyAffinity();
+    if (uid) {
+      const [slow, fast] = await Promise.all([userAffinityFor(db, uid), fastAffinityFor(db, uid)]);
+      affinity = blendAffinity(slow, fast);
+    }
+    const [global, taste] = await Promise.all([
+      feedCandidates(db, { poolSize: HEAD_SIZE }),
+      uid ? tasteCandidates(db, affinity, { poolSize: TASTE_POOL }) : Promise.resolve<FeedCard[]>([]),
+    ]);
+    const byId = new Map<string, FeedCard>();
+    for (const p of global) byId.set(p.id, p);
+    for (const p of taste) byId.set(p.id, p);
+
     let seen = new Set<string>();
     let idf = new Map<string, number>();
     let semantic = new Map<string, number>();
     if (uid) {
-      // Slow (cached) + fast (live) scorecards, blended into the effective taste.
-      const [slow, fast, seenIds, idfMap] = await Promise.all([
-        userAffinityFor(db, uid),
-        fastAffinityFor(db, uid),
-        seenPostIds(db, uid, cands.map((p) => p.id)),
+      const [seenIds, idfMap, dismissed] = await Promise.all([
+        seenPostIds(db, uid, [...byId.keys()]),
         tagIdf(db),
+        dismissedPostIds(db, uid),
       ]);
-      affinity = blendAffinity(slow, fast);
       seen = seenIds;
       idf = idfMap;
+      // "Not interested" posts vanish (removed, not just demoted).
+      for (const id of dismissed) byId.delete(id);
       // Optional semantic flavor — guarded so any pgvector/embedding issue degrades to
       // pure math (empty map → W_SEMANTIC term is 0).
-      try { semantic = await semanticScores(db, uid, cands.map((p) => p.id)); } catch { /* pure math */ }
+      try { semantic = await semanticScores(db, uid, [...byId.keys()]); } catch { /* pure math */ }
     }
+    const cands = [...byId.values()];
 
     const ranked = rankFeed(cands, { affinity, following, seen, idf, semantic, exploreEvery: exploreCadence(affinity) });
     items = ranked.slice(offset, offset + limit);

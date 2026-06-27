@@ -16,7 +16,7 @@ import type { AppEnv } from '../types';
 import { categories } from '../db/schema';
 import { listTrending } from '../db/queries/trending';
 import { getSettings } from '../db/queries/admin';
-import { subscribersForSend } from '../db/queries/newsletter';
+import { subscribersForSend, markSent } from '../db/queries/newsletter';
 import { sundayLetterHtml, sendBatch, type LetterPost, type WordOfWeek, type BatchEmail } from './mail';
 import { signUnsub } from './unsubscribe';
 
@@ -123,7 +123,7 @@ export async function sendSundayLetter(db: DB, env: AppEnv['Bindings']): Promise
   let sent = 0;
 
   for (;;) {
-    const page = await subscribersForSend(db, { limit: PAGE, after });
+    const page = await subscribersForSend(db, { limit: PAGE, after, issue });
     if (!page.length) break;
 
     for (let i = 0; i < page.length; i += BATCH) {
@@ -145,7 +145,13 @@ export async function sendSundayLetter(db: DB, env: AppEnv['Bindings']): Promise
           },
         };
       }));
-      if (await sendBatch(apiKey, emails)) sent += emails.length;
+      // Checkpoint only on a delivered batch: a failed batch stays below the issue
+      // number so it's retried next run, and a crash after this point can't re-mail
+      // the batches already stamped.
+      if (await sendBatch(apiKey, emails)) {
+        await markSent(db, chunk.map((s) => s.id), issue);
+        sent += emails.length;
+      }
     }
 
     after = page[page.length - 1].id;

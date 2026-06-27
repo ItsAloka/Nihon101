@@ -195,6 +195,9 @@ export const postLikes = pgTable('post_likes', {
 }, (t) => [
   uniqueIndex('post_likes_post_user_idx').on(t.postId, t.userId),
   index('post_likes_user_idx').on(t.userId),
+  // The per-minute trending recompute filters by created_at across all engagement
+  // tables; without a created_at-leading index that's a full seq-scan every run.
+  index('post_likes_created_idx').on(t.createdAt),
 ]);
 
 export const postComments = pgTable('post_comments', {
@@ -211,6 +214,7 @@ export const postComments = pgTable('post_comments', {
   index('post_comments_post_idx').on(t.postId, t.createdAt),
   index('post_comments_user_idx').on(t.userId),
   index('post_comments_parent_idx').on(t.parentId),
+  index('post_comments_created_idx').on(t.createdAt), // trending recompute window scan
 ]);
 
 export const commentLikes = pgTable('comment_likes', {
@@ -233,6 +237,7 @@ export const postSaves = pgTable('post_saves', {
 }, (t) => [
   uniqueIndex('post_saves_post_user_idx').on(t.postId, t.userId),
   index('post_saves_user_idx').on(t.userId, t.createdAt),
+  index('post_saves_created_idx').on(t.createdAt), // trending recompute window scan
 ]);
 
 // ---- Social graph: follows, reads, affinity, notifications (Phase 4) ----
@@ -259,6 +264,7 @@ export const postReads = pgTable('post_reads', {
 }, (t) => [
   uniqueIndex('post_reads_post_user_idx').on(t.postId, t.userId),
   index('post_reads_user_idx').on(t.userId, t.createdAt),
+  index('post_reads_created_idx').on(t.createdAt), // trending recompute window scan
 ]);
 
 // Cached per-user taste snapshot (normalized 0–1 within each dimension),
@@ -418,6 +424,11 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
   locale: text('locale').notNull().default('ja'),  // which language to send in
   userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: ms('created_at').notNull(),
+  // Idempotency checkpoint for the weekly send: the issue number this row was last
+  // sent. The send only picks rows with lastSentIssue < currentIssue and stamps it
+  // after each batch, so a cron that's killed + retried mid-run never re-mails the
+  // batches it already delivered. 0 = never sent.
+  lastSentIssue: integer('last_sent_issue').notNull().default(0),
 }, (t) => [
   uniqueIndex('ux_newsletter_email').on(t.email),
 ]);

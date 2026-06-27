@@ -402,10 +402,21 @@ function EditorList({p, lang, posts, t}) {
 }
 
 // ------- Article card (used in grids) -------
-function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
+function ArticleCard({p, lang, post, t, saved, onSave, compact=false, forYou=false}) {
   const title = lang==='jp'?post.title_jp:post.title_en;
   const excerpt = lang==='jp'?post.excerpt_jp:post.excerpt_en;
   const card = t.cardStyle;
+  const [dismissed, setDismissed] = React.useState(false);
+  // "Not interested": optimistically remove the card, then send the negative signal
+  // (best-effort). Only on real posts (those with a backend _id) + a signed-in viewer.
+  const notInterested = async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const tok = window.N101_API?.getAccessToken?.();
+    if (!tok) return; // personalization needs sign-in
+    setDismissed(true);
+    try { await window.N101_CONTENT.postApi.notInterested(post._id); } catch {}
+  };
+  if (dismissed) return null;
   return (
     <article style={{
       background: p.surface,
@@ -425,6 +436,16 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false}) {
       <div style={{display:'flex', alignItems:'center', gap:10}}>
         <CategoryChip slug={post.category} p={p} lang={lang} size="sm"/>
         <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>{post.readMins} min</span>
+        {forYou && post._id && (
+          <button type="button" onClick={notInterested} title="Not interested — show less like this" aria-label="Not interested"
+            style={{marginLeft:'auto', display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, flexShrink:0, background:p.surface, border:`1px solid ${p.line}`, borderRadius:999, cursor:'pointer', color:p.inkFaint, transition:'color .2s ease, border-color .2s ease, background .2s ease'}}
+            onMouseEnter={(e)=>{ e.currentTarget.style.color=p.stamp; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.stamp} 50%, ${p.line})`; e.currentTarget.style.background=p.tint; }}
+            onMouseLeave={(e)=>{ e.currentTarget.style.color=p.inkFaint; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.background=p.surface; }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+            </svg>
+          </button>
+        )}
       </div>
       <a href={`/${lang==='jp'?'ja':'en'}/p/${post.slug}`} onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'article', slug:post.slug});}}
          style={{textDecoration:'none', color:p.ink}}>
