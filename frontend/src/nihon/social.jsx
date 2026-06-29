@@ -872,11 +872,11 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:10}}>
             {editing ? (
-              <button disabled={saving} onClick={saveProfile} style={{...gradStyle(p), padding:'11px 22px', fontSize:13, opacity:saving?0.6:1}}>
+              <button disabled={saving} onClick={saveProfile} style={{...gradStyle(p), padding:'11px 22px', fontSize:13, justifyContent:'center', opacity:saving?0.6:1}}>
                 {saving ? (lang==='jp'?'保存中…':'Saving…') : (lang==='jp'?'保存':'Save profile')}
               </button>
             ) : (
-              <button onClick={()=>setEditing(true)} style={ghostBtn(p)}><PencilIcon color={p.ink}/> {lang==='jp'?'編集':'Edit profile'}</button>
+              <button onClick={()=>setEditing(true)} style={{...ghostBtn(p), justifyContent:'center'}}><PencilIcon color={p.ink}/> {lang==='jp'?'編集':'Edit profile'}</button>
             )}
             {!editing && (
               <a href={`/${lang==='jp'?'ja':'en'}/u/${user.slug}`} target="_blank" rel="noreferrer" style={{...ghostBtn(p), textDecoration:'none', justifyContent:'center'}}>

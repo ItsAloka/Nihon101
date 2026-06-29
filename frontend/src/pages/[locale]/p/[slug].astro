@@ -67,7 +67,24 @@ const canonical = `/${locale}/p/${post.slug}`;
 <Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active="">
   <article class="rd">
     <div class="wrap">
-      <a class="rd-back" href={`/${locale}/`}>← {jp ? "ホーム" : "Home"}</a>
+      {/* True Back: step back in history when the reader came from within the site
+          (a category / search / feed / home). Direct or off-site visits have no
+          in-site referrer, so the href fallback takes them home. */}
+      <a class="rd-back" href={`/${locale}/`} data-rd-back>← {jp ? "戻る" : "Back"}</a>
+      <script is:inline>
+        (function () {
+          var el = document.querySelector("a[data-rd-back]");
+          if (!el) return;
+          el.addEventListener("click", function (e) {
+            try {
+              if (document.referrer && new URL(document.referrer).origin === location.origin) {
+                e.preventDefault();
+                history.back();
+              }
+            } catch (_) {}
+          });
+        })();
+      </script>
 
       <header class="rd-head">
         <div class="rd-meta">

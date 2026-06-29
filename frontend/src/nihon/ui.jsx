@@ -248,7 +248,12 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
-  React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); setDrawerOpen(false); }, [route.name, route.slug]);
+  // Mobile (≤560): the search pill collapses to an icon; tapping it expands the
+  // field full-width and hides the other icons for that row. CSS drives the layout
+  // off the `nav-searching` class; this only tracks the toggle + focuses the input.
+  const [searchOpen, setSearchOpen] = React.useState(false);
+  React.useEffect(()=>{ if(searchOpen){ const el=document.querySelector('.nihon-searchwrap input'); if(el) el.focus(); } }, [searchOpen]);
+  React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); setDrawerOpen(false); setSearchOpen(false); }, [route.name, route.slug]);
   React.useEffect(()=>{ document.body.style.overflow = drawerOpen ? 'hidden' : ''; return ()=>{ document.body.style.overflow=''; }; }, [drawerOpen]);
   const unread = (notifs || []).filter(n => !n.read).length;
   const drawerRow = { appearance:'none', border:'1px solid var(--line)', background:'var(--surface)', textAlign:'left', padding:'11px 14px', borderRadius:12, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:'var(--ink)', display:'flex', alignItems:'center', gap:10 };
@@ -263,7 +268,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
       backdropFilter:'blur(14px)', WebkitBackdropFilter:'blur(14px)',
       borderBottom:`1px solid var(--line)`,
     }}>
-      <div className="nav-inner" style={{
+      <div className={"nav-inner" + (searchOpen ? " nav-searching" : "")} style={{
         maxWidth:1320, margin:'0 auto', padding:'12px 32px',
         display:'flex', alignItems:'center', gap:18,
       }}>
@@ -290,6 +295,17 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
           })}
         </nav>
         <SearchBar p={p} onSearch={onSearch} lang={lang} />
+
+        {/* Mobile-only: search icon (collapsed state) + close icon (expanded state).
+            Both hidden on tablet/desktop; the ≤560 CSS flips them on. */}
+        <button onClick={()=>setSearchOpen(true)} className="nav-search-toggle" aria-label={lang==='jp'?'検索':'Search'}
+          style={{...iconBtn(p), flexShrink:0, display:'none'}}>
+          <SearchIcon color={p.ink}/>
+        </button>
+        <button onClick={()=>setSearchOpen(false)} className="nav-search-close" aria-label={lang==='jp'?'検索を閉じる':'Close search'}
+          style={{...iconBtn(p), flexShrink:0, display:'none'}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.ink} strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
 
         {/* Dark / light toggle */}
         <button onClick={onToggleMode} title={mode==='dark'?'Light mode':'Dark mode'}
@@ -336,7 +352,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
             <button onClick={()=>window.__nihon_go({name:'compose'})} className="nav-hide-mobile" style={{...gradStyle(p), padding:'9px 16px', fontSize:13, flexShrink:0}}>
               <PencilIcon color="#fff"/> {lang==='jp' ? '書く' : 'Write'}
             </button>
-            <div style={{position:'relative', flexShrink:0}}>
+            <div className="nav-hide-mobile" style={{position:'relative', flexShrink:0}}>
               <button onClick={()=>{ setMenuOpen(v=>!v); setNotifOpen(false); }}
                 aria-label={lang==='jp'?'アカウントメニュー':'Account menu'} aria-haspopup="menu" aria-expanded={menuOpen}
                 style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:0, borderRadius:'50%'}}>
@@ -367,16 +383,24 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
         trapped by the header's backdrop-filter containing block). */}
     {drawerOpen && (
       <div onClick={()=>setDrawerOpen(false)} style={{position:'fixed', inset:0, zIndex:60, background:'color-mix(in oklab, var(--ink) 48%, transparent)', backdropFilter:'blur(4px)', WebkitBackdropFilter:'blur(4px)', display:'flex', justifyContent:'flex-end'}}>
-        <div onClick={(e)=>e.stopPropagation()} style={{position:'relative', overflow:'hidden', width:'min(86vw, 360px)', height:'100%', background:'var(--surface)', borderLeft:`1px solid ${p.line}`, display:'flex', flexDirection:'column', boxShadow:'-30px 0 60px -30px rgba(0,0,0,0.45)', animation:'navDrawerIn .24s cubic-bezier(.2,.7,.2,1)'}}>
+        <div onClick={(e)=>e.stopPropagation()} style={{position:'relative', overflowY:'auto', overflowX:'hidden', width:'min(86vw, 360px)', height:'100%', background:'var(--surface)', borderLeft:`1px solid ${p.line}`, display:'flex', flexDirection:'column', boxShadow:'-30px 0 60px -30px rgba(0,0,0,0.45)', animation:'navDrawerIn .24s cubic-bezier(.2,.7,.2,1)'}}>
           {/* Japan-themed decoration: soft sakura wash up top + a faint kanji seal watermark */}
           <div aria-hidden="true" style={{position:'absolute', top:0, left:0, right:0, height:200, background:`radial-gradient(120% 80% at 90% 0%, color-mix(in oklab, ${p.accent} 22%, transparent), transparent 70%)`, pointerEvents:'none'}}/>
           <div aria-hidden="true" style={{position:'absolute', bottom:-30, right:-24, fontFamily:'var(--fontDisplay)', fontSize:240, lineHeight:1, color:`color-mix(in oklab, ${p.accent} 14%, transparent)`, pointerEvents:'none', userSelect:'none'}}>日</div>
 
-          <div style={{position:'relative', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 18px 14px'}}>
+          <div style={{position:'relative', display:'flex', alignItems:'center', padding:'18px 18px 14px'}}>
             <Logo p={p} jp={lang==='jp'} />
-            <button onClick={()=>setDrawerOpen(false)} aria-label={lang==='jp'?'閉じる':'Close'}
-              style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, cursor:'pointer', width:34, height:34, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, lineHeight:1, color:p.inkSoft}}>×</button>
           </div>
+
+          {currentUser && (
+            <div style={{position:'relative', display:'flex', alignItems:'center', gap:11, margin:'0 16px 8px', padding:'12px 14px', background:`color-mix(in oklab, ${p.surface2} 60%, transparent)`, border:`1px solid ${p.line}`, borderRadius:14}}>
+              <Avatar user={currentUser} p={p} size={40}/>
+              <div style={{minWidth:0, display:'flex', flexDirection:'column', lineHeight:1.25}}>
+                <strong style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{lang==='jp'?currentUser.jp:currentUser.en}</strong>
+                <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint}}>@{currentUser.slug}</span>
+              </div>
+            </div>
+          )}
 
           <div style={{position:'relative', padding:'0 16px 6px'}}>
             <SearchBar p={p} onSearch={onSearch} lang={lang} inline />
@@ -397,9 +421,6 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
 
           <div style={{flex:1}}/>
           <div style={{position:'relative', borderTop:`1px solid ${p.line}`, padding:'14px 16px', display:'flex', flexDirection:'column', gap:10, background:`color-mix(in oklab, ${p.surface2} 55%, transparent)`}}>
-            <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'saved'}); }} style={drawerRow}>
-              <BookmarkIcon filled={savedCount>0} color={p.ink}/> {lang==='jp'?'保存した記事':'Saved'}{savedCount>0?` · ${savedCount}`:''}
-            </button>
             {currentUser ? (
               <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'compose'}); }} style={{...gradStyle(p), justifyContent:'center', padding:'13px', fontSize:14}}>
                 <PencilIcon color="#fff"/> {lang==='jp'?'書く':'Write'}
@@ -409,9 +430,32 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
                 {lang==='jp'?'ログイン':'Sign in'}
               </button>
             )}
+            {currentUser && (
+              <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'profile'}); }} style={drawerRow}>
+                <span aria-hidden="true" style={{display:'inline-flex', width:18, justifyContent:'center'}}>👤</span> {lang==='jp'?'プロフィール':'Your profile'}
+              </button>
+            )}
+            <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'saved'}); }} style={drawerRow}>
+              <BookmarkIcon filled={savedCount>0} color={p.ink}/> {lang==='jp'?'保存した記事':'Saved'}{savedCount>0?` · ${savedCount}`:''}
+            </button>
+            {currentUser && (
+              <button onClick={()=>{ setDrawerOpen(false); window.__nihon_go({name:'settings'}); }} style={drawerRow}>
+                <span aria-hidden="true" style={{display:'inline-flex', width:18, justifyContent:'center'}}>⚙️</span> {lang==='jp'?'設定':'Settings'}
+              </button>
+            )}
+            {currentUser && currentUser.role==='admin' && (
+              <button onClick={()=>{ setDrawerOpen(false); window.location.href = `/${loc}/admin`; }} style={drawerRow}>
+                <span aria-hidden="true" style={{display:'inline-flex', width:18, justifyContent:'center'}}>🛡️</span> {lang==='jp'?'管理パネル':'Admin console'}
+              </button>
+            )}
             {route.name!=='compose' && (
               <button onClick={()=>{ onLang(lang==='en'?'jp':'en'); }} style={drawerRow}>
                 🌐 {lang==='en'?'日本語に切り替え':'Switch to English'}
+              </button>
+            )}
+            {currentUser && (
+              <button onClick={()=>{ setDrawerOpen(false); onLogout(); }} style={{...drawerRow, color:p.stamp}}>
+                <span aria-hidden="true" style={{display:'inline-flex', width:18, justifyContent:'center'}}>⏻</span> {lang==='jp'?'ログアウト':'Log out'}
               </button>
             )}
             <div style={{textAlign:'center', fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', color:p.inkFaint, paddingTop:4}}>
@@ -707,7 +751,7 @@ function SearchBar({p, onSearch, lang, inline=false}) {
             onMouseDown={(e)=>{e.preventDefault(); setV(''); inputRef.current?.focus();}}
             style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:11, padding:0}}>✕</button>
         ) : !inline ? (
-          <span style={{
+          <span className="nihon-search-kbd" style={{
             fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint,
             border:`1px solid ${p.line}`, padding:'1px 5px', borderRadius:4,
           }}>⌘ K</span>
