@@ -20,6 +20,8 @@ import reports from './routes/reports';
 import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
+import { pruneReadNotifications } from './db/queries/notifications';
+import { pruneOldSignals } from './db/queries/for-you';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
 import weather from './routes/weather';
@@ -135,6 +137,17 @@ export default {
         recomputeTrendingCache(db, env.TRENDING_KV),
         recomputeWeatherCache(env.TRENDING_KV),
       ]);
+      // Once an hour (top of the hour), sweep rows that can no longer affect anything:
+      // read notifications older than 30 days, and taste signals past the For You
+      // window. Both are bounded indexed deletes; each failure is swallowed so one
+      // can't skip the other or the trending pass.
+      if (new Date().getUTCMinutes() === 0) {
+        const [n, s] = await Promise.all([
+          pruneReadNotifications(db, 30 * 24 * 60 * 60 * 1000).catch(() => 0),
+          pruneOldSignals(db).catch(() => 0),
+        ]);
+        if (n || s) console.log(`[prune] notifs=${n} signals=${s}`);
+      }
     } finally {
       await pool.end();
     }

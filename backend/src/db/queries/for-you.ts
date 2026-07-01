@@ -33,7 +33,7 @@
  * is one candidate query + one cached profile read + in-memory scoring.
  * ========================================================================== */
 
-import { eq, and, or, gt, desc, sql, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, or, gt, lt, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, postSaves, postComments, tags, userAffinity, userSignals } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -444,9 +444,12 @@ export function rankFeed(cands: FeedCard[], opts: RankOpts): FeedCard[] {
   const followCap = opts.followCap ?? 0.6;
   const exploreEvery = opts.exploreEvery ?? 6;
 
-  const ranked = [...cands].sort(
-    (a, b) => scoreCard(b, opts, maxTrend) - scoreCard(a, opts, maxTrend),
-  );
+  // Score each candidate ONCE, then sort by the cached value. Scoring inside the
+  // comparator recomputes scoreCard (Date.now + Math.pow + a tag loop) O(n log n)
+  // times instead of O(n); caching also gives the sort a stable key.
+  const scored = cands.map((p) => ({ p, s: scoreCard(p, opts, maxTrend) }));
+  scored.sort((a, b) => b.s - a.s);
+  const ranked = scored.map((x) => x.p);
 
   // Greedy diversity pass: place a post unless its author already hit the cap or
   // followed posts already exceed their share — deferred posts go to a tail bucket
@@ -567,6 +570,22 @@ export async function dismissedPostIds(db: DB, userId: string): Promise<Set<stri
     .from(userSignals)
     .where(and(eq(userSignals.userId, userId), eq(userSignals.base, NOT_INTERESTED_SIGNAL), gt(userSignals.createdAt, since)));
   return new Set(rows.map((r) => r.id));
+}
+
+/** Retention sweep (cron): drop user_signals rows past the taste window. EVERY
+ *  reader — computeAffinity, dismissedPostIds, and the search / not-interested
+ *  dedup guards — filters to `created_at > now − SLOW.window`, so a row older than
+ *  that can never influence a feed again; it's pure dead weight that otherwise
+ *  grows without bound (one row per unlike / unsave / dismiss / search-click). The
+ *  extra DAY margin keeps us clear of the exact window edge (and any future window
+ *  bump). Horizon is derived from SLOW.window so it can't drift out of sync. Bounded
+ *  by the (user_id, created_at) index. Returns rows removed. */
+export async function pruneOldSignals(db: DB): Promise<number> {
+  const cutoff = Date.now() - (SLOW.window + 7 * DAY);
+  const removed = await db.delete(userSignals)
+    .where(lt(userSignals.createdAt, cutoff))
+    .returning({ id: userSignals.id });
+  return removed.length;
 }
 
 /* ============================================================================

@@ -1,6 +1,6 @@
 /* In-app notifications: create (fire-and-forget from engagement hooks), list
  * for the bell panel (with actor + post context), unread count, mark read. */
-import { eq, and, desc, sql, isNull } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull, lt } from 'drizzle-orm';
 import type { DB } from '../client';
 import { notifications, users, posts } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -103,6 +103,20 @@ export async function markAllRead(db: DB, userId: string): Promise<void> {
     .update(notifications)
     .set({ readAt: Date.now() })
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+}
+
+/** Retention sweep (cron): drop already-read notifications older than `maxAgeMs`.
+ *  The table grows with every like/comment/reply/follow/new-post fan-out; left
+ *  unbounded it becomes the biggest table on the platform. Unread rows are always
+ *  kept — only read, aged-out rows go. The (user_id, created_at) index plus the
+ *  created_at filter keeps this a bounded delete each run. Returns rows removed. */
+export async function pruneReadNotifications(db: DB, maxAgeMs: number): Promise<number> {
+  const cutoff = Date.now() - maxAgeMs;
+  const removed = await db
+    .delete(notifications)
+    .where(and(sql`${notifications.readAt} IS NOT NULL`, lt(notifications.createdAt, cutoff)))
+    .returning({ id: notifications.id });
+  return removed.length;
 }
 
 /** Delete all of a user's notifications. Scoped to the owner so a caller can

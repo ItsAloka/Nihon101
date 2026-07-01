@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
-import { users, googleLinks } from '../db/schema';
+import { users, googleLinks, refreshTokens } from '../db/schema';
 import { id } from '../lib/ids';
 import { randomToken } from '../lib/crypto';
 import { startSession } from '../lib/session';
@@ -78,6 +78,7 @@ google.get('/callback', limits.oauth, async (c) => {
   if (!claims?.sub || !claims.email) {
     return c.redirect(`${c.env.FRONTEND_ORIGIN}/${locale}/login?error=google`);
   }
+  const emailVerified = claims.email_verified === true || claims.email_verified === 'true';
 
   const db = getDb(c);
   const sub = String(claims.sub);
@@ -90,9 +91,21 @@ google.get('/callback', limits.oauth, async (c) => {
   if (link) {
     userId = link.userId;
   } else {
+    // Only trust the email to match/create a local account if Google itself has
+    // verified the user owns it — an unverified Google email is attacker-settable.
+    if (!emailVerified) return c.redirect(`${c.env.FRONTEND_ORIGIN}/${locale}/login?error=google`);
     const [existing] = await db.select().from(users).where(eq(users.email, email));
     if (existing) {
       userId = existing.id;
+      // Account-linking pre-hijack defense: an unverified local account could have
+      // been pre-registered with a password by someone other than the email's owner.
+      // Google has now proven ownership, so reclaim it — verify it, drop the pre-set
+      // password, and revoke every existing session — before linking Google to it.
+      if (!existing.emailVerified) {
+        await db.update(users).set({ emailVerified: true, passwordHash: null, updatedAt: now() }).where(eq(users.id, existing.id));
+        await db.update(refreshTokens).set({ revokedAt: now() })
+          .where(and(eq(refreshTokens.userId, existing.id), isNull(refreshTokens.revokedAt)));
+      }
     } else {
       userId = id('usr');
       await db.insert(users).values({
@@ -130,9 +143,14 @@ google.get('/callback', limits.oauth, async (c) => {
  *  token endpoint over TLS, so we trust the channel rather than re-verifying. */
 function decodeJwt(jwt: string): Record<string, unknown> | null {
   try {
-    const payload = jwt.split('.')[1];
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(decodeURIComponent(escape(json)));
+    const part = jwt.split('.')[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    // Decode as UTF-8 bytes (not the deprecated escape/unescape trick) so JA/CJK
+    // display names survive intact instead of turning to mojibake.
+    const bytes = Uint8Array.from(atob(b64 + pad), (ch) => ch.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return null;
   }
