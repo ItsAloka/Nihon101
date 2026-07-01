@@ -132,6 +132,17 @@ function scheduleEmbedding(c: Context<AppEnv>, postId: string) {
   c.executionCtx.waitUntil(job);
 }
 
+/** Fan out "new post" notifications OFF the request path. The follower INSERT…SELECT
+ *  shouldn't make a high-follower author's publish wait, so it runs in `waitUntil` on
+ *  its own pool (the per-request pool is closed once the response is sent). */
+function fanOutNewPost(c: Context<AppEnv>, authorId: string, postId: string): void {
+  c.executionCtx.waitUntil((async () => {
+    const { db: bgDb, pool } = standaloneDb(c.env);
+    try { await notifyFollowersOfPost(bgDb, authorId, postId); }
+    finally { try { await pool.end(); } catch { /* noop */ } }
+  })());
+}
+
 /** Resolve the requester's id + role from the access token, or null if absent. */
 async function currentUser(c: Context<AppEnv>): Promise<{ id: string; role: string } | null> {
   const header = c.req.header('Authorization');
@@ -293,7 +304,7 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   if (status === 'published') {
     await bumpCategoryCount(d, categoryId, 1);
     await bumpTagCounts(d, post.tags, 1);
-    await notifyFollowersOfPost(d, post.authorId, post.id);
+    fanOutNewPost(c, post.authorId, post.id);
   }
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
@@ -348,8 +359,9 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
     await bumpCategoryCount(d, nextCategoryId, 1);
     await bumpTagCounts(d, newTags, 1);
     if (!existing.publishedAt) await setPublishedAt(d, existing.id, Date.now());
-    // First time this post goes public → notify the author's followers.
-    await notifyFollowersOfPost(d, existing.authorId, existing.id);
+    // First time this post goes public → notify the author's followers (off the
+    // request path so a high-follower publish returns instantly).
+    fanOutNewPost(c, existing.authorId, existing.id);
   } else if (wasPub && !isPub) {
     await bumpCategoryCount(d, existing.categoryId, -1);
     await bumpTagCounts(d, oldTags, -1);

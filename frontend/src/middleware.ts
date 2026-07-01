@@ -16,22 +16,23 @@ import { defineMiddleware } from 'astro:middleware';
  *  • img-src https: — post covers/avatars (R2 via the Worker), YT thumbnails, etc.
  *  • connect-src — the API origin (prod) + ws/wss for the Vite HMR socket (dev). */
 
-const API_ORIGIN = 'https://api.nihon101.com';
-// In dev the Worker (media proxy + API) is http://localhost:8787, which `https:`
-// won't cover — allow it so avatars/covers load locally. Empty in prod.
-const DEV_ORIGIN = import.meta.env.DEV ? 'http://localhost:8787' : '';
+// The backend the browser calls. Resolved with the SAME dev/prod rule the client
+// uses (api.jsx / ui.jsx / the .astro pages): local dev is http://localhost:8787
+// (which `https:` in img-src wouldn't cover), prod is https://api.nihon101.com. One
+// expression, so connect-src/img-src can't drift from where the app actually fetches.
+const API_ORIGIN = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
 
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  `img-src 'self' data: https: ${DEV_ORIGIN}`,
+  `img-src 'self' data: https: ${API_ORIGIN}`,
   "font-src 'self' https://fonts.gstatic.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "script-src 'self' 'unsafe-inline'",
   "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
-  `connect-src 'self' ${API_ORIGIN} ${DEV_ORIGIN} ws: wss:`,
+  `connect-src 'self' ${API_ORIGIN} ws: wss:`,
   "form-action 'self'",
 ].join('; ');
 
