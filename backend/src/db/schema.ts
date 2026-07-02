@@ -382,38 +382,18 @@ export const featuredSlots = pgTable('featured_slots', {
 
 // Singleton moderation config (one row, id = 'singleton'). reportThreshold = how
 // many DISTINCT reporters a target needs before its case surfaces in the admin
-// "needs action" queue (anti flood/abuse). autoHideThreshold = distinct reporters
-// at which the target is auto-hidden pending review (must be ≥ reportThreshold).
+// "needs action" queue (anti flood/abuse). autoHideThreshold = distinct TRUSTED
+// reporters at which a post/comment is auto-hidden pending review (enforced ≥
+// reportThreshold by the settings route).
 export const adminSettings = pgTable('admin_settings', {
   id: text('id').primaryKey(),               // always 'singleton'
   reportThreshold: integer('report_threshold').notNull().default(3),
   autoHideThreshold: integer('auto_hide_threshold').notNull().default(6),
-  // Destination for the contact form. '' = fall back to RESEND_FROM at send time.
-  // Admin-editable from the moderation console Settings tab.
-  contactEmail: text('contact_email').notNull().default(''),
   // Kill switch for the entire Sunday Letter newsletter system. When false the
   // public signup endpoint rejects new subscribers and the send cron is a no-op.
   newsletterEnabled: boolean('newsletter_enabled').notNull().default(true),
   updatedAt: ms('updated_at').notNull(),
 });
-
-// Contact-form submissions. Stored first (source of truth), then a notification is
-// emailed to the admin contact address; admin replies from the console via Resend.
-// reporterId-style: userId is set when a signed-in reader sends it, else null.
-export const contactMessages = pgTable('contact_messages', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
-  name: text('name').notNull().default(''),
-  email: text('email').notNull(),           // sender's reply-to
-  message: text('message').notNull(),
-  locale: text('locale').notNull().default('ja'),  // 'ja' | 'en' — reply language
-  status: text('status').notNull().default('new'), // 'new' | 'replied'
-  repliedAt: ms('replied_at'),
-  repliedBy: text('replied_by').references(() => users.id, { onDelete: 'set null' }),
-  createdAt: ms('created_at').notNull(),
-}, (t) => [
-  index('contact_messages_status_idx').on(t.status, t.createdAt),
-]);
 
 // Pre-launch newsletter list (capture only — the weekly digest sender ships later,
 // once the list is worth sending to). One row per email; userId links the row to a
@@ -446,5 +426,4 @@ export type PostComment = typeof postComments.$inferSelect;
 export type Follow = typeof follows.$inferSelect;
 export type PostRead = typeof postReads.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
-export type ContactMessage = typeof contactMessages.$inferSelect;
 export type NewsletterSubscriber = typeof newsletterSubscribers.$inferSelect;

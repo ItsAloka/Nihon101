@@ -157,7 +157,6 @@ export const limits = {
   translate:    rateLimit({ bucket: 'translate', limit: 30, windowSec: 3600, by: 'user' }),  // external DeepL+OpenAI cost
   category:     rateLimit({ bucket: 'category',  limit: 20, windowSec: 3600, by: 'user' }),
   // ---- PUBLIC writes — KV, per IP (no auth required; spam/abuse guard + email-cost) ----
-  contact:      rateLimit({ bucket: 'contact',   limit: 5,  windowSec: 3600, by: 'ip' }),  // form → emails admin
   newsletter:   rateLimit({ bucket: 'newsletter',limit: 10, windowSec: 3600, by: 'ip' }),  // signup spam
 
   // ---- READ — in-memory per isolate, per IP ----

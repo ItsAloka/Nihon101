@@ -1,6 +1,6 @@
-/* Image uploads → R2. Keeps base64 data URLs out of the post body (D1 rows have
- * a hard size cap), so posts with images actually save. Upload is owner-only;
- * serving is public and cached. */
+/* Image uploads → R2. Keeps base64 data URLs out of the post body (blobs don't
+ * belong in Postgres rows), so posts with images stay lean. Upload is owner-only;
+ * serving is public and edge-cached. */
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
@@ -62,14 +62,28 @@ app.post('/', requireAuth, limits.upload, async (c) => {
 });
 
 // Serve an uploaded image (public). Key can contain a "/" (userId/uuid.ext).
+// Edge-cached via the Cache API: Cloudflare does NOT auto-cache Worker responses,
+// so without this every avatar/cover render is a Worker invocation + an R2 read —
+// at 50k users that's the biggest read bill on the platform. Keys are immutable
+// UUIDs (a changed image is a NEW key), so cached entries never need invalidation.
 app.get('/:key{.+}', async (c) => {
+  const cache = (caches as unknown as { default: Cache }).default;
+  const cacheKey = new Request(new URL(c.req.url).toString(), { method: 'GET' });
+  const hit = await cache.match(cacheKey).catch(() => undefined);
+  // Re-wrap: a cache.match Response has immutable headers, and the security-header
+  // middleware mutates headers after next() — returning it raw would throw.
+  if (hit) return new Response(hit.body, hit);
+
   const obj = await c.env.MEDIA.get(c.req.param('key'));
   if (!obj) return c.json({ error: 'not_found' }, 404);
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set('etag', obj.httpEtag);
   headers.set('cache-control', 'public, max-age=31536000, immutable');
-  return new Response(obj.body, { headers });
+  const res = new Response(obj.body, { headers });
+  // cache.put consumes the body — clone, and don't block the response on the write.
+  c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()).catch(() => {}));
+  return res;
 });
 
 export default app;

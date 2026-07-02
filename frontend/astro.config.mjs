@@ -36,7 +36,6 @@ export default defineConfig({
         '/weather': 'http://localhost:8787',
         '/admin': 'http://localhost:8787',
         '/reports': 'http://localhost:8787',
-        '/contact': 'http://localhost:8787',
         '/newsletter': 'http://localhost:8787',
       },
     },

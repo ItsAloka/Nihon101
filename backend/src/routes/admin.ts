@@ -118,14 +118,17 @@ app.get('/settings', async (c) => c.json(await getSettings(getDb(c))));
 app.put('/settings', async (c) => {
   const db = getDb(c);
   const actor = c.var.user!;
-  const body = (await c.req.json().catch(() => null)) as { reportThreshold?: unknown } | null;
+  const body = (await c.req.json().catch(() => null)) as { reportThreshold?: unknown; autoHideThreshold?: unknown } | null;
   const cur = await getSettings(db);
   const clamp = (v: unknown, def: number) => {
     const n = Math.round(Number(v));
     return Number.isFinite(n) ? Math.min(100, Math.max(1, n)) : def;
   };
   const reportThreshold = clamp(body?.reportThreshold, cur.reportThreshold);
-  const next = await updateSettings(db, { reportThreshold, contactEmail: cur.contactEmail });
+  // Auto-hide is the only no-human takedown, so it can never sit below the surface
+  // threshold — a case must at least be admin-visible before it can self-hide.
+  const autoHideThreshold = Math.max(reportThreshold, clamp(body?.autoHideThreshold, cur.autoHideThreshold));
+  const next = await updateSettings(db, { reportThreshold, autoHideThreshold });
   await invalidateSettingsCache(c.env.TRENDING_KV); // hot-path report POST reads the cache
   await logAdminAction(db, { actorId: actor.id, action: 'update_settings', targetType: 'settings', targetId: '', detail: { ...next } });
   return c.json(next);

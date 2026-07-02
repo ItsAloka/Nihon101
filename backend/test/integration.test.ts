@@ -125,3 +125,47 @@ describe('reports — self-report guard + idempotency', () => {
     expect(dupe.json.deduped).toBe(true);
   });
 });
+
+describe('auto-hide on trusted report threshold', () => {
+  it('hides a post once enough trusted distinct reporters flag it (untrusted flags never count)', async () => {
+    const author = await makeUser('ahauthor'); created.push(author.id);
+    const r1 = await makeUser('ahrep1'); created.push(r1.id);
+    const r2 = await makeUser('ahrep2'); created.push(r2.id);
+    const fresh = await makeUser('ahfresh'); created.push(fresh.id); // NOT trusted (brand-new)
+    const post = await makePost(author.id);
+
+    // Snapshot settings, then lower the auto-hide threshold to 2 for the test.
+    const { db: d, pool } = db();
+    const { adminSettings, posts: postsT } = await import('../src/db/schema');
+    let prev: { reportThreshold: number; autoHideThreshold: number } | null = null;
+    try {
+      const [cur] = await d.select().from(adminSettings).where(eq(adminSettings.id, 'singleton'));
+      if (cur) {
+        prev = { reportThreshold: cur.reportThreshold, autoHideThreshold: cur.autoHideThreshold };
+        await d.update(adminSettings).set({ autoHideThreshold: 2 }).where(eq(adminSettings.id, 'singleton'));
+      } else {
+        await d.insert(adminSettings).values({ id: 'singleton', reportThreshold: 1, autoHideThreshold: 2, newsletterEnabled: true, updatedAt: Date.now() });
+      }
+      // Trusted = email-verified AND account older than the 7-day gate. Backdate r1+r2;
+      // `fresh` stays new+unverified, so its flag must NOT count toward auto-hide.
+      const aged = Date.now() - 8 * 24 * 60 * 60 * 1000;
+      await d.update(users).set({ emailVerified: true, createdAt: aged }).where(eq(users.id, r1.id));
+      await d.update(users).set({ emailVerified: true, createdAt: aged }).where(eq(users.id, r2.id));
+
+      // Untrusted + first trusted report: still visible.
+      expect((await call('POST', '/reports', { token: fresh.token, body: { targetType: 'post', targetId: post.id, reason: 'spam' } })).status).toBe(201);
+      expect((await call('POST', '/reports', { token: r1.token, body: { targetType: 'post', targetId: post.id, reason: 'spam' } })).status).toBe(201);
+      let [row] = await d.select({ isHidden: postsT.isHidden }).from(postsT).where(eq(postsT.id, post.id));
+      expect(row!.isHidden).toBe(false); // 1 trusted + 1 untrusted < threshold 2
+
+      // Second trusted reporter crosses the threshold → auto-hidden pending review.
+      expect((await call('POST', '/reports', { token: r2.token, body: { targetType: 'post', targetId: post.id, reason: 'spam' } })).status).toBe(201);
+      [row] = await d.select({ isHidden: postsT.isHidden }).from(postsT).where(eq(postsT.id, post.id));
+      expect(row!.isHidden).toBe(true);
+    } finally {
+      if (prev) await d.update(adminSettings).set(prev).where(eq(adminSettings.id, 'singleton')).catch(() => {});
+      await pool.end();
+      await post.cleanup();
+    }
+  });
+});
