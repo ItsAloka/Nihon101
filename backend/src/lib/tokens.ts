@@ -24,9 +24,16 @@ export async function signAccess(
   return sign(payload, secret, 'HS256');
 }
 
-/** Verify an access JWT; throws on invalid/expired. */
+/** Verify an access JWT; throws on invalid/expired/wrong-purpose. */
 export async function verifyAccess(secret: string, token: string): Promise<AccessClaims> {
-  return (await verify(token, secret, 'HS256')) as AccessClaims;
+  const claims = (await verify(token, secret, 'HS256')) as AccessClaims & { purpose?: string };
+  // Special-purpose tickets (the OTP `pending` ticket) are signed with the SAME
+  // secret. Accepting one here would let a password-only attacker skip the OTP
+  // step entirely: /login hands out that ticket before the second factor, and
+  // requireAuth runs every protected route through this function. Any `purpose`
+  // claim ⇒ not an access token, so reject it (throws → 401, matching all callers).
+  if (claims.purpose !== undefined) throw new Error('wrong_token_purpose');
+  return claims;
 }
 
 export const OTP_TICKET_TTL_SEC = 10 * 60; // 10 min — the OTP step must complete inside this

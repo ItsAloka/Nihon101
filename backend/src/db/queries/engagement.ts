@@ -100,24 +100,21 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
   return { saved, saves: row?.saves ?? 0 };
 }
 
-/** Whether a user has saved a post (null user → false). */
-export async function hasSavedPost(db: DB, postId: string, userId: string | null): Promise<boolean> {
-  if (!userId) return false;
-  const [row] = await db
-    .select({ id: postSaves.id })
-    .from(postSaves)
-    .where(and(eq(postSaves.postId, postId), eq(postSaves.userId, userId)));
-  return !!row;
-}
+// Hard cap on the Saved tab. Same reasoning as OWNER_LIST_CAP/MAX_COMMENTS: the
+// query must be bounded — a power user's multi-year save history would otherwise
+// load in full (ids here, then a card per id) on every Saved view. Newest-first
+// means the cap drops the oldest tail, which is what a bookmarks view wants.
+export const MAX_SAVED = 200;
 
 /** The ids of posts a user has saved, newest-saved first (drives the Saved tab
- *  and the saved-state on cards). */
+ *  and the saved-state on cards). Capped at MAX_SAVED. */
 export async function savedPostIds(db: DB, userId: string): Promise<string[]> {
   const rows = await db
     .select({ id: postSaves.postId })
     .from(postSaves)
     .where(eq(postSaves.userId, userId))
-    .orderBy(desc(postSaves.createdAt));
+    .orderBy(desc(postSaves.createdAt))
+    .limit(MAX_SAVED);
   return rows.map((r) => r.id);
 }
 

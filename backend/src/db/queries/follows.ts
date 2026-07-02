@@ -4,6 +4,7 @@ import { eq, and, desc, sql } from 'drizzle-orm';
 import type { DB } from '../client';
 import { follows, users } from '../schema';
 import { id as newId } from '../../lib/ids';
+import { likeContains } from '../../lib/sql';
 
 /** Follow followee. Idempotent. Returns true if a new edge was created. */
 export async function follow(db: DB, followerId: string, followeeId: string): Promise<boolean> {
@@ -40,15 +41,6 @@ export async function followCounts(db: DB, userId: string): Promise<{ followers:
     db.select({ n: sql<number>`count(*)::int` }).from(follows).where(eq(follows.followerId, userId)),
   ]);
   return { followers: f?.n ?? 0, following: g?.n ?? 0 };
-}
-
-/** Ids of everyone who follows userId (used to fan out "new post" notifications). */
-export async function followerIds(db: DB, userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ id: follows.followerId })
-    .from(follows)
-    .where(eq(follows.followeeId, userId));
-  return rows.map((r) => r.id);
 }
 
 /** The authors a user follows, as {id, handle} — drives the For You feed split
@@ -90,7 +82,7 @@ async function listFollowDir(
     : sql<boolean>`false`;
   // Optional name/handle filter (matches the display name, JA name, or handle).
   const search = q?.trim()
-    ? sql`AND (${users.displayName} ILIKE ${'%' + q.trim() + '%'} OR ${users.displayNameJa} ILIKE ${'%' + q.trim() + '%'} OR ${users.handle} ILIKE ${'%' + q.trim() + '%'})`
+    ? sql`AND (${users.displayName} ILIKE ${likeContains(q.trim())} OR ${users.displayNameJa} ILIKE ${likeContains(q.trim())} OR ${users.handle} ILIKE ${likeContains(q.trim())})`
     : sql``;
   return (await db
     .select({

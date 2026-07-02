@@ -169,3 +169,29 @@ describe('auto-hide on trusted report threshold', () => {
     }
   });
 });
+
+describe('hidden post — comments are gated like the post', () => {
+  it('a moderator-hidden post returns 451 for its comments too (author still allowed)', async () => {
+    const author = await makeUser('hcauthor'); created.push(author.id);
+    const reader = await makeUser('hcreader'); created.push(reader.id);
+    const post = await makePost(author.id);
+    const { db: d, pool } = db();
+    const { posts: postsT } = await import('../src/db/schema');
+    try {
+      // Visible post: comments list publicly.
+      expect((await call('GET', `/posts/${post.id}/comments`)).status).toBe(200);
+
+      await d.update(postsT).set({ isHidden: true }).where(eq(postsT.id, post.id));
+
+      // Hidden: the body is already withheld (451 on the post routes) — the
+      // discussion must not stay readable through the comments endpoint.
+      expect((await call('GET', `/posts/${post.id}/comments`)).status).toBe(451);
+      expect((await call('GET', `/posts/${post.id}/comments`, { token: reader.token })).status).toBe(451);
+      // The author (like the post routes) can still load their own thread.
+      expect((await call('GET', `/posts/${post.id}/comments`, { token: author.token })).status).toBe(200);
+    } finally {
+      await pool.end();
+      await post.cleanup();
+    }
+  });
+});

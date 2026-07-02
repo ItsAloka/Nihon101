@@ -14,8 +14,10 @@ export const DATABASE_URL =
 
 export const ENV = {
   DATABASE_URL,
-  JWT_SECRET: 'test-jwt-secret',
-  REFRESH_PEPPER: 'test-pepper',
+  // ≥32 chars — the fail-closed config guard in src/index.ts refuses to serve on
+  // anything shorter (it would 500 every request in these tests, by design).
+  JWT_SECRET: 'test-jwt-secret-0123456789abcdef0123456789abcdef',
+  REFRESH_PEPPER: 'test-pepper-0123456789abcdef0123456789abcdef',
   FRONTEND_ORIGIN: 'http://localhost:4321',
   RESEND_API_KEY: '',                 // empty → mail is logged, not sent
   RESEND_FROM: 'test@nihon101.com',
