@@ -7,8 +7,7 @@ import { getDb } from '../db/client';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
-import { getUserByHandle, getUserById } from '../db/queries/users';
-import { listPosts, publicPost } from '../db/queries/posts';
+import { getUserByHandle, getUserById, publishedStats } from '../db/queries/users';
 import { follow, unfollow, isFollowing, followCounts, listFollowing, listFollowers, listFollowingUsers } from '../db/queries/follows';
 import { createNotification } from '../db/queries/notifications';
 
@@ -72,12 +71,14 @@ app.get('/:handle', limits.publicRead, async (c) => {
   if (!u) return c.json({ error: 'not_found' }, 404);
 
   const viewerId = await optionalUserId(c);
-  const [posts, counts, viewerFollows] = await Promise.all([
-    listPosts(db, { authorId: u.id, status: 'published' }),
+  // Aggregates only — the profile's story feed pages via /search?author=, so this
+  // endpoint never loads post rows (the old listPosts path selected up to 200 full
+  // bodies per profile view AND per article read, purely to count them).
+  const [pub, counts, viewerFollows] = await Promise.all([
+    publishedStats(db, u.id),
     followCounts(db, u.id),
     isFollowing(db, viewerId, u.id),
   ]);
-  const likes = posts.reduce((s, p) => s + p.likes, 0);
 
   return c.json({
     user: {
@@ -92,11 +93,9 @@ app.get('/:handle', limits.publicRead, async (c) => {
       role: u.role,
       joinedAt: u.createdAt,
     },
-    stats: { published: posts.length, likes, ...counts },
+    stats: { ...pub, ...counts },
     isFollowing: viewerFollows,
     isSelf: viewerId === u.id,
-    // List surface: strip the full HTML bodies (they're only needed on the article page).
-    posts: posts.map((p) => { const { bodyEn, bodyJa, ...rest } = publicPost(p); return rest; }),
   });
 });
 

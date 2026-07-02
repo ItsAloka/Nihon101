@@ -425,9 +425,23 @@ auth.patch('/me', requireAuth, limits.profile, async (c) => {
   }
   if (body.avatarUrl !== undefined) {
     const avatarUrl = body.avatarUrl === null ? null : String(body.avatarUrl);
-    // Only our own /media URLs (or clearing) — no hotlinking arbitrary origins.
-    if (avatarUrl !== null && !/^https?:\/\/[^/]+\/media\/[\w-]+\/[\w.-]+$/.test(avatarUrl))
-      return c.json({ error: 'invalid_avatar' }, 400);
+    // Only our own /media URLs (or clearing) — no hotlinking arbitrary origins. The
+    // path shape alone isn't enough: `https://evil.example/media/x/y.jpg` matches it,
+    // and an external host means a tracking pixel (readers' IPs logged on every page
+    // the avatar renders) or an image swapped after moderation saw it. So the ORIGIN
+    // must be this API's own (env-configured) origin too.
+    if (avatarUrl !== null) {
+      const shapeOk = /^https?:\/\/[^/]+\/media\/[\w-]+\/[\w.-]+$/.test(avatarUrl);
+      // Accept the API origin (prod) or the frontend origin (dev, where the Vite
+      // proxy mints upload URLs on the page's own origin).
+      const own = new Set<string>();
+      for (const o of [c.env.API_ORIGIN, c.env.FRONTEND_ORIGIN]) {
+        try { own.add(new URL(o).origin); } catch { /* unset in some dev setups */ }
+      }
+      let originOk = false;
+      try { originOk = own.has(new URL(avatarUrl).origin); } catch { /* malformed */ }
+      if (!shapeOk || !originOk) return c.json({ error: 'invalid_avatar' }, 400);
+    }
     set.avatarUrl = avatarUrl;
   }
   if (Object.keys(set).length === 0) return c.json({ error: 'nothing_to_update' }, 400);

@@ -19,7 +19,6 @@ export const ENV = {
   FRONTEND_ORIGIN: 'http://localhost:4321',
   RESEND_API_KEY: '',                 // empty → mail is logged, not sent
   RESEND_FROM: 'test@nihon101.com',
-  DEEPL_API_KEY: '',
   OPENAI_API_KEY: '',                 // empty → publish skips background translation
   GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: '', GOOGLE_REDIRECT_URI: '',
 } as Record<string, unknown>;

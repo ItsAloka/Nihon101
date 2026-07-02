@@ -4,6 +4,20 @@ import { users, posts } from '../schema';
 import { slugify } from './categories';
 import { notHidden } from './posts';
 
+/** Published-post count + total likes received, for the profile header. ONE
+ *  aggregate — never the rows. (The old path loaded up to 200 full-body posts per
+ *  profile view just to count them; the profile feed pages via /search?author=.) */
+export async function publishedStats(db: DB, authorId: string): Promise<{ published: number; likes: number }> {
+  const [row] = await db
+    .select({
+      published: sql<number>`count(*)::int`,
+      likes: sql<number>`coalesce(sum(${posts.likes}), 0)::int`,
+    })
+    .from(posts)
+    .where(and(eq(posts.authorId, authorId), eq(posts.status, 'published'), notHidden));
+  return row ?? { published: 0, likes: 0 };
+}
+
 export const HANDLE_RE = /^[a-z0-9-]{3,30}$/;
 
 /** Unique handle from a display name (id tail fallback, numeric suffix on collision). */

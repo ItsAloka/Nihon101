@@ -22,6 +22,7 @@ import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
 import { pruneReadNotifications } from './db/queries/notifications';
 import { pruneOldSignals } from './db/queries/for-you';
+import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
 import weather from './routes/weather';
@@ -138,15 +139,20 @@ export default {
         recomputeWeatherCache(env.TRENDING_KV),
       ]);
       // Once an hour (top of the hour), sweep rows that can no longer affect anything:
-      // read notifications older than 30 days, and taste signals past the For You
-      // window. Both are bounded indexed deletes; each failure is swallowed so one
-      // can't skip the other or the trending pass.
+      // read notifications older than 30 days, taste signals past the For You window,
+      // and open low-signal report cases (below the surface threshold, no new report
+      // in 7 days) that would otherwise pile up in "watching" forever. All bounded
+      // indexed work; each failure is swallowed so one can't skip the others.
       if (new Date().getUTCMinutes() === 0) {
-        const [n, s] = await Promise.all([
+        const [n, s, r] = await Promise.all([
           pruneReadNotifications(db, 30 * 24 * 60 * 60 * 1000).catch(() => 0),
           pruneOldSignals(db).catch(() => 0),
+          getSettings(db)
+            .then(({ reportThreshold }) =>
+              dismissStaleWatchingReports(db, reportThreshold, Date.now() - 7 * 24 * 60 * 60 * 1000))
+            .catch(() => 0),
         ]);
-        if (n || s) console.log(`[prune] notifs=${n} signals=${s}`);
+        if (n || s || r) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r}`);
       }
     } finally {
       await pool.end();

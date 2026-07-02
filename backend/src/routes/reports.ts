@@ -9,7 +9,11 @@ import { limits } from '../middleware/rateLimit';
 import { getPostById } from '../db/queries/posts';
 import { getComment as getCommentRow } from '../db/queries/engagement';
 import { getUserById } from '../db/queries/users';
-import { createReport, existingOpenReport, type TargetType } from '../db/queries/admin';
+import {
+  createReport, existingOpenReport, getSettingsCached,
+  countTrustedDistinctReporters, setPostHidden, setCommentHidden, logAdminAction,
+  type TargetType,
+} from '../db/queries/admin';
 
 const app = new Hono<AppEnv>();
 
@@ -31,14 +35,18 @@ app.post('/', requireAuth, limits.report, async (c) => {
   if (!TARGET_TYPES.includes(targetType) || !targetId) return c.json({ error: 'invalid_target' }, 400);
 
   // The target must exist; you can't report yourself / your own content.
+  // Track the target's hidden state for the auto-hide check below.
+  let alreadyHidden = false;
   if (targetType === 'post') {
     const p = await getPostById(db, targetId);
     if (!p) return c.json({ error: 'not_found' }, 404);
     if (p.authorId === me.id) return c.json({ error: 'cannot_report_own' }, 400);
+    alreadyHidden = p.isHidden;
   } else if (targetType === 'comment') {
     const cm = await getCommentRow(db, targetId);
     if (!cm) return c.json({ error: 'not_found' }, 404);
     if (cm.userId === me.id) return c.json({ error: 'cannot_report_own' }, 400);
+    alreadyHidden = cm.isHidden;
   } else {
     if (targetId === me.id) return c.json({ error: 'cannot_report_own' }, 400);
     const u = await getUserById(db, targetId);
@@ -50,6 +58,25 @@ app.post('/', requireAuth, limits.report, async (c) => {
   if (open) return c.json({ ok: true, reported: true, deduped: true });
 
   await createReport(db, { reporterId: me.id, targetType, targetId, reason, detail });
+
+  // AUTO-HIDE: the one no-human-in-the-loop takedown. Once enough DISTINCT TRUSTED
+  // reporters (email-verified + account older than a week — sockpuppet floods don't
+  // count) have an open report against a post/comment, hide it pending review. The
+  // reports stay OPEN so the case still surfaces in the admin queue; unhiding is a
+  // one-click admin action if the flags were wrong. Users can't be auto-hidden —
+  // bans stay human-only.
+  if (!alreadyHidden && (targetType === 'post' || targetType === 'comment')) {
+    const { autoHideThreshold } = await getSettingsCached(db, c.env.TRENDING_KV);
+    const trusted = await countTrustedDistinctReporters(db, targetType, targetId);
+    if (trusted >= autoHideThreshold) {
+      if (targetType === 'post') await setPostHidden(db, targetId, true, 'auto-hidden: report threshold reached');
+      else await setCommentHidden(db, targetId, true);
+      await logAdminAction(db, {
+        actorId: null, action: targetType === 'post' ? 'hide_post' : 'hide_comment',
+        targetType, targetId, detail: { auto: true, trustedReporters: trusted, threshold: autoHideThreshold },
+      });
+    }
+  }
   return c.json({ ok: true, reported: true }, 201);
 });
 

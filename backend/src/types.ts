@@ -21,7 +21,6 @@ export type AppVars = {
   RESEND_API_KEY: string;
   RESEND_FROM: string;            // transactional sender (auth.nihon101.com subdomain)
   RESEND_FROM_NEWSLETTER: string; // Sunday Letter sender (news.nihon101.com subdomain)
-  DEEPL_API_KEY: string;
   OPENAI_API_KEY: string;
   OPENAI_EMBED_API_KEY: string; // separate key for embeddings (feed + search semantic layer)
   GOOGLE_CLIENT_ID: string;

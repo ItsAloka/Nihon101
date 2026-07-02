@@ -108,14 +108,17 @@ across them + kageloom for testing feeds/rankings.
 - `kenta.eats@test.local` (@kenta-hori) — food
 - `mari.travels@test.local` (@mari-aoki) — travel
 - `ren.frames@test.local` (@ren-takeda) — animation/history
-- `kageloom@gmail.com` (@kage-loom) — main dev account, pw `REDACTED`
+- `kageloom@gmail.com` (@kage-loom) — main dev account (password NOT stored here;
+  a real credential must never be committed — it lives outside the repo)
 
-## Current state (2026-06-09)
+## Current state (2026-07-02)
 
-Done: auth (register/login/refresh/logout/forgot/reset), Google OAuth, account
-**Settings** (profile/password/google/delete), header auth control, full blog
-writing/reading + bilingual auto-translate + engagement (likes/comments).
-**Backend fully migrated D1/SQLite → Postgres** (Docker local, Neon later); all
-accounts + posts copied over and verified live on `:8787`. Home is still a **mock
-SPA** (`frontend/src/nihon/`) with mock `data.ts` — not yet wired to the backend or
-SSR. Next steps are tracked in `development-plan.md`.
+Done: auth (register/login/refresh/logout/forgot/reset + login OTP 2FA + trusted
+devices), Google OAuth, account **Settings**, full blog writing/reading + bilingual
+auto-translate + engagement (likes/saves/comments/follows), For You feed, trending,
+search (FTS + trigram + semantic), notifications, moderation (reports + auto-hide +
+bans + audit log), Sunday Letter newsletter. **All reader surfaces run on the real
+backend** (SSR pages + islands; the old mock data was removed 2026-06-14).
+Frontend is on **Astro 7** (upgraded 2026-07-02, cleared all npm advisories).
+Full pre-hosting audit passed 2026-07-02; remaining deferred items + deploy steps
+live in the security backlog memory. Next steps: `development-plan.md`.

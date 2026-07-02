@@ -55,7 +55,7 @@ const db = (c: Context<AppEnv>) => getDb(c);
 const MAX_COMMENT = 4_000;
 
 // Length caps (chars). Generous enough for long-form essays; block abuse / huge
-// pastes that would bloat D1 rows. Body is sanitized HTML, so it runs larger.
+// pastes that would bloat rows. Body is sanitized HTML, so it runs larger.
 const MAX_TITLE = 300;
 const MAX_EXCERPT = 600;
 const MAX_BODY = 200_000;
