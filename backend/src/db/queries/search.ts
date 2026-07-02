@@ -1,6 +1,7 @@
 import { eq, and, sql, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users } from '../schema';
+import { likeContains } from '../../lib/sql';
 import { cardCols, notHidden, type PostCardRow } from './posts';
 
 /* Bilingual search over published posts. Full-text first (websearch syntax: quoted
@@ -270,7 +271,8 @@ export interface AuthorMatch {
 export async function searchAuthors(db: DB, q: string, limit = 4): Promise<AuthorMatch[]> {
   const needle = q.trim().slice(0, 100);
   if (!needle) return [];
-  const like = '%' + needle + '%';
+  const like = likeContains(needle); // similarity() below takes the raw needle
+
   return db
     .select({
       handle: users.handle,

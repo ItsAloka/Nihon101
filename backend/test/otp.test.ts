@@ -103,6 +103,17 @@ describe('login OTP — second factor', () => {
     expect(r.json.error).toBe('otp_expired');
   });
 
+  it('the OTP pending ticket cannot be used as an access token (2FA bypass guard)', async () => {
+    const u = await makeUser('otp'); created.push(u.id);
+    const { pending } = await startLogin(u.email);
+    // The `pending` ticket is signed with the same secret as an access token but
+    // carries purpose:'otp'. Presenting it as a Bearer token to a protected route
+    // must NOT authenticate — otherwise a password-only attacker skips the code.
+    const r = await call('GET', '/auth/me', { token: pending });
+    expect(r.status).toBe(401);
+    expect(r.json.error).toBe('unauthorized');
+  });
+
   it('"remember this device" lets the next login skip OTP', async () => {
     const u = await makeUser('otp'); created.push(u.id);
     const { pending, code } = await startLogin(u.email);

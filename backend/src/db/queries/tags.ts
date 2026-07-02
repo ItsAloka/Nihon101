@@ -1,6 +1,7 @@
 import { sql, desc, gt, eq } from 'drizzle-orm';
 import type { DB } from '../client';
 import { tags } from '../schema';
+import { likeContains } from '../../lib/sql';
 import { slugify } from './categories';
 
 export type TagRow = typeof tags.$inferSelect;
@@ -73,7 +74,7 @@ export function searchTags(db: DB, q: string, limit = 6): Promise<TagRow[]> {
   return db
     .select()
     .from(tags)
-    .where(sql`"tags"."label" ILIKE ${'%' + needle + '%'} AND "tags"."post_count" > 0`)
+    .where(sql`"tags"."label" ILIKE ${likeContains(needle)} AND "tags"."post_count" > 0`)
     .orderBy(desc(tags.postCount))
     .limit(limit);
 }

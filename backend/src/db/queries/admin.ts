@@ -9,6 +9,7 @@ import {
   type Report, type Ban,
 } from '../schema';
 import { id as newId } from '../../lib/ids';
+import { likeContains } from '../../lib/sql';
 import { cardCols, type PostCardRow } from './posts';
 
 const now = () => Date.now();
@@ -84,15 +85,6 @@ export function listReports(db: DB, status: ReportStatus | null, limit = 50, bef
 export async function getReportById(db: DB, id: string): Promise<Report | undefined> {
   const [row] = await db.select().from(reports).where(eq(reports.id, id));
   return row;
-}
-
-/** How many OPEN reports exist for one target (the dupe badge in the queue). */
-export async function countReportsForTarget(db: DB, targetType: string, targetId: string): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(reports)
-    .where(and(eq(reports.targetType, targetType), eq(reports.targetId, targetId), eq(reports.status, 'open')));
-  return row?.n ?? 0;
 }
 
 /** Close a report. Returns false if it was already closed (lost race / double-click). */
@@ -543,7 +535,7 @@ export function searchUsersAdmin(
   const needle = q?.trim();
   const conds = [
     bannedOnly ? eq(users.isBanned, true) : undefined,
-    needle ? sql`(${users.displayName} ILIKE ${'%' + needle + '%'} OR ${users.handle} ILIKE ${'%' + needle + '%'} OR ${users.email} ILIKE ${'%' + needle + '%'})` : undefined,
+    needle ? sql`(${users.displayName} ILIKE ${likeContains(needle)} OR ${users.handle} ILIKE ${likeContains(needle)} OR ${users.email} ILIKE ${likeContains(needle)})` : undefined,
   ].filter(Boolean);
   const postCount = sql<number>`count(${posts.id})::int`;
   return db
@@ -636,7 +628,7 @@ export function searchPostsAdmin(db: DB, q: string | undefined, limit = 30): Pro
   const needle = q?.trim();
   const where = and(
     eq(posts.status, 'published'),
-    needle ? sql`(${posts.titleEn} ILIKE ${'%' + needle + '%'} OR ${posts.titleJa} ILIKE ${'%' + needle + '%'})` : undefined,
+    needle ? sql`(${posts.titleEn} ILIKE ${likeContains(needle)} OR ${posts.titleJa} ILIKE ${likeContains(needle)})` : undefined,
   );
   return db
     .select(cardCols)

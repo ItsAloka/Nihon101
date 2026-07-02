@@ -588,6 +588,22 @@ export async function pruneOldSignals(db: DB): Promise<number> {
   return removed.length;
 }
 
+/** Retention sweep (cron): drop post_reads past the taste window. Reads are the
+ *  highest-volume engagement row (one per post×user, refreshed on re-read) and every
+ *  windowed reader — computeAffinity (SLOW), semanticScores (FAST), the trending
+ *  recompute — already ignores rows this old. The ONE reader without a time filter is
+ *  seenPostIds: after the prune, a post read >37 days ago loses its 0.35× "seen"
+ *  demotion if it re-enters the candidates. That's deliberate — an on-taste post you
+ *  read a month+ ago may resurface, exactly like a dismissal decaying out. No
+ *  `.returning()` here: the first sweep on a mature table could delete a very large
+ *  batch, and materializing every deleted id in Worker memory buys nothing. Bounded
+ *  by post_reads_created_idx. Returns rows removed. */
+export async function prunePostReads(db: DB): Promise<number> {
+  const cutoff = Date.now() - (SLOW.window + 7 * DAY);
+  const res = await db.execute(sql`DELETE FROM post_reads WHERE created_at < ${cutoff}`);
+  return res.rowCount ?? 0;
+}
+
 /* ============================================================================
  * 4. ORCHESTRATOR
  * ----------------------------------------------------------------------------

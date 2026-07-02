@@ -21,8 +21,9 @@ import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
 import { recomputeTrendingCache } from './db/queries/trending';
 import { pruneReadNotifications } from './db/queries/notifications';
-import { pruneOldSignals } from './db/queries/for-you';
+import { pruneOldSignals, prunePostReads } from './db/queries/for-you';
 import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
+import { pruneDeadRefreshTokens, pruneExpiredAuthArtifacts } from './db/queries/maintenance';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
 import weather from './routes/weather';
@@ -75,6 +76,24 @@ app.use('*', async (c, next) => {
     ? "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
     : "default-src 'none'; frame-ancestors 'none'");
   c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+});
+
+// Fail-closed config guard. A prod deploy with a missing/weak JWT_SECRET or
+// REFRESH_PEPPER would make access tokens forgeable (or auth silently broken) — far
+// worse than an outage. So if either is absent or under 32 chars we refuse to serve
+// and log it loudly. Env is identical across an isolate's life, so the check passes
+// once then no-ops; a misconfigured isolate keeps 500ing until the secret is fixed.
+let configOk = false;
+app.use('*', async (c, next) => {
+  if (!configOk) {
+    const bad = (['JWT_SECRET', 'REFRESH_PEPPER'] as const).filter((k) => (c.env[k] ?? '').length < 32);
+    if (bad.length) {
+      console.error(JSON.stringify({ level: 'fatal', requestId: c.var.requestId ?? '', msg: 'insecure_config', fields: bad }));
+      return c.json({ error: 'server_misconfigured', requestId: c.var.requestId ?? '' }, 500);
+    }
+    configOk = true;
+  }
+  return next();
 });
 
 // Close the per-request Postgres pool once the request finishes.
@@ -144,15 +163,18 @@ export default {
       // in 7 days) that would otherwise pile up in "watching" forever. All bounded
       // indexed work; each failure is swallowed so one can't skip the others.
       if (new Date().getUTCMinutes() === 0) {
-        const [n, s, r] = await Promise.all([
+        const [n, s, r, rt, au, pr] = await Promise.all([
           pruneReadNotifications(db, 30 * 24 * 60 * 60 * 1000).catch(() => 0),
           pruneOldSignals(db).catch(() => 0),
           getSettings(db)
             .then(({ reportThreshold }) =>
               dismissStaleWatchingReports(db, reportThreshold, Date.now() - 7 * 24 * 60 * 60 * 1000))
             .catch(() => 0),
+          pruneDeadRefreshTokens(db).catch(() => 0),
+          pruneExpiredAuthArtifacts(db).catch(() => 0),
+          prunePostReads(db).catch(() => 0),
         ]);
-        if (n || s || r) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r}`);
+        if (n || s || r || rt || au || pr) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr}`);
       }
     } finally {
       await pool.end();

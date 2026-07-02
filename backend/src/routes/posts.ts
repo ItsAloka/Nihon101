@@ -446,14 +446,18 @@ app.post('/:id/not-interested', requireAuth, limits.save, async (c) => {
 });
 
 // List a post's comments (public). Includes the viewer's per-comment liked
-// state when a valid token is present.
+// state when a valid token is present. Gated exactly like the post itself:
+// drafts 404, moderator-hidden 451 — a hidden post's discussion must not stay
+// readable through this side door when the body is already withheld.
 app.get('/:id/comments', limits.publicRead, async (c) => {
   const d = db(c);
   const post = await getPostById(d, c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
-  if (post.status === 'draft' && (await currentUserId(c)) !== post.authorId)
-    return c.json({ error: 'not_found' }, 404);
-  const rows = await listComments(d, post.id, await currentUserId(c));
+  const viewer = await currentUser(c);
+  const privileged = viewerCanSeePrivate(post, viewer);
+  if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
+  if (post.isHidden && !privileged) return c.json({ error: 'hidden' }, 451);
+  const rows = await listComments(d, post.id, viewer?.id ?? null);
   return c.json({ comments: rows.map(publicComment) });
 });
 

@@ -1,7 +1,7 @@
 /* Newsletter list — capture only (the weekly digest sender ships later). Dedup by
  * unique email so a double-submit is a no-op. Open to logged-out visitors; userId
  * links the row to a signed-in subscriber when present. */
-import { and, desc, gte, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { DB } from '../client';
 import { newsletterSubscribers } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -101,11 +101,13 @@ export async function listSubscribers(
   opts: { limit?: number; before?: number } = {},
 ): Promise<SubscriberRow[]> {
   const limit = Math.min(opts.limit ?? 50, 200);
-  const q = db
+  // `before` = keyset cursor for older pages (rows strictly before that timestamp).
+  // The old version used gte() — inverted — and never reassigned the builder, so the
+  // filter was silently dropped; harmless only because no caller paged yet.
+  return db
     .select({ id: newsletterSubscribers.id, email: newsletterSubscribers.email, locale: newsletterSubscribers.locale, createdAt: newsletterSubscribers.createdAt })
     .from(newsletterSubscribers)
+    .where(opts.before ? lt(newsletterSubscribers.createdAt, opts.before) : undefined)
     .orderBy(desc(newsletterSubscribers.createdAt))
     .limit(limit);
-  if (opts.before) q.where(gte(newsletterSubscribers.createdAt, opts.before));
-  return q;
 }

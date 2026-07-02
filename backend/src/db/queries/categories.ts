@@ -1,6 +1,7 @@
 import { eq, sql, desc } from 'drizzle-orm';
 import type { DB } from '../client';
 import { categories } from '../schema';
+import { likeContains } from '../../lib/sql';
 
 export type CategoryRow = typeof categories.$inferSelect;
 
@@ -14,8 +15,15 @@ export function slugify(s: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Bound the public category listing. Any signed-in user can create categories
+// (rate-limited, but with no total cap), and this list ships in FULL on the home
+// payload and the composer picker — so it must not scale with a spammer's output.
+// Busiest-first means real categories always make the cut; empty junk sorts last
+// and falls off. 200 is far past any curated magazine's real category count.
+const CATEGORY_LIST_CAP = 200;
+
 export function listCategories(db: DB): Promise<CategoryRow[]> {
-  return db.select().from(categories).orderBy(desc(categories.postCount));
+  return db.select().from(categories).orderBy(desc(categories.postCount)).limit(CATEGORY_LIST_CAP);
 }
 
 /** Categories whose EN or JA label contains the query — drives the autocomplete's
@@ -23,7 +31,7 @@ export function listCategories(db: DB): Promise<CategoryRow[]> {
 export function searchCategories(db: DB, q: string, limit = 4): Promise<CategoryRow[]> {
   const needle = q.trim().slice(0, 50);
   if (!needle) return Promise.resolve([]);
-  const like = '%' + needle + '%';
+  const like = likeContains(needle);
   return db
     .select()
     .from(categories)

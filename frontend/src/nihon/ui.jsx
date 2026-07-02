@@ -1126,6 +1126,12 @@ function Footer({p, lang}) {
         fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft,
       }}>
         <span>© 2026 nihon101</span>
+        <span title="Nihon101 build version" style={{
+          marginLeft:10, padding:'2px 9px', borderRadius:999, fontSize:11.5, fontWeight:700,
+          letterSpacing:'0.03em', color:p.inkSoft, border:`1px solid ${p.line}`, opacity:0.85, whiteSpace:'nowrap',
+        }}>
+          v0.1<span style={{color:p.stamp}}>N101</span>
+        </span>
       </div>
     </footer>
   );
