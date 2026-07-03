@@ -1155,33 +1155,58 @@ function FooterCol({p, title, items, lang}) {
 }
 function NewsletterMini({p, lang}) {
   const [v, setV] = React.useState('');
-  const [done, setDone] = React.useState(false);
+  const [code, setCode] = React.useState('');
+  const [stage, setStage] = React.useState('form'); // 'form' → 'code' → 'done'
   const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(false);
   const submit = async (e) => {
     e.preventDefault();
-    if (busy || done || !v.includes('@')) return;
+    if (busy || stage==='done' || !v.includes('@')) return;
     setBusy(true);
     try { await window.N101_CONTENT.newsletterApi.subscribe(v.trim(), lang==='jp'?'ja':'en'); }
-    catch (_) { /* dedupe still reads as success */ }
-    finally { setBusy(false); setDone(true); }
+    catch (_) { /* enumeration-safe: always advance to the code step */ }
+    finally { setBusy(false); setStage('code'); setCode(''); setErr(false); }
   };
-  if (done) return (
+  const confirm = async (e) => {
+    e.preventDefault();
+    if (busy || !/^\d{6}$/.test(code.trim())) return;
+    setBusy(true); setErr(false);
+    try { await window.N101_CONTENT.newsletterApi.confirm(v.trim(), code.trim()); setStage('done'); }
+    catch (_) { setErr(true); }
+    finally { setBusy(false); }
+  };
+  if (stage==='done') return (
     <div style={{fontFamily:'var(--fontBody)', fontSize:12.5, color:p.inkSoft, lineHeight:1.5}}>
-      {lang==='jp'?'登録しました。近日公開。':"You're on the list — coming soon."}
+      {lang==='jp'?'登録が完了しました。日曜の朝に。':"You're confirmed — see you Sunday."}
+    </div>
+  );
+  const frame = { display:'flex', gap:0, border:`1px solid ${p.line}`, borderRadius:999, background:p.bg, overflow:'hidden' };
+  const field = { flex:1, minWidth:0, border:'none', outline:'none', background:'transparent',
+    padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:13, color:p.ink };
+  const send = { border:'none', background:p.ink, color:p.surface, padding:'10px 16px',
+    fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600, cursor:'pointer' };
+  if (stage==='code') return (
+    <div>
+      <div style={{fontFamily:'var(--fontBody)', fontSize:12.5, color:err?p.accent:p.inkSoft, lineHeight:1.5, marginBottom:8}}>
+        {err ? (lang==='jp'?'コードが正しくないか、期限切れです。':'That code is invalid or expired.')
+             : (lang==='jp'?'メールに届いた6桁のコードを入力してください。':'Enter the 6-digit code from your inbox.')}
+      </div>
+      <form onSubmit={confirm} style={frame}>
+        <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
+          onChange={(e)=>setCode(e.target.value.replace(/\D/g,''))} placeholder="000000"
+          style={{...field, fontFamily:'var(--fontMono)', letterSpacing:'0.2em'}}/>
+        <button disabled={busy} style={send}>{busy ? '…' : (lang==='jp'?'確認':'Confirm')}</button>
+      </form>
+      <a href="#" onClick={submit} style={{display:'inline-block', marginTop:8, fontFamily:'var(--fontBody)', fontSize:12, color:p.inkSoft}}>
+        {lang==='jp'?'コードを再送':'Resend code'}
+      </a>
     </div>
   );
   return (
-    <form onSubmit={submit} style={{
-      display:'flex', gap:0,
-      border:`1px solid ${p.line}`, borderRadius:999, background:p.bg, overflow:'hidden',
-    }}>
+    <form onSubmit={submit} style={frame}>
       <input type="email" value={v} onChange={(e)=>setV(e.target.value)} placeholder={lang==='jp'?'メールアドレス':'you@example.com'}
-        style={{flex:1, minWidth:0, border:'none', outline:'none', background:'transparent',
-          padding:'10px 14px', fontFamily:'var(--fontBody)', fontSize:13, color:p.ink}}/>
-      <button disabled={busy} style={{
-        border:'none', background:p.ink, color:p.surface, padding:'10px 16px',
-        fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600, cursor:'pointer',
-      }}>{busy ? '…' : (lang==='jp'?'登録':'Send')}</button>
+        style={field}/>
+      <button disabled={busy} style={send}>{busy ? '…' : (lang==='jp'?'登録':'Send')}</button>
     </form>
   );
 }

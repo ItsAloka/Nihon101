@@ -185,20 +185,30 @@ const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)
         .nihon-searchwrap { flex: 1 1 auto !important; max-width: none !important; margin-right: 8px !important; }
         .nihon-search-kbd { display: none !important; }
         .nav-inner { gap: 10px !important; padding-left: 18px !important; padding-right: 18px !important; }
+        /* any stray px of header overflow = horizontal scroll = the dark band on
+           the right on phones (the browser zooms out to fit). Clip at the source. */
+        body { overflow-x: clip; }
       }
       /* header popovers (notifications / account / search) become an anchored
          full-width sheet on phones instead of a 360px box that runs off-screen. */
       @media (max-width: 560px) {
         .nav-pop { position: fixed !important; left: 12px !important; right: 12px !important;
                    width: auto !important; max-width: none !important; }
-        .nav-inner { padding-left: 16px !important; padding-right: 16px !important; }
+        /* the row is logo + 4 fixed 38px icons: tighter gap/padding so it always
+           fits — at gap 10/pad 16 it overflowed ~9px on 320px phones */
+        .nav-inner { gap: 8px !important; padding-left: 12px !important; padding-right: 12px !important; }
         /* mobile: search collapses to an icon; the field only appears when tapped */
         .nihon-searchwrap { display: none !important; }
-        .nav-search-toggle { display: inline-flex !important; }
+        /* with the search pill hidden nothing flexes, so pin the icon cluster to
+           the right edge (same as tablet) instead of leaving a gap after it */
+        .nav-search-toggle { display: inline-flex !important; margin-left: auto !important; }
         /* expanded: the field takes the whole row; every other icon is hidden */
         .nav-inner.nav-searching > * { display: none !important; }
         .nav-inner.nav-searching > .nihon-searchwrap { display: flex !important; flex: 1 1 auto !important; max-width: none !important; margin: 0 !important; }
         .nav-inner.nav-searching > .nav-search-close { display: inline-flex !important; }
+      }
+      @media (max-width: 380px) {
+        .nav-inner { gap: 6px !important; padding-left: 10px !important; padding-right: 10px !important; }
       }
       @media (max-width: 820px) { .site-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; padding: 36px 16px 28px !important; } }
       @media (max-width: 440px) { .site-footer-grid { grid-template-columns: 1fr !important; } }

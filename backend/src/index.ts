@@ -24,6 +24,7 @@ import { pruneReadNotifications } from './db/queries/notifications';
 import { pruneOldSignals, prunePostReads } from './db/queries/for-you';
 import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
 import { pruneDeadRefreshTokens, pruneExpiredAuthArtifacts } from './db/queries/maintenance';
+import { pruneUnconfirmedSubscribers } from './db/queries/newsletter';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
 import weather from './routes/weather';
@@ -163,7 +164,7 @@ export default {
       // in 7 days) that would otherwise pile up in "watching" forever. All bounded
       // indexed work; each failure is swallowed so one can't skip the others.
       if (new Date().getUTCMinutes() === 0) {
-        const [n, s, r, rt, au, pr] = await Promise.all([
+        const [n, s, r, rt, au, pr, ns] = await Promise.all([
           pruneReadNotifications(db, 30 * 24 * 60 * 60 * 1000).catch(() => 0),
           pruneOldSignals(db).catch(() => 0),
           getSettings(db)
@@ -173,8 +174,9 @@ export default {
           pruneDeadRefreshTokens(db).catch(() => 0),
           pruneExpiredAuthArtifacts(db).catch(() => 0),
           prunePostReads(db).catch(() => 0),
+          pruneUnconfirmedSubscribers(db).catch(() => 0),
         ]);
-        if (n || s || r || rt || au || pr) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr}`);
+        if (n || s || r || rt || au || pr || ns) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr} newsletter=${ns}`);
       }
     } finally {
       await pool.end();

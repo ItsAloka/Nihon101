@@ -127,18 +127,28 @@ const pageDesc = jp
         .nihon-searchwrap { flex: 1 1 auto !important; max-width: none !important; margin-right: 8px !important; }
         .nihon-search-kbd { display: none !important; }
         .nav-inner { gap: 10px !important; padding-left: 18px !important; padding-right: 18px !important; }
+        /* any stray px of header overflow = horizontal scroll = the dark band on
+           the right on phones (the browser zooms out to fit). Clip at the source. */
+        body { overflow-x: clip; }
       }
       @media (max-width: 560px) {
         .nav-pop { position: fixed !important; left: 12px !important; right: 12px !important;
                    width: auto !important; max-width: none !important; }
-        .nav-inner { padding-left: 16px !important; padding-right: 16px !important; }
+        /* the row is logo + 4 fixed 38px icons: tighter gap/padding so it always
+           fits — at gap 10/pad 16 it overflowed ~9px on 320px phones */
+        .nav-inner { gap: 8px !important; padding-left: 12px !important; padding-right: 12px !important; }
         /* mobile: search collapses to an icon; the field only appears when tapped */
         .nihon-searchwrap { display: none !important; }
-        .nav-search-toggle { display: inline-flex !important; }
+        /* with the search pill hidden nothing flexes, so pin the icon cluster to
+           the right edge (same as tablet) instead of leaving a gap after it */
+        .nav-search-toggle { display: inline-flex !important; margin-left: auto !important; }
         /* expanded: the field takes the whole row; every other icon is hidden */
         .nav-inner.nav-searching > * { display: none !important; }
         .nav-inner.nav-searching > .nihon-searchwrap { display: flex !important; flex: 1 1 auto !important; max-width: none !important; margin: 0 !important; }
         .nav-inner.nav-searching > .nav-search-close { display: inline-flex !important; }
+      }
+      @media (max-width: 380px) {
+        .nav-inner { gap: 6px !important; padding-left: 10px !important; padding-right: 10px !important; }
       }
       @media (max-width: 820px) { .site-footer-grid { grid-template-columns: 1fr 1fr !important; gap: 28px !important; padding: 36px 16px 28px !important; } }
       @media (max-width: 440px) { .site-footer-grid { grid-template-columns: 1fr !important; } }
@@ -303,6 +313,7 @@ const pageDesc = jp
       .nl-inner h2 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(32px, 3.4vw, 48px); line-height: 1.05; letter-spacing: -0.02em; margin-bottom: 14px; }
       .nl-inner p { font-size: 16px; line-height: 1.6; color: var(--inkSoft); margin-bottom: 24px; }
       .nl-form { display: flex; gap: 10px; max-width: 520px; }
+      .nl-form[hidden] { display: none; } /* display:flex would defeat the hidden attribute */
       .nl-form input { flex: 1; padding: 14px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-family: var(--fontBody); font-size: 15px; color: var(--ink); outline: none; }
       .nl-form .btn { background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 14px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; }
       .nl-form .btn:disabled { opacity: 0.6; cursor: default; }
@@ -557,8 +568,17 @@ const pageDesc = jp
             <input type="email" name="email" required placeholder={jp ? 'メールアドレス' : 'you@somewhere.jp'} />
             <button class="btn" type="submit">{jp ? '登録する' : 'Subscribe'}</button>
           </form>
-          <div class="nl-done" hidden>{jp ? 'リストに登録しました。日曜のおたよりは準備中です。' : "You're on the list — the Sunday letter is coming soon."}</div>
-          <div class="nl-note">{jp ? '近日公開・スパムは送りません。' : 'Coming soon · no spam, ever.'}</div>
+          <div class="nl-done" id="nl-code-msg" hidden>{jp ? '確認コードをお送りしました。メールに届いた6桁のコードを入力してください。' : 'We sent you a code — enter the 6 digits from your inbox to confirm.'}</div>
+          <form class="nl-form" id="nl-code-form" style="margin-top:12px" hidden>
+            <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" />
+            <button class="btn" type="submit">{jp ? '確認する' : 'Confirm'}</button>
+          </form>
+          <div class="nl-note" id="nl-code-note" hidden>
+            <span id="nl-code-err" hidden>{jp ? 'コードが正しくないか、期限切れです。' : 'That code is invalid or expired.'} </span>
+            <a href="#" id="nl-resend" style="color:inherit">{jp ? 'コードを再送' : 'Resend code'}</a>
+          </div>
+          <div class="nl-done" id="nl-done" hidden>{jp ? '登録が完了しました。日曜の朝に、おたよりが届きます。' : "You're confirmed — see you Sunday morning."}</div>
+          <div class="nl-note">{jp ? '週に一通だけ・スパムは送りません。' : 'One letter a week · no spam, ever.'}</div>
         </div>
       </section>
     </div>

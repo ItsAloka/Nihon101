@@ -524,14 +524,25 @@ function AuthorGrid({p, lang}) {
 // ------- Newsletter block -------
 function NewsletterBlock({p, lang}) {
   const [v, setV] = React.useState('');
-  const [done, setDone] = React.useState(false);
+  const [code, setCode] = React.useState('');
+  const [stage, setStage] = React.useState('form'); // 'form' → 'code' → 'done'
   const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState(false);
+  const done = stage === 'done';
   const submit = async (e) => {
     e.preventDefault();
     if (busy || done || !v.includes('@')) return;
     setBusy(true);
-    try { await window.N101_CONTENT.newsletterApi.subscribe(v.trim(), lang==='jp'?'ja':'en'); setDone(true); }
-    catch { setDone(true); /* dedupe/already-subscribed still reads as success to the user */ }
+    try { await window.N101_CONTENT.newsletterApi.subscribe(v.trim(), lang==='jp'?'ja':'en'); }
+    catch { /* rate-limited/etc — still show the code step; resend is one click away */ }
+    finally { setBusy(false); setStage('code'); setCode(''); setErr(false); }
+  };
+  const confirm = async (e) => {
+    e.preventDefault();
+    if (busy || !/^\d{6}$/.test(code.trim())) return;
+    setBusy(true); setErr(false);
+    try { await window.N101_CONTENT.newsletterApi.confirm(v.trim(), code.trim()); setStage('done'); }
+    catch { setErr(true); }
     finally { setBusy(false); }
   };
   return (
@@ -554,7 +565,29 @@ function NewsletterBlock({p, lang}) {
         {done ? (
           <div style={{padding:'14px 18px', borderRadius:14, background:p.surface, border:`1px solid ${p.line}`, maxWidth:520,
             fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, lineHeight:1.5}}>
-            {lang==='jp'?'リストに登録しました。日曜のおたよりは準備中です。':"You're on the list — the Sunday letter is coming soon."}
+            {lang==='jp'?'登録が完了しました。日曜の朝に、おたよりが届きます。':"You're confirmed — see you Sunday morning."}
+          </div>
+        ) : stage === 'code' ? (
+          <div style={{maxWidth:520}}>
+            <div style={{padding:'14px 18px', borderRadius:14, background:p.surface, border:`1px solid ${p.line}`, marginBottom:12,
+              fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, lineHeight:1.5}}>
+              {lang==='jp'?'確認コードをお送りしました。メールに届いた6桁のコードを入力してください。':'We sent you a code — enter the 6 digits from your inbox to confirm.'}
+            </div>
+            <form onSubmit={confirm} style={{display:'flex', gap:10}}>
+              <input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
+                onChange={(e)=>setCode(e.target.value.replace(/\D/g,''))} placeholder="000000"
+                style={{flex:1, padding:'14px 18px', borderRadius:999, border:`1px solid ${err?p.accent:p.line}`,
+                  background:p.surface, fontFamily:'var(--fontMono)', fontSize:15, letterSpacing:'0.3em', color:p.ink, outline:'none'}}/>
+              <button disabled={busy} style={gradStyle(p)}>{busy ? '…' : (lang==='jp'?'確認する':'Confirm')}</button>
+            </form>
+            <div style={{marginTop:10, fontFamily:'var(--fontBody)', fontSize:13, color:err?p.accent:p.inkSoft}}>
+              {err ? (lang==='jp'?'コードが正しくないか、期限切れです。':'That code is invalid or expired.')
+                   : (lang==='jp'?'届かない場合は迷惑メールもご確認ください。':"Can't find it? Check your spam folder too.")}
+              {' '}
+              <a href="#" onClick={submit} style={{color:p.inkSoft, textDecoration:'underline'}}>
+                {lang==='jp'?'コードを再送':'Resend code'}
+              </a>
+            </div>
           </div>
         ) : (
           <form onSubmit={submit} style={{display:'flex', gap:10, maxWidth:520}}>

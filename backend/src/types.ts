@@ -6,6 +6,10 @@ export type AppBindings = {
   // Exact atomic rate limiter for the auth brute-force class (login/register).
   // Optional: absent → rateLimit('do') falls back to the KV tier.
   RATE_LIMITER?: DurableObjectNamespace;
+  // Cloudflare Images binding — server-side re-encode backup for uploads that
+  // bypass the client's shrinkImage (raw jpeg/png POSTed straight at /media).
+  // Optional: absent → originals are stored as-is (cost issue, not security).
+  IMAGES?: ImagesBinding;
 };
 
 export type AppVars = {

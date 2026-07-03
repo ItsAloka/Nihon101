@@ -182,29 +182,57 @@ export function HomeHeader({ locale, active = "home" }) {
     return () => btns.forEach((b) => b.removeEventListener("click", onClick));
   }, [currentUser]);
 
-  // Wire the SSR newsletter form (plain HTML from index.astro) to the real capture
-  // endpoint. On success, swap the form for the "you're on the list" note.
+  // Wire the SSR newsletter form (plain HTML from index.astro) to the double
+  // opt-in flow: subscribe emails a 6-digit code, the code form confirms it.
+  // Subscribe ALWAYS advances to the code step (enumeration-safe: the response
+  // never says whether the email was already on the list).
   React.useEffect(() => {
     const form = document.getElementById("nl-form");
-    if (!form) return;
+    const codeForm = document.getElementById("nl-code-form");
+    if (!form || !codeForm) return;
+    const $ = (id) => document.getElementById(id);
+    const locale = form.getAttribute("data-locale") === "ja" ? "ja" : "en";
+    let email = "";
     const onSubmit = (e) => {
       e.preventDefault();
       const input = form.querySelector('input[name="email"]');
       const btn = form.querySelector("button");
-      const email = (input?.value || "").trim();
+      email = (input?.value || "").trim();
       if (!email.includes("@")) return;
       if (btn) { btn.disabled = true; btn.textContent = "…"; }
-      const finish = () => {
+      const showCode = () => {
         form.hidden = true;
-        const done = form.parentElement?.querySelector(".nl-done");
-        if (done) done.hidden = false;
+        $("nl-code-msg").hidden = false; codeForm.hidden = false; $("nl-code-note").hidden = false;
+        codeForm.querySelector('input[name="code"]')?.focus();
       };
-      window.N101_CONTENT.newsletterApi
-        .subscribe(email, form.getAttribute("data-locale") === "ja" ? "ja" : "en")
-        .then(finish).catch(finish); // dedupe still reads as success
+      window.N101_CONTENT.newsletterApi.subscribe(email, locale).then(showCode).catch(showCode);
+    };
+    const onConfirm = (e) => {
+      e.preventDefault();
+      const code = (codeForm.querySelector('input[name="code"]')?.value || "").trim();
+      if (!/^\d{6}$/.test(code)) return;
+      const btn = codeForm.querySelector("button");
+      if (btn) btn.disabled = true;
+      window.N101_CONTENT.newsletterApi.confirm(email, code)
+        .then(() => {
+          $("nl-code-msg").hidden = true; codeForm.hidden = true; $("nl-code-note").hidden = true;
+          $("nl-done").hidden = false;
+        })
+        .catch(() => { $("nl-code-err").hidden = false; if (btn) btn.disabled = false; });
+    };
+    const onResend = (e) => {
+      e.preventDefault();
+      $("nl-code-err").hidden = true;
+      window.N101_CONTENT.newsletterApi.subscribe(email, locale).catch(() => {});
     };
     form.addEventListener("submit", onSubmit);
-    return () => form.removeEventListener("submit", onSubmit);
+    codeForm.addEventListener("submit", onConfirm);
+    $("nl-resend")?.addEventListener("click", onResend);
+    return () => {
+      form.removeEventListener("submit", onSubmit);
+      codeForm.removeEventListener("submit", onConfirm);
+      $("nl-resend")?.removeEventListener("click", onResend);
+    };
   }, []);
 
   // Dark mode: drive the whole page (SSR body via [data-mode], + footer island).
