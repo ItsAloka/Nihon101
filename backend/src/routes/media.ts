@@ -46,10 +46,28 @@ app.post('/', requireAuth, limits.upload, async (c) => {
   if (file.size > MAX_BYTES) return c.json({ error: 'too_large' }, 413);
 
   // Read once (already capped at 8MB) and trust the BYTES, not the declared type.
-  const buf = new Uint8Array(await file.arrayBuffer());
+  let buf = new Uint8Array(await file.arrayBuffer());
   if (buf.byteLength > MAX_BYTES) return c.json({ error: 'too_large' }, 413);
-  const ext = sniffExt(buf);
+  let ext = sniffExt(buf);
   if (!ext) return c.json({ error: 'not_an_image' }, 415);
+
+  // Backup re-encode: normal uploads arrive as client-shrunk WebP (shrinkImage,
+  // maxEdge 2000, q82) and skip this — only a browser-bypass POSTing a raw
+  // jpeg/png (or an oversized webp) burns a transformation. GIFs pass through
+  // (animation), AVIF passes through (already compact, not a supported input).
+  // Fail-open: a binding error/absence stores the original — cost, not security.
+  if (c.env.IMAGES && (ext === 'jpg' || ext === 'png' || (ext === 'webp' && buf.byteLength > 2 * 1024 * 1024))) {
+    try {
+      const out = await c.env.IMAGES.input(new Blob([buf]).stream())
+        .transform({ width: 2000, height: 2000, fit: 'scale-down' })
+        .output({ format: 'image/webp', quality: 82 });
+      const encoded = new Uint8Array(await new Response(out.image()).arrayBuffer());
+      // Keep the original if the re-encode somehow came out bigger (tiny inputs).
+      if (encoded.byteLength > 0 && encoded.byteLength < buf.byteLength) { buf = encoded; ext = 'webp'; }
+    } catch (e) {
+      console.error('[media] re-encode failed, storing original', e);
+    }
+  }
   const contentType = Object.keys(EXT).find((m) => EXT[m] === ext) || 'application/octet-stream';
 
   const key = `${c.var.user!.id}/${crypto.randomUUID()}.${ext}`;

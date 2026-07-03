@@ -203,10 +203,12 @@ const notifApi = {
   clearAll: () => req('/notifications', { method: 'DELETE', auth: true }).catch(() => {}),
 };
 
-// Newsletter signup (capture only). Open to logged-out visitors; the token, if any,
-// rides along so the backend can link the row to the signed-in user.
+// Newsletter signup (double opt-in: subscribe emails a 6-digit code, confirm types
+// it back). Open to logged-out visitors; the token, if any, rides along so the
+// backend can link the row to the signed-in user.
 const newsletterApi = {
   subscribe: (email, locale) => req('/newsletter', { method: 'POST', body: { email, locale } }),
+  confirm: (email, code) => req('/newsletter/confirm', { method: 'POST', body: { email, code } }),
 };
 
 // Translate { title?, excerpt?, body? } into `to` ('en'|'ja') via ChatGPT.

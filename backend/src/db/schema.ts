@@ -1,4 +1,5 @@
 import { pgTable, text, integer, bigint, boolean, real, jsonb, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 // Postgres-native schema. IDs are text `<prefix>_<nanoid21>`. Timestamps are
 // epoch-ms stored as bigint (native, numeric — keeps Date.now() math and the
@@ -409,8 +410,17 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
   // after each batch, so a cron that's killed + retried mid-run never re-mails the
   // batches it already delivered. 0 = never sent.
   lastSentIssue: integer('last_sent_issue').notNull().default(0),
+  // Double opt-in: null = signed up but never proved inbox ownership (the Sunday
+  // sender skips these; the hourly cron prunes them after 7 days). The pending
+  // 6-digit confirm code lives here peppered-hashed, same scheme as login_otps.
+  confirmedAt: ms('confirmed_at'),
+  codeHash: text('code_hash'),
+  codeExpiresAt: ms('code_expires_at'),
+  attempts: integer('attempts').notNull().default(0),
 }, (t) => [
   uniqueIndex('ux_newsletter_email').on(t.email),
+  // Partial index: the hourly unconfirmed-prune only ever touches this tiny slice.
+  index('ix_newsletter_unconfirmed').on(t.createdAt).where(sql`confirmed_at is null`),
 ]);
 
 export type User = typeof users.$inferSelect;

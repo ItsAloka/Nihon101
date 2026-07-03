@@ -158,6 +158,7 @@ export const limits = {
   category:     rateLimit({ bucket: 'category',  limit: 20, windowSec: 3600, by: 'user' }),
   // ---- PUBLIC writes — KV, per IP (no auth required; spam/abuse guard + email-cost) ----
   newsletter:   rateLimit({ bucket: 'newsletter',limit: 10, windowSec: 3600, by: 'ip' }),  // signup spam
+  newsletterConfirm: rateLimit({ bucket: 'nls-vfy', limit: 20, windowSec: 300, by: 'ip', store: 'do' }),  // confirm-code guessing
 
   // ---- READ — in-memory per isolate, per IP ----
   search:       rateLimit({ bucket: 'search',  limit: 60,  windowSec: 60, by: 'ip', store: 'memory' }),

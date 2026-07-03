@@ -11,6 +11,12 @@ compatibility_flags = ["nodejs_compat"]
 binding = "MEDIA"
 bucket_name = "nihon101-media"
 
+# Server-side image re-encode (backup path only — normal uploads arrive as
+# client-shrunk WebP and skip it). Free tier: 5k transformations/month.
+# `wrangler dev` ships a local offline simulation of this binding.
+[images]
+binding = "IMAGES"
+
 # Site-wide trending hot-cache (top-20 cards). Local dev (`wrangler dev`)
 # simulates KV with miniflare regardless of id. For prod, create the namespace
 # (`wrangler kv namespace create TRENDING_KV`) and paste the real id below.

@@ -227,6 +227,33 @@ export function loginOtpHtml(code: string, locale: 'ja' | 'en'): { subject: stri
   };
 }
 
+/** Sunday Letter double opt-in — the confirm code a new subscriber types back
+ * into the signup form to prove the inbox is theirs. Same hanko seal as login. */
+export function newsletterOtpHtml(code: string, locale: 'ja' | 'en'): { subject: string; html: string } {
+  if (locale === 'ja') {
+    return {
+      subject: `Nihon101 日曜レター — 確認コード ${code}`,
+      html: shell(
+        center(block('日曜レターの登録確認',
+          `<p style="margin:0 0 14px">サイトの登録フォームに下のコードを入力して、登録を完了してください。10分間有効です。</p>`) +
+          codeSeal(code) +
+          `<p style="margin:14px 0 0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;color:#9C948A">押印済み・10分間有効</p>`),
+        '心当たりがない場合は、このメールを無視してください。何も送られることはありません。',
+      ),
+    };
+  }
+  return {
+    subject: `Nihon101 Sunday Letter — Confirm code ${code}`,
+    html: shell(
+      center(block('Confirm your subscription',
+        `<p style="margin:0 0 14px">Enter the code below back in the signup form to finish subscribing to the Sunday Letter. It expires in 10 minutes.</p>`) +
+        codeSeal(code) +
+        `<p style="margin:14px 0 0;font-family:'Helvetica Neue',Arial,sans-serif;font-size:12px;color:#9C948A">Stamped &amp; expires in 10 minutes</p>`),
+      "If you didn't sign up, ignore this email — nothing will be sent to you.",
+    ),
+  };
+}
+
 export function verifyEmailHtml(link: string, locale: 'ja' | 'en'): { subject: string; html: string } {
   if (locale === 'ja') {
     return {
