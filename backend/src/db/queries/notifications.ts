@@ -1,6 +1,6 @@
 /* In-app notifications: create (fire-and-forget from engagement hooks), list
  * for the bell panel (with actor + post context), unread count, mark read. */
-import { eq, and, desc, sql, isNull, lt } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull, lt, inArray } from 'drizzle-orm';
 import type { DB } from '../client';
 import { notifications, users, posts } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -15,19 +15,32 @@ export interface NewNotif {
   commentId?: string | null;
 }
 
-/** Create a notification. Skips self-notifications (acting on your own thing). */
+/** Create a notification. No-op if actor === recipient, or if an identical
+ *  notification is already sitting UNREAD in the recipient's bell — so toggling
+ *  like/follow on and off (rate-capped at 60/min) can't flood one author with
+ *  duplicates. Comments/replies always carry a fresh commentId, so they still
+ *  stack normally.
+ *
+ *  Never throws. A notification is a side effect of a like/comment/follow that has
+ *  ALREADY committed; letting its insert bubble up would 500 an action the user
+ *  successfully performed. */
 export async function createNotification(db: DB, n: NewNotif): Promise<void> {
-  if (n.userId === n.actorId) return;
-  await db.insert(notifications).values({
-    id: newId('ntf'),
-    userId: n.userId,
-    type: n.type,
-    actorId: n.actorId,
-    postId: n.postId ?? null,
-    commentId: n.commentId ?? null,
-    readAt: null,
-    createdAt: Date.now(),
-  });
+  try {
+    if (n.userId === n.actorId) return;
+    await db.execute(sql`
+      INSERT INTO notifications (id, user_id, actor_id, type, post_id, comment_id, read_at, created_at)
+      SELECT ${newId('ntf')}, ${n.userId}, ${n.actorId}, ${n.type}, ${n.postId ?? null}, ${n.commentId ?? null}, NULL, ${Date.now()}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM notifications
+        WHERE user_id = ${n.userId} AND actor_id = ${n.actorId} AND type = ${n.type}
+          AND post_id IS NOT DISTINCT FROM ${n.postId ?? null}
+          AND comment_id IS NOT DISTINCT FROM ${n.commentId ?? null}
+          AND read_at IS NULL
+      )
+    `);
+  } catch (err) {
+    console.error('createNotification failed', err);
+  }
 }
 
 /** Fan out a "new post" notification to every follower of the author. One
@@ -62,9 +75,28 @@ export interface NotifRow {
   createdAt: number;
 }
 
-/** A user's notifications, newest first, with actor + post context for display. */
-export async function listNotifications(db: DB, userId: string, limit = 30): Promise<NotifRow[]> {
-  return (await db
+export interface NotifPage {
+  items: NotifRow[];
+  /** Pass back as `before` to fetch the next page; null = no more. */
+  nextBefore: number | null;
+}
+
+/** A page of a user's notifications, newest first, with actor + post context.
+ *  Keyset-paginated by createdAt (pass the last item's createdAt as `before`) —
+ *  an OFFSET would re-scan everything the user has already seen, and a hard
+ *  `limit` with no cursor would make the 31st notification unreachable forever. */
+export async function listNotifications(
+  db: DB,
+  userId: string,
+  opts: { before?: number; limit?: number } = {},
+): Promise<NotifPage> {
+  const limit = Math.min(50, Math.max(1, Math.trunc(opts.limit ?? 20)));
+  const where = opts.before
+    ? and(eq(notifications.userId, userId), lt(notifications.createdAt, opts.before))
+    : eq(notifications.userId, userId);
+
+  // limit+1 to detect a next page without a second count query.
+  const rows = (await db
     .select({
       id: notifications.id,
       type: notifications.type,
@@ -83,9 +115,13 @@ export async function listNotifications(db: DB, userId: string, limit = 30): Pro
     .from(notifications)
     .leftJoin(users, eq(notifications.actorId, users.id))
     .leftJoin(posts, eq(notifications.postId, posts.id))
-    .where(eq(notifications.userId, userId))
+    .where(where)
     .orderBy(desc(notifications.createdAt))
-    .limit(limit)) as NotifRow[];
+    .limit(limit + 1)) as NotifRow[];
+
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  return { items, nextBefore: hasMore ? items[items.length - 1].createdAt : null };
 }
 
 /** Count of unread notifications (for the bell badge). */
@@ -97,12 +133,19 @@ export async function unreadCount(db: DB, userId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Mark all of a user's notifications read. */
-export async function markAllRead(db: DB, userId: string): Promise<void> {
-  await db
+/** Mark some (or all) of a user's notifications read. No ids → marks the lot.
+ *  Always scoped to the owner, so a caller can never touch someone else's rows.
+ *  Returns how many rows were updated. */
+export async function markRead(db: DB, userId: string, ids?: string[]): Promise<number> {
+  const scope = ids?.length
+    ? and(eq(notifications.userId, userId), isNull(notifications.readAt), inArray(notifications.id, ids))
+    : and(eq(notifications.userId, userId), isNull(notifications.readAt));
+  const updated = await db
     .update(notifications)
     .set({ readAt: Date.now() })
-    .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+    .where(scope)
+    .returning({ id: notifications.id });
+  return updated.length;
 }
 
 /** Retention sweep (cron): drop already-read notifications older than `maxAgeMs`.
@@ -119,12 +162,13 @@ export async function pruneReadNotifications(db: DB, maxAgeMs: number): Promise<
   return removed.length;
 }
 
-/** Delete all of a user's notifications. Scoped to the owner so a caller can
- *  never clear someone else's. Returns how many rows were removed. */
-export async function deleteAllNotifications(db: DB, userId: string): Promise<number> {
-  const removed = await db
-    .delete(notifications)
-    .where(eq(notifications.userId, userId))
-    .returning({ id: notifications.id });
+/** Delete some (or all) of a user's notifications. No ids → clears the lot.
+ *  Scoped to the owner so a caller can never delete someone else's rows.
+ *  Returns how many rows were removed. */
+export async function deleteNotifications(db: DB, userId: string, ids?: string[]): Promise<number> {
+  const scope = ids?.length
+    ? and(eq(notifications.userId, userId), inArray(notifications.id, ids))
+    : eq(notifications.userId, userId);
+  const removed = await db.delete(notifications).where(scope).returning({ id: notifications.id });
   return removed.length;
 }

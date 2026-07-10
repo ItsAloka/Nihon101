@@ -56,13 +56,16 @@ tag = "v1"
 new_sqlite_classes = ["RateLimiterDO"]
 
 [triggers]
-# Every 5 min: rescore momentum for the ACTIVE set (recent + freshly-engaged posts,
-# not the whole corpus) + bake the top-20 to KV. Minute-0 also ages out stale reports.
-# Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday Letter (kill-switchable).
-# Day-of-week MUST be the name form: Cloudflare rejects `0 0 * * 0` with
-# "invalid cron string" (code 10100) — its parser has no 0 for Sunday.
-# index.ts branches on this exact string; keep the two in sync.
-crons = ["*/5 * * * *", "0 0 * * SUN"]
+# Every minute (Cloudflare's minimum): rescore momentum for the ACTIVE set (recent +
+# freshly-engaged posts, not the whole corpus) + bake the top-20 to KV. Trending means
+# "hot right now" — on a 5-minute cadence a post spiking now takes 5 minutes to
+# surface and the list visibly lags the engagement driving it. The UPDATE is bounded
+# to the active set, so per-minute costs little more than per-5-min. Minute-0 also
+# ages out stale reports. Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday
+# Letter (kill-switchable). Day-of-week MUST be the name form: Cloudflare rejects
+# `0 0 * * 0` with "invalid cron string" (code 10100) — its parser has no 0 for
+# Sunday. index.ts branches on these exact strings; keep the two in sync.
+crons = ["* * * * *", "0 0 * * SUN"]
 
 # PROD database path: TWO Hyperdrive configs in front of the SAME Neon DB
 # (`bunx wrangler hyperdrive create`), ids pasted at deploy time.

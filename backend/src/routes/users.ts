@@ -77,9 +77,16 @@ app.get('/:handle', limits.publicRead, async (c) => {
   // Aggregates only — the profile's story feed pages via /search?author=, so this
   // endpoint never loads post rows (the old listPosts path selected up to 200 full
   // bodies per profile view AND per article read, purely to count them).
+  //
+  // These read LIVE, never getDbCached. Hyperdrive's 60s query cache is never
+  // invalidated by a write, so a cached count means: follow someone, reload their
+  // profile, and the follower number is still the old one for up to a minute while
+  // the button already says "Following". Same for publishing — your own profile
+  // would claim one fewer post. The counts are what a viewer can change *this
+  // second*; only the profile row itself (name/bio/avatar) is 60s-stale-safe.
   const [pub, counts, viewerFollows] = await Promise.all([
-    publishedStats(getDbCached(c), u.id),
-    followCounts(getDbCached(c), u.id),
+    publishedStats(getDb(c), u.id),
+    followCounts(getDb(c), u.id),
     isFollowing(getDb(c), viewerId, u.id),
   ]);
 

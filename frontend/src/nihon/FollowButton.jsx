@@ -6,7 +6,7 @@ import React from "react";
 import "./api.jsx";       // window.N101_API
 import "./content.jsx";   // window.N101_CONTENT (followApi)
 
-export default function FollowButton({ userId, handle, locale = "ja", followers = 0, showCount = true, variant = "pink", size = "md" }) {
+export default function FollowButton({ handle, locale = "ja", followers = 0, showCount = true, variant = "pink", size = "md" }) {
   const loc = locale === "ja" ? "ja" : "en";
   const jp = loc === "ja";
   const [state, setState] = React.useState("loading"); // loading|guest|self|following|not
@@ -16,18 +16,21 @@ export default function FollowButton({ userId, handle, locale = "ja", followers 
   React.useEffect(() => {
     let live = true;
     window.N101_API.refresh()
-      .then(async (me) => {
+      .then(async () => {
         if (!live) return;
-        if (me && (me.id === userId || me.handle === handle)) { setState("self"); return; }
         try {
-          const list = await window.N101_CONTENT.followApi.following();
+          // One authed read of THIS profile. It already answers both questions
+          // (isSelf, isFollowing) and carries the live follower count. The old path
+          // downloaded the viewer's entire follow graph to derive one boolean.
+          const r = await window.N101_CONTENT.followApi.profile(handle);
           if (!live) return;
-          setState(list.some((f) => f.handle === handle) ? "following" : "not");
+          if (typeof r?.stats?.followers === "number") setCount(r.stats.followers);
+          setState(r?.isSelf ? "self" : r?.isFollowing ? "following" : "not");
         } catch { if (live) setState("not"); }
       })
       .catch(() => { if (live) setState("guest"); });
     return () => { live = false; };
-  }, [userId, handle]);
+  }, [handle]);
 
   const toggle = async () => {
     if (state === "guest") { window.location.href = `/${loc}/app`; return; } // sign in there

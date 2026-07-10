@@ -86,7 +86,7 @@ const canonical = `/${locale}/u/${user.handle}`;
       {/* Follow button — top-right of the hero, matching the prototype.
           Renders nothing for the owner. */}
       <div class="pf-follow-slot">
-        <FollowButton client:only="react" userId={user.id} handle={user.handle} locale={locale} variant="pink" showCount={true} />
+        <FollowButton client:only="react" handle={user.handle} locale={locale} variant="pink" showCount={true} />
       </div>
     </div>
   </section>

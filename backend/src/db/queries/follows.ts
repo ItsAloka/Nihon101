@@ -43,14 +43,24 @@ export async function followCounts(db: DB, userId: string): Promise<{ followers:
   return { followers: f?.n ?? 0, following: g?.n ?? 0 };
 }
 
+// A power user can follow thousands of authors. This set is loaded whole (it feeds
+// an in-memory Set), so it MUST be bounded — an unbounded select here means one
+// request downloads the entire follow graph of its caller. 2000 is far past any
+// real reading habit and still a single indexed scan.
+const MAX_FOLLOWING = 2000;
+
 /** The authors a user follows, as {id, handle} — drives the For You feed split
- *  and the follow-button state on cards. */
+ *  and the follow-button state on cards. Newest follow first, capped at
+ *  MAX_FOLLOWING (see above). NOT for rendering a followee *list* — that's
+ *  `listFollowingUsers`, which pages. */
 export async function listFollowing(db: DB, userId: string): Promise<{ id: string; handle: string }[]> {
   return db
     .select({ id: users.id, handle: users.handle })
     .from(follows)
     .innerJoin(users, eq(users.id, follows.followeeId))
-    .where(eq(follows.followerId, userId));
+    .where(eq(follows.followerId, userId))
+    .orderBy(desc(follows.createdAt))
+    .limit(MAX_FOLLOWING);
 }
 
 export interface FollowUser {

@@ -84,7 +84,7 @@ app.post('/', requireAuth, limits.upload, async (c) => {
 // so without this every avatar/cover render is a Worker invocation + an R2 read —
 // at 50k users that's the biggest read bill on the platform. Keys are immutable
 // UUIDs (a changed image is a NEW key), so cached entries never need invalidation.
-app.get('/:key{.+}', async (c) => {
+app.get('/:key{.+}', limits.media, async (c) => {
   const cache = (caches as unknown as { default: Cache }).default;
   const cacheKey = new Request(new URL(c.req.url).toString(), { method: 'GET' });
   const hit = await cache.match(cacheKey).catch(() => undefined);

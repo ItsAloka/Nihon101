@@ -78,31 +78,11 @@ export function HomeHeader({ locale, active = "home" }) {
   const [currentUser, setCurrentUser] = React.useState(null);
   const [savedCount, setSavedCount] = React.useState(0);
   const [loginOpen, setLoginOpen] = React.useState(false);
-  const [notifs, setNotifs] = React.useState([]);
   const p = paletteFor(mode);
 
-  // Load the viewer's notifications once signed in, then poll the list every 60s
-  // so the bell badge stays current. Mark-all-read / clear-all hit the backend and
-  // update locally so the panel reacts immediately.
-  React.useEffect(() => {
-    if (!currentUser) { setNotifs([]); return; }
-    let live = true;
-    const load = () => window.N101_CONTENT.notifApi.list()
-      .then((r) => { if (live) setNotifs(r.notifications); })
-      .catch(() => {});
-    load();
-    const t = setInterval(load, 60_000);
-    return () => { live = false; clearInterval(t); };
-  }, [currentUser]);
-
-  const onReadNotifs = React.useCallback(() => {
-    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-    window.N101_CONTENT.notifApi.markRead();
-  }, []);
-  const onClearNotifs = React.useCallback(() => {
-    setNotifs([]);
-    window.N101_CONTENT.notifApi.clearAll();
-  }, []);
+  // Notifications are owned entirely by Nav/NotifPanel now: Nav polls the cheap
+  // unread COUNT for the badge, the panel lazy-loads the list when opened. This
+  // page used to poll the full list join every 60s per signed-in reader.
 
   // Install the home-scoped navigator so the reused Nav/Footer can leave this page.
   // Reader-discovery surfaces (explore/category/tag) are real SSR pages now, so
@@ -255,7 +235,6 @@ export function HomeHeader({ locale, active = "home" }) {
         currentUser={currentUser}
         onLogin={() => setLoginOpen(true)}
         onLogout={() => { window.N101_API.logout(); setCurrentUser(null); }}
-        notifs={notifs} onReadNotifs={onReadNotifs} onClearNotifs={onClearNotifs}
       />
       {loginOpen && (
         <LoginModal

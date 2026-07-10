@@ -172,4 +172,11 @@ export const limits = {
   // High enough that fast real browsing never trips; low enough to blunt scrapers
   // (anti-scrape protects AdSense from invalid-traffic strikes).
   publicRead:   rateLimit({ bucket: 'pubread', limit: 300, windowSec: 60, by: 'ip', store: 'memory' }),
+  // Media serving. Browsers cache each image for a year (immutable keys), and the
+  // handler sits behind caches.default — so real readers rarely reach R2 at all.
+  // But a cache-busting enumerator (?v=1,2,3…) misses the edge cache every time and
+  // pays an R2 read per request, which at 50k users is the biggest read bill on the
+  // platform. Very generous (an image-heavy first load is ~50–100 fetches) so it
+  // only ever bites scripted floods.
+  media:        rateLimit({ bucket: 'media',   limit: 600, windowSec: 60, by: 'ip', store: 'memory' }),
 };

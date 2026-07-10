@@ -237,7 +237,7 @@ function Logo({ p, jp, size = 28 }) {
 
 // ------- Top nav -------
 function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
-              currentUser, onLogin, onLogout, notifs, onReadNotifs, onClearNotifs }) {
+              currentUser, onLogin, onLogout }) {
   const items = [
     { label: lang==='jp' ? '今日のこと' : 'Today',     route: {name:'home'} },
     { label: lang==='jp' ? 'おすすめ' : 'For You',  route: {name:'feed'} },
@@ -255,7 +255,21 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
   React.useEffect(()=>{ if(searchOpen){ const el=document.querySelector('.nihon-searchwrap input'); if(el) el.focus(); } }, [searchOpen]);
   React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); setDrawerOpen(false); setSearchOpen(false); }, [route.name, route.slug]);
   React.useEffect(()=>{ document.body.style.overflow = drawerOpen ? 'hidden' : ''; return ()=>{ document.body.style.overflow=''; }; }, [drawerOpen]);
-  const unread = (notifs || []).filter(n => !n.read).length;
+
+  // The badge is the ONLY thing polled: one indexed COUNT(*), not the list join.
+  // The list is fetched by NotifPanel when the bell is opened. Signed out → 0, and
+  // the effect's cleanup stops the timer.
+  const [unread, setUnread] = React.useState(0);
+  React.useEffect(()=>{
+    if (!currentUser) { setUnread(0); return; }
+    let live = true;
+    const tick = () => window.N101_CONTENT.notifApi.unreadCount()
+      .then((n)=>{ if (live) setUnread(n); }).catch(()=>{});
+    tick();
+    const t = setInterval(tick, 60_000);
+    return () => { live = false; clearInterval(t); };
+  }, [currentUser]);
+
   const drawerRow = { appearance:'none', border:'1px solid var(--line)', background:'var(--surface)', textAlign:'left', padding:'11px 14px', borderRadius:12, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:'var(--ink)', display:'flex', alignItems:'center', gap:10 };
   const loc = lang==='jp' ? 'ja' : 'en';
   return (
@@ -324,12 +338,15 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
         {currentUser && (
           <div style={{position:'relative', flexShrink:0}}>
             <button onClick={()=>{ setNotifOpen(v=>!v); setMenuOpen(false); }}
-              title="Notifications" aria-label={lang==='jp'?'お知らせ':'Notifications'}
+              title="Notifications"
+              aria-label={unread>0
+                ? (lang==='jp' ? `お知らせ、未読${unread}件` : `Notifications, ${unread} unread`)
+                : (lang==='jp' ? 'お知らせ' : 'Notifications')}
               aria-haspopup="menu" aria-expanded={notifOpen} style={iconBtn(p)}>
               <BellIcon color={p.ink}/>
-              {unread>0 && <span style={badgeStyle(p)}>{unread}</span>}
+              {unread>0 && <span style={badgeStyle(p)}>{unread>9 ? '9+' : unread}</span>}
             </button>
-            {notifOpen && <NotifPanel p={p} lang={lang} notifs={notifs} onReadAll={onReadNotifs} onClearAll={onClearNotifs} onClose={()=>setNotifOpen(false)}/>}
+            {notifOpen && <NotifPanel p={p} lang={lang} onUnread={setUnread} onClose={()=>setNotifOpen(false)}/>}
           </div>
         )}
 
@@ -479,25 +496,99 @@ function badgeStyle(p) {
 }
 
 // ------- Notifications dropdown -------
-function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
+// Self-contained: the panel owns the list, its loading/empty states, keyset
+// pagination and the per-row actions. The header only owns the unread COUNT (one
+// cheap polled endpoint) and hands down `onUnread` so this can keep the badge in
+// step. Nothing fetches the list until the bell is actually opened.
+const NOTIF_PAGE = 20;
+
+function NotifPanel({ p, lang, onClose, onUnread }) {
+  const jp = lang === 'jp';
+  const [items, setItems] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [nextBefore, setNextBefore] = React.useState(null);
+  const [failed, setFailed] = React.useState(false);
+
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const list = notifs || [];
-  const hasUnread = list.some(n=>!n.read);
+
+  // First page, on open.
+  const load = React.useCallback(() => {
+    setLoading(true); setFailed(false);
+    return window.N101_CONTENT.notifApi.list({ limit: NOTIF_PAGE })
+      .then((r) => { setItems(r.notifications); setNextBefore(r.nextBefore); })
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const loadMore = async () => {
+    if (!nextBefore || busy) return;
+    setBusy(true);
+    try {
+      const r = await window.N101_CONTENT.notifApi.list({ limit: NOTIF_PAGE, before: nextBefore });
+      setItems((prev) => [...prev, ...r.notifications]);
+      setNextBefore(r.nextBefore);
+    } catch { /* keep what we have; the button stays available to retry */ }
+    setBusy(false);
+  };
+
+  const readAll = () => {
+    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    onUnread(0);
+    window.N101_CONTENT.notifApi.markRead();
+  };
+  const clearAll = () => {
+    setItems([]); setNextBefore(null); onUnread(0);
+    window.N101_CONTENT.notifApi.clearAll();
+  };
+  const removeOne = (e, n) => {
+    e.stopPropagation();          // never let this bubble up and close/navigate
+    setItems((prev) => prev.filter((x) => x.id !== n.id));
+    if (!n.read) onUnread((u) => Math.max(0, u - 1));
+    window.N101_CONTENT.notifApi.remove(n.id);
+  };
+  // Clicking a row marks just that one read, then routes by type.
+  const openRow = (n) => {
+    if (!n.read) {
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+      onUnread((u) => Math.max(0, u - 1));
+      window.N101_CONTENT.notifApi.markRead([n.id]);
+    }
+    if (n.route) window.__nihon_go(n.route);
+    onClose();
+  };
+
+  const hasUnread = items.some((n) => !n.read);
   const actionBtn = (label, fn, danger) => (
-    <button onClick={(e)=>{ e.stopPropagation(); fn && fn(); }} style={{
+    <button onClick={(e)=>{ e.stopPropagation(); fn(); }} style={{
       appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:'2px 0',
       fontFamily:'var(--fontBody)', fontSize:12, fontWeight:600,
       color: danger ? p.stamp : p.accentDeep,
     }}>{label}</button>
   );
+
+  // The row is a flex CONTAINER holding two sibling buttons (open / delete) —
+  // a <button> may not contain another interactive element, so the delete can't
+  // be nested inside the row button.
+  const rowWrap = {
+    display:'flex', alignItems:'stretch',
+    borderBottom:`1px solid ${p.line}`,
+  };
+  const rowOpen = {
+    display:'flex', gap:12, padding:'14px 4px 14px 18px', cursor:'pointer', flex:1, minWidth:0,
+    textAlign:'left', appearance:'none', border:'none', background:'transparent',
+    fontFamily:'var(--fontBody)',
+  };
+
   return (
     <>
       <div onClick={onClose} aria-hidden="true" style={{position:'fixed', inset:0, zIndex:40}}></div>
-      <div role="menu" className="nav-pop" aria-label={lang==='jp'?'お知らせ':'Notifications'} style={{
+      <div className="nav-pop" aria-label={jp?'お知らせ':'Notifications'} style={{
         position:'absolute', top:'calc(100% + 12px)', right:0, width:360, zIndex:41,
         background:p.surface, border:`1px solid ${p.line}`, borderRadius:18,
         boxShadow:`0 30px 60px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
@@ -506,45 +597,77 @@ function NotifPanel({ p, lang, notifs, onReadAll, onClearAll, onClose }) {
         <div style={{padding:'16px 18px 12px', borderBottom:`1px solid ${p.line}`}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
             <span style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:17, color:p.ink}}>
-              {lang==='jp'?'お知らせ':'Notifications'}
+              {jp?'お知らせ':'Notifications'}
             </span>
-            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{list.length}</span>
           </div>
-          {list.length>0 && (
+          {items.length>0 && (
             <div style={{display:'flex', gap:16, marginTop:8}}>
-              {hasUnread && actionBtn(lang==='jp'?'すべて既読にする':'Mark all read', onReadAll)}
-              {actionBtn(lang==='jp'?'すべて削除':'Clear all', onClearAll, true)}
+              {hasUnread && actionBtn(jp?'すべて既読にする':'Mark all read', readAll)}
+              {actionBtn(jp?'すべて削除':'Clear all', clearAll, true)}
             </div>
           )}
         </div>
         <div style={{maxHeight:380, overflowY:'auto'}}>
-          {list.length===0 ? (
-            <div style={{padding:'40px 20px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:14}}>
-              {lang==='jp'?'まだお知らせはありません。':'Nothing yet — go write something!'}
-            </div>
-          ) : list.map((n,i)=>(
-            <div key={i} role="menuitem" tabIndex={0}
-              onClick={()=>{ if(n.route) window.__nihon_go(n.route); onClose(); }}
-              onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); if(n.route) window.__nihon_go(n.route); onClose(); } }}
-              style={{
-                display:'flex', gap:12, padding:'14px 18px', cursor:'pointer',
-                borderBottom:`1px solid ${p.line}`,
-                background: n.read ? 'transparent' : `color-mix(in oklab, ${p.accent} 10%, ${p.surface})`,
-              }}>
-              <div style={{flexShrink:0, marginTop:2}}>
-                {n.kind==='like' ? <HeartIcon color={p.stamp} filled size={18}/>
-                 : n.kind==='comment' ? <CommentIcon color={p.accentDeep} size={18}/>
-                 : n.kind==='follow' ? <span style={{fontFamily:'var(--fontDisplay)', color:p.accentDeep, fontWeight:700, fontSize:16}}>+</span>
-                 : <BellIcon color={p.accentDeep} size={18}/>}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.ink, lineHeight:1.4}}>
-                  <strong style={{fontWeight:600}}>{lang==='jp'?(n.who_jp||n.who):n.who}</strong> {lang==='jp'?n.text_jp:n.text_en}
+          {loading ? (
+            // Skeleton — never a blank box, and visibly distinct from "no notifications".
+            Array.from({length:4}, (_,i)=>(
+              <div key={i} aria-hidden="true" style={{display:'flex', gap:12, padding:'14px 18px', borderBottom:`1px solid ${p.line}`}}>
+                <div className="skel" style={{width:18, height:18, borderRadius:9, flexShrink:0, marginTop:2}}/>
+                <div style={{flex:1, display:'flex', flexDirection:'column', gap:7}}>
+                  <div className="skel" style={{width:'85%', height:12}}/>
+                  <div className="skel" style={{width:'35%', height:10}}/>
                 </div>
-                <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, marginTop:3}}>{n.when}</div>
               </div>
+            ))
+          ) : failed ? (
+            // A failed fetch must never look like an empty inbox.
+            <div style={{padding:'32px 20px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:14}}>
+              <div style={{marginBottom:10}}>{jp?'お知らせを読み込めませんでした。':'Could not load notifications.'}</div>
+              {actionBtn(jp?'再試行':'Retry', load)}
             </div>
-          ))}
+          ) : items.length===0 ? (
+            <div style={{padding:'40px 20px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:14}}>
+              {jp?'まだお知らせはありません。':'Nothing yet — go write something!'}
+            </div>
+          ) : (
+            <>
+              {items.map((n)=>(
+                <div key={n.id} style={{
+                  ...rowWrap,
+                  background: n.read ? 'transparent' : `color-mix(in oklab, ${p.accent} 10%, ${p.surface})`,
+                }}>
+                  <button onClick={()=>openRow(n)} style={rowOpen}>
+                    <span style={{flexShrink:0, marginTop:2}}>
+                      {n.kind==='like' ? <HeartIcon color={p.stamp} filled size={18}/>
+                       : n.kind==='comment' ? <CommentIcon color={p.accentDeep} size={18}/>
+                       : n.kind==='follow' ? <span style={{fontFamily:'var(--fontDisplay)', color:p.accentDeep, fontWeight:700, fontSize:16}}>+</span>
+                       : <BellIcon color={p.accentDeep} size={18}/>}
+                    </span>
+                    <span style={{flex:1, minWidth:0}}>
+                      <span style={{display:'block', fontSize:14, color:p.ink, lineHeight:1.4}}>
+                        <strong style={{fontWeight:600}}>{jp?(n.who_jp||n.who):n.who}</strong> {jp?n.text_jp:n.text_en}
+                      </span>
+                      <span style={{display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, marginTop:3}}>
+                        {window.N101_CONTENT.relTime(n.createdAt)}
+                      </span>
+                    </span>
+                  </button>
+                  <button aria-label={jp?'この通知を削除':'Delete this notification'}
+                    onClick={(e)=>removeOne(e, n)}
+                    style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer',
+                      flexShrink:0, padding:'0 14px 0 6px', color:p.inkFaint, fontSize:16, lineHeight:1}}>×</button>
+                </div>
+              ))}
+              {nextBefore && (
+                <button onClick={loadMore} disabled={busy} style={{
+                  display:'flex', justifyContent:'center', width:'100%', padding:'14px 18px',
+                  appearance:'none', border:'none', background:'transparent',
+                  cursor: busy?'default':'pointer', fontFamily:'var(--fontBody)',
+                  color:p.inkSoft, fontWeight:600, fontSize:13,
+                }}>{busy ? (jp?'読み込み中…':'Loading…') : (jp?'もっと見る':'Load more')}</button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </>

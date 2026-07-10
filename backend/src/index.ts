@@ -154,7 +154,7 @@ export default {
         console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
         return;
       }
-      // Every 5 min: rescore the active set's momentum, then bake the top-20 cards
+      // Every minute: rescore the active set's momentum, then bake the top-20 cards
       // to KV for the zero-Postgres hot path. Weather is a throttled external fetch
       // baked to the same KV; its failures are swallowed.
       await Promise.all([

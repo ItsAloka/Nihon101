@@ -510,26 +510,33 @@ auth.post('/change-password', requireAuth, limits.profile, async (c) => {
 });
 
 // -------------------------------------------------------- delete account
-auth.delete('/me', requireAuth, async (c) => {
+auth.delete('/me', requireAuth, limits.profile, async (c) => {
   const sess = c.get('user')!;
-  await db(c).delete(refreshTokens).where(eq(refreshTokens.userId, sess.id));
-  await db(c).delete(passwordResets).where(eq(passwordResets.userId, sess.id));
-  await db(c).delete(emailVerifications).where(eq(emailVerifications.userId, sess.id));
-  await db(c).delete(googleLinks).where(eq(googleLinks.userId, sess.id));
-  // The newsletter FK is `set null` (and a visitor may have subscribed while logged
-  // out), so cascade would leave this user's email (PII) on the Sunday Letter list,
-  // still receiving mail. Purge any subscription matching their id OR email first.
-  const [u] = await db(c).select({ email: users.email }).from(users).where(eq(users.id, sess.id));
-  await db(c).delete(newsletterSubscribers).where(
-    u
-      ? or(eq(newsletterSubscribers.userId, sess.id), sql`lower(${newsletterSubscribers.email}) = lower(${u.email})`)
-      : eq(newsletterSubscribers.userId, sess.id),
-  );
-  await db(c).delete(users).where(eq(users.id, sess.id));
+  // ONE transaction: erasure is all-or-nothing. Run as separate statements, a
+  // failure partway through (a dropped connection after the token delete, say)
+  // leaves an account that can't log in but still exists, still owns posts, and
+  // is still on the newsletter — the worst possible state for a GDPR request.
+  await db(c).transaction(async (tx) => {
+    await tx.delete(refreshTokens).where(eq(refreshTokens.userId, sess.id));
+    await tx.delete(passwordResets).where(eq(passwordResets.userId, sess.id));
+    await tx.delete(emailVerifications).where(eq(emailVerifications.userId, sess.id));
+    await tx.delete(googleLinks).where(eq(googleLinks.userId, sess.id));
+    // The newsletter FK is `set null` (and a visitor may have subscribed while logged
+    // out), so cascade would leave this user's email (PII) on the Sunday Letter list,
+    // still receiving mail. Purge any subscription matching their id OR email first.
+    const [u] = await tx.select({ email: users.email }).from(users).where(eq(users.id, sess.id));
+    await tx.delete(newsletterSubscribers).where(
+      u
+        ? or(eq(newsletterSubscribers.userId, sess.id), sql`lower(${newsletterSubscribers.email}) = lower(${u.email})`)
+        : eq(newsletterSubscribers.userId, sess.id),
+    );
+    await tx.delete(users).where(eq(users.id, sess.id));
+  });
   // GDPR erasure isn't complete until the user's uploads are gone too. Every blob
   // they own (avatar + post covers + in-body images) lives under the `<userId>/`
   // R2 prefix, so one prefix sweep removes all of it. Background so the delete
-  // response stays instant; the FK cascade already cleared their DB rows.
+  // response stays instant; the FK cascade already cleared their DB rows. Only
+  // reached once the transaction above has committed.
   c.executionCtx.waitUntil(deleteUserMedia(c.env, sess.id));
   clearRefreshCookie(c);
   return c.json({ ok: true });

@@ -159,7 +159,14 @@ const feedApi = {
 };
 
 const followApi = {
-  // Handles the viewer follows: { id, handle }[].
+  // One author's public profile, read WITH the viewer's token so the response
+  // carries `isFollowing` / `isSelf` for this viewer. The SSR profile page can't
+  // supply those (it renders without the visitor's token), so the follow button
+  // resolves them here — one row, not the viewer's whole follow graph.
+  profile: (handle) => req(`/users/${encodeURIComponent(handle)}`, { auth: true }),
+  // Handles the viewer follows: { id, handle }[]. Bounded server-side.
+  // Feeds the in-memory Set behind follow buttons on CARDS — never use it to
+  // answer "does the viewer follow this one author"; that's `profile()`.
   following: () => req('/users/me/following', { auth: true }).then((r) => r.following),
   follow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'POST', auth: true }), // → {following, followers}
   unfollow: (idOrHandle) => req(`/users/${idOrHandle}/follow`, { method: 'DELETE', auth: true }),
@@ -181,8 +188,9 @@ function relTime(ms) {
 }
 
 // Backend notification → the prototype NotifPanel shape ({kind, who, text_*,
-// when, read, route}). Both locales' text computed up front so the panel can
-// switch language without a refetch.
+// createdAt, read, route}). Both locales' text computed up front so the panel can
+// switch language without a refetch. `createdAt` stays raw — the panel formats it
+// at render, so an open bell's "2m" becomes "3m" instead of freezing at fetch time.
 function mapNotif(n) {
   const title = (n.postTitleEn || '').slice(0, 32);
   const titleJa = (n.postTitleJa || n.postTitleEn || '').slice(0, 24);
@@ -202,14 +210,26 @@ function mapNotif(n) {
   return {
     id: n.id, kind: m.kind,
     who: n.actorName || 'Someone', who_jp: n.actorNameJa || n.actorName || 'だれか',
-    text_en: m.en, text_jp: (n.type === 'post' ? '' : '') + m.jp,
-    when: relTime(n.createdAt), read: !!n.readAt, route: m.route,
+    text_en: m.en, text_jp: m.jp,
+    createdAt: n.createdAt, read: !!n.readAt, route: m.route,
   };
 }
 
 const notifApi = {
-  list: () => req('/notifications', { auth: true }).then((r) => ({ notifications: r.notifications.map(mapNotif), unread: r.unread })),
-  markRead: () => req('/notifications/read', { method: 'POST', auth: true }).catch(() => {}),
+  // The badge. One indexed COUNT(*) — this is what the header polls. The list
+  // below is a three-table join and is only fetched when the panel opens.
+  unreadCount: () => req('/notifications/unread-count', { auth: true }).then((r) => r.count),
+  // A page of notifications, newest first. Pass the previous page's `nextBefore`
+  // as `before` to keyset-page backwards through the history.
+  list: ({ before, limit = 20 } = {}) => {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (before) qs.set('before', String(before));
+    return req(`/notifications?${qs}`, { auth: true })
+      .then((r) => ({ notifications: r.notifications.map(mapNotif), nextBefore: r.nextBefore ?? null }));
+  },
+  // No ids → mark every unread row read. With ids → just those (a clicked row).
+  markRead: (ids) => req('/notifications/read', { method: 'POST', auth: true, body: ids ? { ids } : {} }).catch(() => {}),
+  remove: (id) => req(`/notifications/${id}`, { method: 'DELETE', auth: true }).catch(() => {}),
   clearAll: () => req('/notifications', { method: 'DELETE', auth: true }).catch(() => {}),
 };
 
@@ -255,6 +275,6 @@ function hydrateReal(po) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, uploadImage, translate, hydrateReal };
+  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, uploadImage, translate, hydrateReal, relTime };
   window.N101_CATS = catStore;
 }

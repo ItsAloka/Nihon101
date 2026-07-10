@@ -48,7 +48,6 @@ function App() {
   const [currentUser, setCurrentUser] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.user') || 'null'); } catch(e){ return null; } });
   const [userPosts, setUserPosts] = React.useState(()=>{ try { return JSON.parse(localStorage.getItem('nihon.posts') || '[]'); } catch(e){ return []; } });
   const [comments, setComments] = React.useState(()=>{ try { const s = localStorage.getItem('nihon.comments'); return s ? JSON.parse(s) : {}; } catch(e){ return {}; } });
-  const [notifs, setNotifs] = React.useState([]); // real, loaded from the backend on session restore
   const [loginOpen, setLoginOpen] = React.useState(false);
 
   // Persist + expose globals used by helper lookups
@@ -145,17 +144,17 @@ function App() {
   }, []);
   const onSearch = React.useCallback((q)=>{ go({name:'search', q}); }, [go]);
 
-  // Load the real follow set + notifications for a signed-in user (replacing any
-  // stale local cache — the backend is the truth).
+  // Load the real follow set + saved set for a signed-in user (replacing any stale
+  // local cache — the backend is the truth). Notifications are NOT hydrated here:
+  // Nav polls the unread count, and the panel loads the list only when opened.
   const hydrateSocial = React.useCallback(()=>{
-    const { followApi, notifApi, postApi } = window.N101_CONTENT;
+    const { followApi, postApi } = window.N101_CONTENT;
     followApi.following().then(list=>setFollows(new Set(list.map(f=>f.handle)))).catch(()=>{});
-    notifApi.list().then(({notifications})=>setNotifs(notifications)).catch(()=>{});
     postApi.listSaved().then(rows=>setSavedSet(new Set(rows.map(po=>po.slug)))).catch(()=>{});
   }, []);
 
   const onLogin = React.useCallback((user)=>{ setCurrentUser(user); setLoginOpen(false); hydrateSocial(); }, [hydrateSocial]);
-  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); setFollows(new Set()); setNotifs([]); setSavedSet(new Set()); go({name:'home'}); }, [go]);
+  const onLogout = React.useCallback(()=>{ window.N101_API.logout(); setCurrentUser(null); setFollows(new Set()); setSavedSet(new Set()); go({name:'home'}); }, [go]);
 
   // Restore the session from the HttpOnly refresh cookie on load. If there's no
   // valid backend session, clear any stale local user (real auth is the truth now).
@@ -163,7 +162,7 @@ function App() {
     let live = true;
     window.N101_API.refresh()
       .then(u=>{ if(live){ setCurrentUser(prev=>window.N101_API.toAppUser(u, prev)); hydrateSocial(); } })
-      .catch(()=>{ if(live){ setCurrentUser(null); setFollows(new Set()); setNotifs([]); } });
+      .catch(()=>{ if(live){ setCurrentUser(null); setFollows(new Set()); } });
     return ()=>{ live = false; };
   }, [hydrateSocial]);
 
@@ -280,10 +279,7 @@ function App() {
     <div style={{...cssVars, minHeight:'100vh', background:p.bg, color:p.ink}}>
       <Nav p={p} route={route} lang={lang} onLang={setLang} onSearch={onSearch} savedCount={savedSet.size}
            mode={mode} onToggleMode={()=>setMode(m=>m==='dark'?'light':'dark')}
-           currentUser={currentUser} onLogin={()=>setLoginOpen(true)} onLogout={onLogout}
-           notifs={notifs}
-           onReadNotifs={()=>{ window.N101_CONTENT.notifApi.markRead(); setNotifs(prev=>prev.map(n=>({...n, read:true}))); }}
-           onClearNotifs={()=>{ window.N101_CONTENT.notifApi.clearAll(); setNotifs([]); }}/>
+           currentUser={currentUser} onLogin={()=>setLoginOpen(true)} onLogout={onLogout}/>
       <main>{screen}</main>
       <Footer p={p} lang={lang}/>
       {loginOpen && <LoginModal p={p} lang={lang} onLogin={onLogin} onClose={()=>setLoginOpen(false)}/>}
