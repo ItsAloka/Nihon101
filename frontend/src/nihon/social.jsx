@@ -400,7 +400,21 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   // (and we never translate an empty source over the real text).
   React.useEffect(()=>{
     if (!editId || postId || !edReady || !edApi.current) return;
-    window.N101_CONTENT.postApi.get(editId).then(po=>{
+    // Editing a draft is owner-only, so the GET needs the access token. On a
+    // fresh page load (draft card → full navigation) the boot refresh may not
+    // have restored it yet — firing now would send an anonymous request and the
+    // server 404s the draft. Ensure a session first (refresh() is single-flight,
+    // so this just joins the boot refresh already in flight).
+    const load = async ()=>{
+      if (!window.N101_API.getAccessToken()) {
+        try { await window.N101_API.refresh(); }
+        catch(e){ setStatus('Could not load that post'); return; }
+      }
+      if (postId) return;   // a concurrent run already loaded it
+      return window.N101_CONTENT.postApi.get(editId);
+    };
+    load().then(po=>{
+      if (!po) return;
       const site = lang==='jp' ? 'ja' : 'en';
       const siteEmpty = !((site==='ja' ? po.titleJa : po.titleEn) || (site==='ja' ? po.bodyJa : po.bodyEn));
       const L = siteEmpty ? (po.lang==='ja' ? 'ja' : 'en') : site;
@@ -685,7 +699,8 @@ function ComposerPage({ p, lang, currentUser, editId }) {
 }
 
 // ====== PROFILE (current user) ======
-// Card for a real backend-authored post. Opens the post in reading mode on click.
+// Card for a real backend-authored post. Published → reading mode; a draft has no
+// public URL, so it opens straight in the editor.
 function MyPostCard({ p, lang, post, onChanged }) {
   const title = (lang==='jp' ? post.titleJa : post.titleEn) || post.titleEn || post.titleJa || (lang==='jp'?'無題':'Untitled');
   const excerpt = (lang==='jp' ? post.excerptJa : post.excerptEn) || '';
@@ -704,8 +719,11 @@ function MyPostCard({ p, lang, post, onChanged }) {
   const dateStr = when ? new Date(when).toLocaleDateString(lang==='jp'?'ja-JP':'en-US', { year:'numeric', month:'short', day:'numeric', timeZone:'UTC' }) : '';
   const tags = Array.isArray(post.tags) ? post.tags.filter(Boolean).slice(0,3) : [];
   // Clicking the card opens the post in reading mode (where the owner gets
-  // Edit/Delete). No actions on the card itself.
-  const open = ()=> window.__nihon_go({name:'article', slug: post.slug});
+  // Edit/Delete). No actions on the card itself. A draft is never served at
+  // /{loc}/p/{slug} — the reader 404s on it — so it opens in the editor instead.
+  const open = ()=> window.__nihon_go(post.status==='draft'
+    ? {name:'compose', editId: post.id}
+    : {name:'article', slug: post.slug});
   return (
     <div onClick={open} style={{position:'relative', borderRadius:22, border:`1.5px solid ${p.line}`, background:p.surface, padding:14, display:'flex', flexDirection:'column', gap:12, cursor:'pointer', transition:'transform .25s ease, border-color .25s ease, box-shadow .25s ease'}}
       onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
