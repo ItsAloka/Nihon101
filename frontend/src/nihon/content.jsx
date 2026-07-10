@@ -117,6 +117,8 @@ const postApi = {
   create: (body) => req('/posts', { method: 'POST', auth: true, body }).then((r) => r.post),
   update: (id, body) => req(`/posts/${id}`, { method: 'PUT', auth: true, body }).then((r) => r.post),
   remove: (id) => req(`/posts/${id}`, { method: 'DELETE', auth: true }),
+  // Owner-only: re-run the background translation after a 'failed'/stuck job.
+  retryTranslate: (id) => req(`/posts/${id}/translate`, { method: 'POST', auth: true }),
 
   // Engagement (real posts only — seed posts have no backend row).
   toggleLike: (id) => req(`/posts/${id}/like`, { method: 'POST', auth: true }), // → {liked, likes}
@@ -192,24 +194,27 @@ function relTime(ms) {
 // switch language without a refetch. `createdAt` stays raw — the panel formats it
 // at render, so an open bell's "2m" becomes "3m" instead of freezing at fetch time.
 function mapNotif(n) {
-  const title = (n.postTitleEn || '').slice(0, 32);
-  const titleJa = (n.postTitleJa || n.postTitleEn || '').slice(0, 24);
+  const clip = (s, max) => { const t = String(s || ''); return t.length > max ? `${t.slice(0, max)}…` : t; };
+  const title = clip(n.postTitleEn, 32);
+  const titleJa = clip(n.postTitleJa || n.postTitleEn, 24);
   const artRoute = n.postSlug ? { name: 'article', slug: n.postSlug } : { name: 'home' };
-  // Comment/reply notifications deep-link to the exact comment (#comment-<id>),
-  // not just the top of the post — mirrors Not Bagel's navToComment.
+  // Who did it → their profile (like/follow); what they said → the exact comment
+  // (#comment-<id>); what they wrote → the article. Mirrors Not Bagel's routing.
+  const actorRoute = n.actorHandle ? { name: 'author', slug: n.actorHandle } : { name: 'home' };
   const cmtRoute = n.postSlug && n.commentId
     ? { name: 'article', slug: n.postSlug, commentId: n.commentId } : artRoute;
   const byType = {
-    like:    { kind: 'like',    en: `liked your story “${title}…”`, jp: 'があなたの記事にいいねしました', route: artRoute },
-    comment: { kind: 'comment', en: `commented on “${title}…”`,     jp: 'があなたの記事にコメントしました', route: cmtRoute },
-    reply:   { kind: 'comment', en: `replied to your comment`,       jp: 'があなたに返信しました',         route: cmtRoute },
-    follow:  { kind: 'follow',  en: `started following you`,         jp: 'があなたをフォローしました',     route: n.actorHandle ? { name: 'author', slug: n.actorHandle } : { name: 'home' } },
-    post:    { kind: 'system',  en: `published “${title}…”`,         jp: '新しい記事を公開しました',       route: artRoute },
+    like:    { kind: 'like',    en: `liked your story “${title}”`, jp: 'があなたの記事にいいねしました', route: actorRoute },
+    comment: { kind: 'comment', en: `commented on “${title}”`,     jp: 'があなたの記事にコメントしました', route: cmtRoute },
+    reply:   { kind: 'comment', en: `replied to your comment`,      jp: 'があなたに返信しました',         route: cmtRoute },
+    follow:  { kind: 'follow',  en: `started following you`,        jp: 'があなたをフォローしました',     route: actorRoute },
+    post:    { kind: 'system',  en: `published “${title}”`,         jp: '新しい記事を公開しました',       route: artRoute },
   };
   const m = byType[n.type] || byType.post;
   return {
     id: n.id, kind: m.kind,
     who: n.actorName || 'Someone', who_jp: n.actorNameJa || n.actorName || 'だれか',
+    avatarUrl: n.actorAvatarUrl || null,
     text_en: m.en, text_jp: m.jp,
     createdAt: n.createdAt, read: !!n.readAt, route: m.route,
   };
@@ -258,8 +263,11 @@ function hydrateReal(po) {
     _coverLabel: po.coverLabel || '', _coverCredit: po.coverCredit || '',
     _density: po.density || 'compact',
     slug: po.slug, category: po.categoryId, status: po.status,
-    title_en: po.titleEn, title_jp: po.titleJa,
-    excerpt_en: po.excerptEn, excerpt_jp: po.excerptJa,
+    translationStatus: po.translationStatus || 'none',
+    // Untranslated side falls back to the authored side — a card/title must
+    // never render blank while the background translation is pending/failed.
+    title_en: po.titleEn || po.titleJa, title_jp: po.titleJa || po.titleEn,
+    excerpt_en: po.excerptEn || po.excerptJa, excerpt_jp: po.excerptJa || po.excerptEn,
     kicker_en: '', kicker_jp: '',
     author: po.authorName || 'Unknown',
     author_jp: po.authorNameJa || po.authorName || 'Unknown',

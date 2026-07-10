@@ -136,23 +136,31 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
   }, [slot, isOwner]);
 
   const requireLogin = () => { window.location.href = `/${loc}/app`; };
+  // Every optimistic rollback SAYS SO — a like that quietly un-flips reads as
+  // "the site is broken". Toaster lives in the page shell (window.__nihon_toast).
+  const toast = (en, jp) => window.__nihon_toast?.(lang === "jp" ? jp : en);
 
   const onToggleLike = async () => {
     if (!user) return requireLogin();
     setLiked((v) => !v); setLikeCount((n) => n + (liked ? -1 : 1));
     try { const r = await window.N101_CONTENT.postApi.toggleLike(postId); setLiked(r.liked); setLikeCount(r.likes); }
-    catch { setLiked((v) => !v); setLikeCount((n) => n + (liked ? 1 : -1)); }
+    catch { setLiked((v) => !v); setLikeCount((n) => n + (liked ? 1 : -1)); toast("Could not update like — try again", "いいねできませんでした — もう一度お試しください"); }
   };
   const onToggleSave = async () => {
     if (!user) return requireLogin();
     let was = saved; setSaved(!was);
-    try { await window.N101_CONTENT.postApi.toggleSave(slug); }
-    catch { setSaved(was); }
+    try {
+      await window.N101_CONTENT.postApi.toggleSave(slug);
+      toast(was ? "Removed from saved" : "Saved", was ? "保存を解除しました" : "保存しました");
+    }
+    catch { setSaved(was); toast("Could not update save — try again", "保存できませんでした — もう一度お試しください"); }
   };
   const onShare = () => {
     const url = window.location.href;
     if (navigator.share) navigator.share({ url }).catch(() => {});
-    else navigator.clipboard?.writeText(url).catch(() => {});
+    else navigator.clipboard?.writeText(url)
+      .then(() => toast("Link copied!", "リンクをコピーしました"))
+      .catch(() => toast("Could not copy the link", "リンクをコピーできませんでした"));
   };
   // Moderation reporting. Opening sets the target ({type,id}); ReportModal collects
   // a reason + optional note and POSTs to /reports. `reportedIds` tracks what's been
@@ -171,6 +179,7 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
     if (!res.ok) throw new Error("report_failed");
     setReportedIds((s) => new Set(s).add(tgt.id));
     setReportTarget(null);
+    toast("Report sent — thank you", "通報しました。ご協力ありがとうございます");
   };
   const reported = reportedIds.has(postId);
   const onAddComment = async (_slug, text, parentId) => {
@@ -185,23 +194,27 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
     };
     setComments((prev) => [...prev, optimistic]);
     try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => prev.map((x) => (x.id === tmpId ? toCommentView(c) : x))); setCommentsTotal((t) => t + 1); }
-    catch { setComments((prev) => prev.filter((x) => x.id !== tmpId)); }
+    catch { setComments((prev) => prev.filter((x) => x.id !== tmpId)); toast("Could not post your comment — try again", "コメントを投稿できませんでした — もう一度お試しください"); }
   };
   const onLikeComment = async (_slug, cid) => {
     setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: !c.liked, likes: c.likes + (c.liked ? -1 : 1) } : c)));
     try { const r = await window.N101_CONTENT.postApi.toggleCommentLike(postId, cid); setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: r.liked, likes: r.likes } : c))); }
-    catch { setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: !c.liked, likes: c.likes + (c.liked ? 1 : -1) } : c))); }
+    catch { setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: !c.liked, likes: c.likes + (c.liked ? 1 : -1) } : c))); toast("Could not update like — try again", "いいねできませんでした — もう一度お試しください"); }
   };
   const onDeleteComment = async (cid) => {
+    // Optimistic removal with a real rollback — before this, a failed delete
+    // just vanished the thread locally and said nothing.
+    const prev = comments;
     const removed = comments.filter((c) => c.id === cid || c.parentId === cid).length;
-    setComments((prev) => prev.filter((c) => c.id !== cid && c.parentId !== cid));
+    setComments((cur) => cur.filter((c) => c.id !== cid && c.parentId !== cid));
     setCommentsTotal((t) => Math.max(0, t - removed));
-    try { await window.N101_CONTENT.postApi.removeComment(postId, cid); } catch {}
+    try { await window.N101_CONTENT.postApi.removeComment(postId, cid); }
+    catch { setComments(prev); setCommentsTotal((t) => t + removed); toast("Could not delete — try again", "削除できませんでした — もう一度お試しください"); }
   };
   const doDelete = async () => {
     setDelBusy(true);
     try { await window.N101_CONTENT.postApi.remove(postId); window.location.href = `/${loc}/me`; }
-    catch { setDelBusy(false); }
+    catch { setDelBusy(false); toast("Delete failed — try again", "削除できませんでした — もう一度お試しください"); }
   };
 
   const pill = (extra) => ({ appearance: "none", border: `1px solid ${p.line}`, background: p.surface, borderRadius: 999, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--fontBody)", color: p.ink, ...extra });

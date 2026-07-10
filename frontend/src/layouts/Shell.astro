@@ -5,6 +5,7 @@
 // plus the explore-specific bits (hero, search box, category strip, banner).
 // Keeps the prototype design; pages only swap in real data.
 import { HomeHeader, HomeFooter } from "../nihon/home-chrome.jsx";
+import Toaster from "../components/Toaster.astro";
 
 interface Props {
   locale: string;
@@ -296,5 +297,6 @@ const ogImage = new URL(image || '/og-default.png', base).href;
     <HomeHeader client:load locale={locale} active={active} />
     <slot />
     <HomeFooter client:load locale={locale} />
+    <Toaster />
   </body>
 </html>

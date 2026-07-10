@@ -176,6 +176,13 @@
       "when": 1783668729101,
       "tag": "0024_flaky_talos",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1783701590864,
+      "tag": "0025_parallel_longshot",
+      "breakpoints": true
     }
   ]
 }

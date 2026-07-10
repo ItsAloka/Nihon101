@@ -32,7 +32,8 @@ import {
   type PostStatus,
   type PostDensity,
 } from '../db/queries/posts';
-import { translateFields, type Locale } from '../lib/openai';
+import { translatePost, type Locale } from '../lib/openai';
+import { overAiQuota } from '../lib/aiQuota';
 import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
 import { getUserById } from '../db/queries/users';
 import { recordNotInterested } from '../db/queries/for-you';
@@ -81,12 +82,25 @@ const parseDensity = (v: unknown, fallback: PostDensity): PostDensity =>
 const parseLang = (v: unknown, fallback: Locale): Locale =>
   v === 'en' || v === 'ja' ? v : fallback;
 
-/** Fire-and-forget: translate a freshly-published post's source language into
- * the other, then store it. Runs in the background (waitUntil) so Publish stays
- * instant. Only triggered by the explicit Publish action — never autosave — so
- * editing a live post doesn't re-burn the API on every keystroke. */
+/** True when a manual save can actually run a background translation: the flag
+ * was sent, a key is configured, and the post's source language has text. The
+ * caller stores translation_status='pending' in the SAME write as the post, so
+ * the owner UI sees the state immediately. */
+function canTranslate(c: Context<AppEnv>, post: Pick<PostRow, 'lang' | 'titleEn' | 'titleJa' | 'excerptEn' | 'excerptJa' | 'bodyEn' | 'bodyJa'>): boolean {
+  if (!c.env.OPENAI_API_KEY) return false;
+  const ja = post.lang === 'ja';
+  return !!((ja ? post.titleJa : post.titleEn) || (ja ? post.excerptJa : post.excerptEn) || (ja ? post.bodyJa : post.bodyEn));
+}
+
+/** Fire-and-forget: translate a post's source language into the other, then
+ * store it. Runs in the background (waitUntil) so Publish stays instant; the
+ * body goes through translatePost (chunked + parallel), so the whole job fits
+ * inside the ~30s waitUntil window even for long posts. Writes
+ * translation_status 'done'/'failed' so a failure is never silent — the owner
+ * sees a retry chip instead of a mysteriously-English JA page. Only triggered
+ * by explicit manual saves — never autosave. */
 function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
-  if (!c.env.OPENAI_API_KEY) return;
+  if (!canTranslate(c, post)) return;
   const from: Locale = post.lang === 'ja' ? 'ja' : 'en';
   const to: Locale = from === 'en' ? 'ja' : 'en';
   const src = {
@@ -94,20 +108,22 @@ function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
     excerpt: from === 'en' ? post.excerptEn : post.excerptJa,
     body: from === 'en' ? post.bodyEn : post.bodyJa,
   };
-  if (!src.title && !src.excerpt && !src.body) return;
 
   const job = (async () => {
     // Own pool — this outlives the request, so it can't share the request pool
     // (which the cleanup middleware closes when the response is sent).
     const { db: bgDb, pool } = standaloneDb(c.env);
     try {
-      const out = await translateFields(c.env.OPENAI_API_KEY, to, src);
-      const patch: Record<string, unknown> = {};
+      const out = await translatePost(c.env.OPENAI_API_KEY, to, src);
+      const patch: Record<string, unknown> = { translationStatus: 'done' };
       if (out.title != null) patch[to === 'en' ? 'titleEn' : 'titleJa'] = out.title;
       if (out.excerpt != null) patch[to === 'en' ? 'excerptEn' : 'excerptJa'] = out.excerpt;
       if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = sanitizeHtml(out.body);
-      if (Object.keys(patch).length) await updatePost(bgDb, post.id, patch);
-    } catch { /* leave the other locale empty; next publish retries */ }
+      await updatePost(bgDb, post.id, patch);
+    } catch {
+      // Never silent: surface the failure so the owner can retry it.
+      try { await updatePost(bgDb, post.id, { translationStatus: 'failed' }); } catch { /* noop */ }
+    }
     finally { try { await pool.end(); } catch { /* noop */ } }
   })();
   c.executionCtx.waitUntil(job);
@@ -304,20 +320,30 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   const bodyJa = clampBody(body?.bodyJa);
   if (tooManyImages(bodyEn, bodyJa)) return c.json({ error: 'too_many_images' }, 400);
 
+  const lang = parseLang(body?.lang, 'en');
+  const excerptEn = String(body?.excerptEn ?? '').trim().slice(0, MAX_EXCERPT);
+  const excerptJa = String(body?.excerptJa ?? '').trim().slice(0, MAX_EXCERPT);
+  // Explicit manual save (draft or publish) → fill the other language in the
+  // background. Never set by autosave, so editing doesn't re-burn the API.
+  // 'pending' rides the insert itself, so the owner UI knows from moment one.
+  const translating = body?.translate === true
+    && canTranslate(c, { lang, titleEn, titleJa, excerptEn, excerptJa, bodyEn, bodyJa });
+
   const post = await createPost(d, {
     authorId: c.var.user!.id,
     categoryId,
-    lang: parseLang(body?.lang, 'en'),
+    lang,
     titleEn,
     titleJa,
-    excerptEn: String(body?.excerptEn ?? '').trim().slice(0, MAX_EXCERPT),
-    excerptJa: String(body?.excerptJa ?? '').trim().slice(0, MAX_EXCERPT),
+    excerptEn,
+    excerptJa,
     bodyEn,
     bodyJa,
     cover: body?.cover ? String(body.cover) : null,
     coverLabel: String(body?.coverLabel ?? '').trim().slice(0, 120),
     coverCredit: String(body?.coverCredit ?? '').trim().slice(0, 120),
     status,
+    translationStatus: translating ? 'pending' : 'none',
     density: parseDensity(body?.density, 'compact'),
     score: parseScore(body?.score),
     tags: parseTags(body?.tags),
@@ -328,9 +354,7 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
     await bumpTagCounts(d, post.tags, 1);
     fanOutNewPost(c, post.authorId, post.id);
   }
-  // Explicit manual save (draft or publish) → fill the other language in the
-  // background. Never set by autosave, so editing doesn't re-burn the API.
-  if (body?.translate === true) scheduleTranslation(c, post);
+  if (translating) scheduleTranslation(c, post);
   // Embed published posts for the semantic layer (no-op without an embed key).
   if (status === 'published') scheduleEmbedding(c, post.id);
   return c.json({ post: publicPost(post) }, 201);
@@ -370,6 +394,13 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   if (body?.score !== undefined) patch.score = parseScore(body.score);
   if (body?.tags !== undefined) patch.tags = parseTags(body.tags);
 
+  // Explicit manual save (draft or publish), not autosave → refill the other
+  // language in the background. Decide against the post as it will exist AFTER
+  // this patch, and store 'pending' in the same write.
+  const merged = { ...existing, ...patch } as PostRow;
+  const translating = body?.translate === true && canTranslate(c, merged);
+  if (translating) patch.translationStatus = 'pending';
+
   const post = await updatePost(d, existing.id, patch);
 
   // Reconcile published counts across status and category transitions.
@@ -398,15 +429,31 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
     if (removed.length) await bumpTagCounts(d, removed, -1);
   }
 
-  // Explicit manual save (draft or publish), not autosave → refill the other
-  // language in the background.
-  if (body?.translate === true && post) scheduleTranslation(c, post);
+  if (translating && post) scheduleTranslation(c, post);
   // Re-embed when text changed on a published post (no-op without an embed key).
   if (post && post.status === 'published' && (body?.bodyEn !== undefined || body?.bodyJa !== undefined || body?.titleEn !== undefined || body?.titleJa !== undefined)) {
     scheduleEmbedding(c, post.id);
   }
 
   return c.json({ post: publicPost(post!) });
+});
+
+// Re-run the background translation (owner only) — the recovery path for a
+// 'failed' (or Worker-killed 'pending') job, surfaced as a retry chip on the
+// owner's post cards. Unlike the publish-time run this is an explicit spend,
+// so it also checks the daily AI quota.
+app.post('/:id/translate', requireAuth, limits.translate, async (c) => {
+  const d = db(c);
+  const existing = await getPostById(d, c.req.param('id'));
+  if (!existing) return c.json({ error: 'not_found' }, 404);
+  if (existing.authorId !== c.var.user!.id) return c.json({ error: 'forbidden' }, 403);
+  if (!c.env.OPENAI_API_KEY) return c.json({ error: 'translate_unconfigured' }, 503);
+  if (!canTranslate(c, existing)) return c.json({ error: 'nothing_to_translate' }, 400);
+  if (await overAiQuota(c, c.var.user!.id)) return c.json({ error: 'ai_quota_exceeded' }, 429);
+
+  const post = await updatePost(d, existing.id, { translationStatus: 'pending' });
+  scheduleTranslation(c, post!);
+  return c.json({ translationStatus: 'pending' });
 });
 
 // Delete (owner only). Drop the published count if it was live.

@@ -6,6 +6,7 @@
 // tool lands. The SPA (reader/composer/profile) lives at /{locale}/app.
 import { HomeHeader, HomeFooter } from "../../nihon/home-chrome.jsx";
 import { ssrFetch, fwdIp } from "../../lib/ssr";
+import Toaster from "../../components/Toaster.astro";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -647,5 +648,6 @@ const pageDesc = jp
         }, 6000);
       })();
     </script>
+    <Toaster />
   </body>
 </html>

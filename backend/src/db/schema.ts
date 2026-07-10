@@ -163,6 +163,11 @@ export const posts = pgTable('posts', {
   coverLabel: text('cover_label').notNull().default(''),   // PHOTO tag on the cover
   coverCredit: text('cover_credit').notNull().default(''), // credit line under it
   status: text('status').notNull().default('draft'),   // 'draft' | 'published'
+  // Background auto-translate bookkeeping: 'none' (never scheduled) | 'pending'
+  // (job scheduled/running — also what a killed Worker leaves behind, so pending
+  // is retryable) | 'done' | 'failed'. Owner surfaces show pending/failed with
+  // a retry; readers never see this.
+  translationStatus: text('translation_status').notNull().default('none'),
   // Moderator hide: a published post can be hidden (drops from every public read)
   // without losing its 'published' status, so unhiding restores it cleanly.
   isHidden: boolean('is_hidden').notNull().default(false),

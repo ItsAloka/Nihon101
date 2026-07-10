@@ -35,7 +35,7 @@ const whiteList: Record<string, string[]> = {
   a: ['href', 'target', 'rel'],
   img: ['src', 'alt', 'style', 'loading', 'decoding'],
   figure: ['data-ri', 'style', 'class'],
-  figcaption: [],
+  figcaption: ['class'],
   span: ['style', 'class'],
   div: ['data-youtube-video', 'style', 'class'],
   iframe: ['src', 'width', 'height', 'title', 'style', 'allow', 'allowfullscreen', 'frameborder'],

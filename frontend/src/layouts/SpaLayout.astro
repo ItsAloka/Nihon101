@@ -3,6 +3,7 @@
 // the design-tool bundle into src/nihon/*. It is a client-only React island with
 // its own hash routing + language toggle; SSR/SEO + real locale split is a later step.
 import App from "../nihon/app.jsx";
+import Toaster from "../components/Toaster.astro";
 
 interface Props {
   lang?: string;
@@ -122,5 +123,6 @@ const { lang = "ja", syncLang = false } = Astro.props;
       </script>
     )}
     <App client:only="react" />
+    <Toaster />
   </body>
 </html>

@@ -1,0 +1,1 @@
+ALTER TABLE "posts" ADD COLUMN "translation_status" text DEFAULT 'none' NOT NULL;

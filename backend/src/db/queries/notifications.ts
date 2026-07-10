@@ -66,6 +66,7 @@ export interface NotifRow {
   actorName: string | null;
   actorNameJa: string | null;
   actorHandle: string | null;
+  actorAvatarUrl: string | null;
   postId: string | null;
   postSlug: string | null;
   postTitleEn: string | null;
@@ -104,6 +105,7 @@ export async function listNotifications(
       actorName: users.displayName,
       actorNameJa: users.displayNameJa,
       actorHandle: users.handle,
+      actorAvatarUrl: users.avatarUrl,
       postId: notifications.postId,
       postSlug: posts.slug,
       postTitleEn: posts.titleEn,

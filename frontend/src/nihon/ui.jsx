@@ -637,8 +637,12 @@ function NotifPanel({ p, lang, onClose, onUnread }) {
                   background: n.read ? 'transparent' : `color-mix(in oklab, ${p.accent} 10%, ${p.surface})`,
                 }}>
                   <button onClick={()=>openRow(n)} style={rowOpen}>
-                    <span style={{flexShrink:0, marginTop:2}}>
-                      {n.kind==='like' ? <HeartIcon color={p.stamp} filled size={18}/>
+                    {/* The actor's face, like Not Bagel — the row reads as a person,
+                        and clicking a like/follow goes to their profile. Fallback to
+                        the kind icon when they have no avatar. */}
+                    <span style={{flexShrink:0, marginTop:2, width:30, height:30, borderRadius:'50%', overflow:'hidden', display:'inline-flex', alignItems:'center', justifyContent:'center', background:n.avatarUrl?'transparent':p.bg, border:n.avatarUrl?`1px solid ${p.line}`:'none'}}>
+                      {n.avatarUrl ? <img src={n.avatarUrl} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+                       : n.kind==='like' ? <HeartIcon color={p.stamp} filled size={18}/>
                        : n.kind==='comment' ? <CommentIcon color={p.accentDeep} size={18}/>
                        : n.kind==='follow' ? <span style={{fontFamily:'var(--fontDisplay)', color:p.accentDeep, fontWeight:700, fontSize:16}}>+</span>
                        : <BellIcon color={p.accentDeep} size={18}/>}

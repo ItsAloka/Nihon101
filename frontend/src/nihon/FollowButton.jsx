@@ -47,6 +47,7 @@ export default function FollowButton({ handle, locale = "ja", followers = 0, sho
     } catch {
       setState(following ? "following" : "not"); // rollback
       setCount((n) => n + (following ? 1 : -1));
+      window.__nihon_toast?.(jp ? "フォローを更新できませんでした — もう一度お試しください" : "Couldn’t update follow — try again");
     } finally { setBusy(false); }
   };
 

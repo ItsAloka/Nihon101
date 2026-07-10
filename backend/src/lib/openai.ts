@@ -43,6 +43,10 @@ export async function translateFields(
   const payload = {
     model: MODEL,
     // GPT-5 reasoning models only accept the default temperature — don't set it.
+    // Translation needs no chain-of-thought: minimal effort skips the reasoning
+    // tokens, which is what kept full-post calls from finishing inside the 30s
+    // fetch timeout / Workers waitUntil window.
+    reasoning_effort: 'minimal' as const,
     response_format: { type: 'json_object' as const },
     messages: [
       { role: 'system', content: systemPrompt(to) },
@@ -65,6 +69,88 @@ export async function translateFields(
 
   const parsed = JSON.parse(content) as TranslateFields;
   return parsed;
+}
+
+/* ---- Whole-post translation (chunked + parallel) --------------------------
+ * One call for a full post body used to time out: gpt-5-mini emitting several
+ * thousand output tokens takes well over the 30s fetch timeout, and the whole
+ * job runs in waitUntil, which Workers kills ~30s after the response anyway.
+ * So the body is split into standalone chunks of complete top-level blocks and
+ * every piece (title+excerpt, then each chunk) is translated in PARALLEL —
+ * total wall time ≈ the slowest single small call, comfortably inside both
+ * limits. All-or-nothing: any failed piece rejects the whole translation, so
+ * a half-translated body is never stored. */
+
+// Void tags in sanitized TipTap output (see sanitizeHtml whitelist) — they
+// never close, so they must not move the depth counter.
+const VOID_TAGS = new Set(['img', 'br', 'hr', 'col']);
+
+/** Split sanitized post HTML into chunks of ≤ maxLen chars, cutting ONLY on
+ * top-level block boundaries so every chunk is valid standalone HTML (a `</p>`
+ * inside a `<li>` never splits). A single oversized block stays whole.
+ * Chunk size is a latency knob, not a cost one: the calls run in parallel, so
+ * wall time ≈ the SLOWEST single chunk. 2000 chars ≈ 10-15s on gpt-5-mini —
+ * measured 28.6s for a 4000-char chunk, which grazed the 30s waitUntil kill. */
+export function splitHtmlBlocks(html: string, maxLen = 2000): string[] {
+  const blocks: string[] = [];
+  const tagRe = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>/g;
+  let depth = 0;
+  let start = 0;
+  let m: RegExpExecArray | null;
+  while ((m = tagRe.exec(html))) {
+    const name = m[2].toLowerCase();
+    if (!VOID_TAGS.has(name)) depth = Math.max(0, depth + (m[1] === '/' ? -1 : 1));
+    if (depth === 0) {
+      blocks.push(html.slice(start, m.index + m[0].length));
+      start = m.index + m[0].length;
+    }
+  }
+  if (start < html.length) blocks.push(html.slice(start));
+
+  const chunks: string[] = [];
+  let cur = '';
+  for (const b of blocks) {
+    if (cur && cur.length + b.length > maxLen) { chunks.push(cur); cur = ''; }
+    cur += b;
+  }
+  if (cur.trim()) chunks.push(cur);
+  return chunks.filter((c) => c.trim());
+}
+
+/** Translate a whole post (title/excerpt/body) into `to`, chunking the body.
+ * Throws if ANY piece fails — callers store either a complete translation or
+ * nothing. */
+export async function translatePost(
+  apiKey: string,
+  to: Locale,
+  fields: TranslateFields,
+): Promise<TranslateFields> {
+  const out: TranslateFields = {};
+  const jobs: Promise<void>[] = [];
+
+  const meta: TranslateFields = {};
+  if (fields.title?.trim()) meta.title = fields.title;
+  if (fields.excerpt?.trim()) meta.excerpt = fields.excerpt;
+  if (Object.keys(meta).length) {
+    jobs.push(translateFields(apiKey, to, meta).then((r) => {
+      if (meta.title && !r.title) throw new Error('openai_missing_title');
+      if (r.title != null) out.title = r.title;
+      if (r.excerpt != null) out.excerpt = r.excerpt;
+    }));
+  }
+
+  const chunks = fields.body?.trim() ? splitHtmlBlocks(fields.body) : [];
+  const bodyParts: string[] = new Array(chunks.length);
+  chunks.forEach((chunk, i) => {
+    jobs.push(translateFields(apiKey, to, { body: chunk }).then((r) => {
+      if (!r.body) throw new Error('openai_missing_body_chunk');
+      bodyParts[i] = r.body;
+    }));
+  });
+
+  await Promise.all(jobs);
+  if (chunks.length) out.body = bodyParts.join('');
+  return out;
 }
 
 export interface CategorySuggestion { labelEn: string; labelJa: string; kanji: string; }

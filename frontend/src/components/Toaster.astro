@@ -1,0 +1,40 @@
+---
+/* Site-wide toast pill (ported from Not Bagel's Toaster). Defines
+ * window.__nihon_toast(msg) — the ONE feedback channel every island uses for
+ * transient success/failure messages ("Link copied!", "Could not update like").
+ * Plain inline script, no hydration: it must exist before any island fires.
+ * Included by Shell.astro, SpaLayout.astro AND [locale]/index.astro (the three
+ * page shells — same trio as the duplicated nav CSS). Uses the global theme
+ * variables, so it follows light/dark automatically. */
+---
+<div id="nihon-toast" role="status" aria-live="polite"></div>
+
+<script is:inline>
+  (function () {
+    if (window.__nihon_toast) return; // one definition even if a shell nests
+    var timer = null;
+    window.__nihon_toast = function (msg) {
+      var el = document.getElementById('nihon-toast');
+      if (!el || !msg) return;
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(timer);
+      timer = setTimeout(function () { el.classList.remove('show'); }, 2400);
+    };
+  })();
+</script>
+
+<style is:global>
+  #nihon-toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 16px);
+    z-index: 200; max-width: min(88vw, 480px);
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--line); border-left: 3px solid var(--stamp);
+    border-radius: 12px; padding: 11px 18px;
+    font-family: var(--fontBody); font-size: 13.5px; font-weight: 600;
+    box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--ink) 45%, transparent);
+    opacity: 0; pointer-events: none;
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  #nihon-toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>

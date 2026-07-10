@@ -359,6 +359,11 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const [edReady, setEdReady] = React.useState(false); // editor mounted → safe to load content
   const savingRef = React.useRef(false);
   const lastTranslated = React.useRef(''); // snapshot of source at last GPT translate (dirty-check)
+  // The post's source language as loaded (null = new post). Editing the OTHER
+  // side must never auto-translate: that would machine-overwrite the side a
+  // human actually wrote. The owner can still force it via the profile-card
+  // retry chip — an explicit action.
+  const origLang = React.useRef(null);
   const ja = blogLang==='ja';
 
   const bodyText = htmlToText(bodyHtml);
@@ -431,6 +436,18 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       setCoverLabel(po.coverLabel||''); setCoverCredit(po.coverCredit||'');
       setDensity(po.density||'compact'); setSavedStatus(po.status);
       edApi.current.setHTML(body);
+      origLang.current = po.lang === 'ja' ? 'ja' : 'en';
+      // The other side already holds a translation → seed the dirty-check with
+      // the freshly-loaded source (normalized through the editor, exactly how
+      // save() snapshots it), so re-publishing UNCHANGED text doesn't re-burn
+      // the API and re-overwrite the other locale.
+      if (other.current.title || other.current.body) {
+        lastTranslated.current = JSON.stringify({
+          title: (L==='ja' ? po.titleJa : po.titleEn).trim(),
+          excerpt: (L==='ja' ? po.excerptJa : po.excerptEn).trim(),
+          body: edApi.current.getHTML(),
+        });
+      }
     }).catch(()=>setStatus('Could not load that post'));
   }, [editId, edReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -483,10 +500,13 @@ function ComposerPage({ p, lang, currentUser, editId }) {
     setBusy(true); setStatus(st==='published'?'Publishing…':'Saving…');
     try {
       // Manual save (draft OR publish) translates — but only if the source text
-      // changed since the last translation (dirty-check); rapid clicks cost nothing.
+      // changed since the last translation (dirty-check); rapid clicks cost
+      // nothing. Never when editing the post's TRANSLATED side (crossEdit):
+      // auto-translate there would overwrite the human-written original.
       const liveBody = edApi.current ? edApi.current.getHTML() : bodyHtml;
       const snap = JSON.stringify({ title: title.trim(), excerpt: excerpt.trim(), body: liveBody });
-      const dirty = snap !== lastTranslated.current;
+      const crossEdit = !!origLang.current && origLang.current !== blogLang;
+      const dirty = !crossEdit && snap !== lastTranslated.current;
       const payload = buildPayload(st, dirty);
       const po = postId ? await window.N101_CONTENT.postApi.update(postId, payload)
                         : await window.N101_CONTENT.postApi.create(payload);
@@ -494,7 +514,12 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       setPostId(po.id); setSavedStatus(st);
       lastSavedSnap.current = autosaveSnap(payload);   // autosave sees this content as clean
       refreshCats();   // publish/unpublish/move changed post_count — refresh the badges
-      if (st==='published') window.__nihon_go({name:'profile'});
+      if (st==='published') {
+        window.__nihon_toast?.(dirty
+          ? (lang==='jp' ? '公開しました — もう一方の言語版をバックグラウンドで生成中' : 'Published! Translating the other language in the background')
+          : (lang==='jp' ? '公開しました' : 'Published!'));
+        window.__nihon_go({name:'profile'});
+      }
       else setStatus('Draft saved');
     } catch (e) {
       setStatus(e.code === 'too_many_images'
@@ -724,12 +749,43 @@ function MyPostCard({ p, lang, post, onChanged }) {
   const open = ()=> window.__nihon_go(post.status==='draft'
     ? {name:'compose', editId: post.id}
     : {name:'article', slug: post.slug});
+  // Background-translation state — the "never fails silently" surface. pending →
+  // quiet chip; failed → a retry button (also covers a Worker-killed job that
+  // left 'pending' behind: the chip itself is clickable to re-kick). A post with
+  // NO status but a missing other-locale title (published before this pipeline
+  // existed, or translation skipped) gets a "translate" chip too.
+  const [tstat, setTstat] = React.useState(post.translationStatus);
+  React.useEffect(()=>{ setTstat(post.translationStatus); }, [post.translationStatus]);
+  const otherLangLabel = post.lang==='ja' ? 'EN' : 'JA';
+  const otherMissing = post.lang==='ja' ? !post.titleEn : !post.titleJa;
+  const retryTranslate = async (e)=>{
+    e.stopPropagation();
+    const was = tstat;
+    setTstat('pending');
+    try { await window.N101_CONTENT.postApi.retryTranslate(post.id); window.__nihon_toast?.(lang==='jp'?'翻訳をやり直しています…':'Retrying the translation…'); }
+    catch { setTstat(was); window.__nihon_toast?.(lang==='jp'?'翻訳を開始できませんでした':'Could not start the translation'); }
+  };
+  const tChip = (bg, fg, label)=>({ position:'absolute', top:10, right:10, zIndex:2, display:'inline-flex', alignItems:'center', gap:5,
+    background:bg, color:fg, border:'none', cursor:'pointer', fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.08em',
+    textTransform:'uppercase', padding:'4px 9px', borderRadius:999, boxShadow:'0 4px 12px -6px rgba(0,0,0,.4)' });
   return (
     <div onClick={open} style={{position:'relative', borderRadius:22, border:`1.5px solid ${p.line}`, background:p.surface, padding:14, display:'flex', flexDirection:'column', gap:12, cursor:'pointer', transition:'transform .25s ease, border-color .25s ease, box-shadow .25s ease'}}
       onMouseEnter={(e)=>{ e.currentTarget.style.transform='translateY(-4px)'; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.accent} 55%, ${p.line})`; e.currentTarget.style.boxShadow=`0 18px 30px -22px color-mix(in oklab, ${p.accentDeep} 45%, transparent)`; }}
       onMouseLeave={(e)=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.boxShadow='none'; }}>
       <div style={{position:'relative', height:200, borderRadius:14, overflow:'hidden', background: post.cover?undefined:`linear-gradient(135deg, ${c1}, ${c2})`}}>
         {post.status==='draft' && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
+        {tstat==='pending' && (
+          <button onClick={retryTranslate} title={lang==='jp'?'クリックで再実行':'Click to re-run'}
+            style={tChip(p.surface, p.inkSoft, '')}>⏳ {otherLangLabel} {lang==='jp'?'翻訳中…':'translating…'}</button>
+        )}
+        {tstat==='failed' && (
+          <button onClick={retryTranslate}
+            style={tChip('#c0392b', '#fff', '')}>⚠ {otherLangLabel} {lang==='jp'?'翻訳失敗 — 再試行':'failed — retry'}</button>
+        )}
+        {(tstat==='none' || !tstat) && otherMissing && (
+          <button onClick={retryTranslate}
+            style={tChip(p.ink, p.surface, '')}>⇄ {otherLangLabel} {lang==='jp'?'未翻訳 — 翻訳する':'missing — translate'}</button>
+        )}
         {post.cover && <img src={post.cover} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>}
       </div>
       <div style={{padding:'0 4px', display:'flex', flexDirection:'column', gap:10, flex:1}}>
@@ -831,6 +887,7 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
       const u = await window.N101_API.updateProfile(patch);
       onUpdateUser(window.N101_API.toAppUser(u, user));
       setEditing(false);
+      window.__nihon_toast?.(lang==='jp' ? 'プロフィールを更新しました' : 'Profile updated');
     } catch (e) {
       setSaveErr(e.code==='handle_taken' ? (lang==='jp'?'このハンドルは使われています。':'That handle is already taken.')
         : e.code==='invalid_handle' ? (lang==='jp'?'ハンドルは半角英数字とハイフン3〜30文字。':'Handle: 3–30 chars, a–z, 0–9, hyphens.')

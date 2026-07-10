@@ -153,10 +153,13 @@ export function HomeHeader({ locale, active = "home" }) {
       const was = saved.has(slug);
       was ? saved.delete(slug) : saved.add(slug);
       setSavedCount(saved.size); paint();
-      window.N101_CONTENT.postApi.toggleSave(slug).catch(() => { // rollback
-        was ? saved.add(slug) : saved.delete(slug);
-        setSavedCount(saved.size); paint();
-      });
+      window.N101_CONTENT.postApi.toggleSave(slug)
+        .then(() => window.__nihon_toast?.(loc === "ja" ? (was ? "保存を解除しました" : "保存しました") : (was ? "Removed from saved" : "Saved")))
+        .catch(() => { // rollback — and say so
+          was ? saved.add(slug) : saved.delete(slug);
+          setSavedCount(saved.size); paint();
+          window.__nihon_toast?.(loc === "ja" ? "保存できませんでした — もう一度お試しください" : "Could not update save — try again");
+        });
     };
     btns.forEach((b) => b.addEventListener("click", onClick));
     return () => btns.forEach((b) => b.removeEventListener("click", onClick));

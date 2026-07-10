@@ -30,6 +30,9 @@ const h = makeHelpers(categories, jp);
 const title = h.title(post);
 const excerpt = h.excerpt(post);
 const bodyHtml = (jp ? post.bodyJa : post.bodyEn) || (jp ? post.bodyEn : post.bodyJa) || "";
+// This locale's body doesn't exist yet (translation pending/failed) → we're
+// showing the other language. Tell the reader instead of pretending.
+const langFallback = jp ? (!post.bodyJa && !!post.bodyEn) : (!post.bodyEn && !!post.bodyJa);
 const authorName = h.authorName(post);
 const ms = post.publishedAt ?? post.createdAt;
 const dateStr = h.dateFmt(ms);
@@ -84,7 +87,10 @@ const jsonLd = {
   image: [post.cover || 'https://nihon101.com/og-default.png'],
   datePublished: publishedISO,
   dateModified: modifiedISO,
-  inLanguage: jp ? 'ja' : 'en',
+  // The language of the body ACTUALLY shown — when the translation is missing
+  // this page serves the other locale's text, and lying to crawlers about it
+  // reads as duplicate content.
+  inLanguage: langFallback ? (jp ? 'en' : 'ja') : (jp ? 'ja' : 'en'),
   author: {
     '@type': 'Person',
     name: authorName,
@@ -166,6 +172,13 @@ const jsonLd = {
     )}
 
     <div class="wrap">
+      {langFallback && (
+        <div class="rd-langnote">
+          {jp
+            ? "この記事はまだ日本語に翻訳されていません — 英語の原文を表示しています。"
+            : "This story hasn’t been translated into English yet — showing the Japanese original."}
+        </div>
+      )}
       <div class={`rd-body${jp ? "" : " rd-dropcap"}`} set:html={bodyHtml}></div>
 
       {post.tags && post.tags.length > 0 && (
@@ -223,6 +236,9 @@ const jsonLd = {
     .rd-credit { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); letter-spacing: 0.04em; text-align: center; margin-top: 14px; max-width: 1080px; margin-left: auto; margin-right: auto; }
     .rd > .wrap:has(.rd-cover) { margin-bottom: 48px; }
 
+    .rd-langnote { max-width: 680px; margin: 0 auto 22px; padding: 12px 16px; border: 1px solid var(--line);
+      border-left: 3px solid var(--stamp); border-radius: 10px; background: var(--surface);
+      font-family: var(--fontBody); font-size: 13.5px; color: var(--inkSoft); }
     .rd-body { max-width: 680px; margin: 0 auto; font-family: var(--fontDisplay); font-size: 20px; line-height: var(--lh); color: var(--ink); }
     .rd-body :global(p) { margin: 0; }
     /* Density gap between ALL blocks (headings keep their own rhythm) — same
@@ -245,7 +261,7 @@ const jsonLd = {
     .rd-body :global(pre) { background: var(--ink); color: var(--surface); padding: 16px; border-radius: 12px; overflow: auto; font-family: var(--fontMono); font-size: 14px; margin: 0; }
     .rd-body :global(img) { max-width: 100%; height: auto; border-radius: 12px; }
     .rd-body :global(figure) { margin: 24px 0; }
-    .rd-body :global(figcaption) { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); text-align: center; margin-top: 8px; }
+    .rd-body :global(figcaption) { font-family: var(--fontBody); font-size: 13.5px; color: var(--inkSoft); text-align: center; margin-top: 8px; line-height: 1.5; font-style: italic; }
     .rd-body :global(table) { border-collapse: collapse; width: 100%; margin: 0; }
     .rd-body :global(td), .rd-body :global(th) { border: 1px solid var(--line); padding: 8px 10px; }
     .rd-body :global(th) { background: var(--bg); font-weight: 700; }

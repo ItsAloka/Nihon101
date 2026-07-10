@@ -141,14 +141,17 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
   const cat = window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.category);
   const real = !!post._real;
   const isOwner = real && currentUser && currentUser.id===post._authorId;
-  const realBody = real ? (lang==='jp' ? post._bodyJa : post._bodyEn) : '';
+  // Fall back to the other locale when this one isn't translated yet (never an
+  // empty page), and say so via langFallback — mirrors the SSR reader.
+  const realBody = real ? ((lang==='jp' ? post._bodyJa : post._bodyEn) || post._bodyEn || post._bodyJa || '') : '';
+  const langFallback = real && !(lang==='jp' ? post._bodyJa : post._bodyEn) && !!realBody;
   const related = real ? [] : window.getAllPosts().filter(x=>x.category===post.category && x.slug!==post.slug).slice(0,3);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const [delBusy, setDelBusy] = React.useState(false);
   const doDelete = async ()=>{
     setDelBusy(true);
-    try { await window.N101_CONTENT.postApi.remove(post._id); window.__nihon_go({name:'profile'}); }
-    catch { setDelBusy(false); }
+    try { await window.N101_CONTENT.postApi.remove(post._id); window.__nihon_toast?.(lang==='jp'?'記事を削除しました':'Post deleted'); window.__nihon_go({name:'profile'}); }
+    catch { setDelBusy(false); window.__nihon_toast?.(lang==='jp'?'削除できませんでした — もう一度お試しください':'Delete failed — try again'); }
   };
   const ownerActions = (
     <div style={{display:'flex', gap:10}}>
@@ -230,6 +233,13 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
       {/* Body */}
       <div style={{...maxWrap()}}>
         <div style={{maxWidth:680, margin:'0 auto'}}>
+          {langFallback && (
+            <div style={{maxWidth:680, margin:'0 auto 22px', padding:'12px 16px', border:`1px solid ${p.line}`, borderLeft:`3px solid ${p.stamp}`, borderRadius:10, background:p.surface, fontFamily:'var(--fontBody)', fontSize:13.5, color:p.inkSoft}}>
+              {lang==='jp'
+                ? 'この記事はまだ日本語に翻訳されていません — 英語の原文を表示しています。'
+                : 'This story hasn’t been translated into English yet — showing the Japanese original.'}
+            </div>
+          )}
           {real && <ArticleHtml p={p} html={realBody} density={post._density}/>}
           {!real && body.map((para, i)=>{
             const firstLetter = i===0 && para.length;
@@ -385,7 +395,7 @@ function ArticleHtml({ p, html, density }) {
   .art-html pre { background:${p.ink}; color:${p.surface}; padding:16px; border-radius:12px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0; }
   .art-html img { max-width:100%; height:auto; border-radius:12px; }
   .art-html figure { margin:24px 0; }
-  .art-html figcaption { font-family:var(--fontMono); font-size:12px; color:${p.inkFaint}; text-align:center; margin-top:8px; }
+  .art-html figcaption { font-family:var(--fontBody); font-size:13.5px; color:${p.inkSoft}; text-align:center; margin-top:8px; line-height:1.5; font-style:italic; }
   .art-html table { border-collapse:collapse; width:100%; margin:0; }
   .art-html td,.art-html th { border:1px solid ${p.line}; padding:8px 10px; }
   .art-html th { background:${p.bg}; font-weight:700; }

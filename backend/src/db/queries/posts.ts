@@ -27,10 +27,13 @@ export interface NewPostInput {
   coverLabel: string;
   coverCredit: string;
   status: PostStatus;
+  translationStatus?: TranslationStatus; // 'pending' when a background job rides this save
   density: PostDensity;
   score: number | null;
   tags: string[];
 }
+
+export type TranslationStatus = 'none' | 'pending' | 'done' | 'failed';
 
 /** Globally-unique slug from a title (English wins, JA fallback, id tail last). */
 async function uniqueSlug(db: DB, titleEn: string, titleJa: string, idTail: string): Promise<string> {
@@ -63,6 +66,7 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     coverLabel: input.coverLabel,
     coverCredit: input.coverCredit,
     status: input.status,
+    translationStatus: input.translationStatus ?? 'none',
     isHidden: false,
     hiddenReason: '',
     density: input.density,
@@ -241,6 +245,7 @@ export interface UpdatePostInput {
   coverLabel?: string;
   coverCredit?: string;
   status?: PostStatus;
+  translationStatus?: TranslationStatus;
   density?: PostDensity;
   score?: number | null;
   tags?: string[];
@@ -281,6 +286,7 @@ export function publicPostCard(p: PostCardRow) {
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,
     status: p.status,
+    translationStatus: p.translationStatus,
     isHidden: p.isHidden,
     density: p.density,
     score: p.score,
@@ -320,6 +326,7 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,
     status: p.status,
+    translationStatus: p.translationStatus,
     isHidden: p.isHidden,
     hiddenReason: p.hiddenReason,
     density: p.density,

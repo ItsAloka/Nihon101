@@ -24,7 +24,14 @@ function ImageNodeView({ node, updateAttributes, selected, deleteNode }) {
   const { src, alt } = node.attrs;
   const width = node.attrs.width;
   const align = node.attrs.align || "center";
+  const caption = node.attrs.caption || "";
   const wrapRef = React.useRef(null);
+  const capRef = React.useRef(null);
+
+  // Seed the caption text once (uncontrolled, so the caret never jumps).
+  React.useEffect(() => {
+    if (capRef.current && capRef.current.textContent !== caption) capRef.current.textContent = caption;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startResize = (e) => {
     e.preventDefault();
@@ -72,6 +79,17 @@ function ImageNodeView({ node, updateAttributes, selected, deleteNode }) {
           <span className="ri-handle" onMouseDown={startResize} contentEditable={false} />
         </>
       )}
+      <figcaption
+        ref={capRef}
+        className="ri-cap"
+        data-empty={caption ? undefined : "true"}
+        data-placeholder="Add a caption…"
+        contentEditable
+        suppressContentEditableWarning
+        onInput={(e) => updateAttributes({ caption: e.currentTarget.textContent || "" })}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+        onMouseDown={(e) => e.stopPropagation()}
+      />
     </NodeViewWrapper>
   );
 }
@@ -93,6 +111,11 @@ const ResizableImage = Image.extend({
         },
         renderHTML: () => ({}),
       },
+      caption: {
+        default: "",
+        parseHTML: (el) => el.querySelector?.("figcaption")?.textContent || "",
+        renderHTML: () => ({}),
+      },
     };
   },
   parseHTML() {
@@ -111,8 +134,10 @@ const ResizableImage = Image.extend({
     const { src, alt } = node.attrs;
     const width = node.attrs.width;
     const align = node.attrs.align || "center";
+    const caption = node.attrs.caption || "";
     const img = ["img", { src, alt: alt || "", style: "width:100%;display:block;border-radius:10px" }];
-    return ["figure", { "data-ri": "", style: figStyle(width, align) }, img];
+    const kids = caption ? [img, ["figcaption", { class: "ri-cap" }, caption]] : [img];
+    return ["figure", { "data-ri": "", style: figStyle(width, align) }, ...kids];
   },
   addNodeView() {
     return ReactNodeViewRenderer(ImageNodeView);
@@ -580,6 +605,10 @@ function EditorStyles({ p, density }) {
   .nihon-editor .ed-body .selectedCell { background:color-mix(in oklab, ${p.stamp} 18%, transparent); }
   .nihon-editor .ed-body .column-resize-handle { background:${p.stamp}; width:3px; position:absolute; right:-1px; top:0; bottom:0; pointer-events:none; }
   .nihon-editor .ri-wrap.ri-selected { outline:2px solid ${p.stamp}; outline-offset:2px; border-radius:10px; }
+  /* Image caption — editable line under the photo, placeholder when empty. */
+  .nihon-editor .ri-cap { font-family:var(--fontBody); font-size:13.5px; color:${p.inkSoft}; text-align:center;
+    margin-top:8px; line-height:1.5; font-style:italic; outline:none; min-height:1.2em; }
+  .nihon-editor .ri-cap[data-empty]:empty::before { content:attr(data-placeholder); color:${p.inkFaint}; opacity:.7; font-style:italic; }
   .nihon-editor .ri-handle { position:absolute; right:-5px; top:50%; width:12px; height:40px; transform:translateY(-50%);
     background:${p.stamp}; border-radius:6px; cursor:ew-resize; }
   .nihon-editor .ri-bar { position:absolute; top:-40px; left:50%; transform:translateX(-50%); display:flex; gap:4px; align-items:center;
