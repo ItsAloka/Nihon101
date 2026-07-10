@@ -93,6 +93,7 @@ app.get('/:handle', limits.publicRead, async (c) => {
       bioJa: u.bioJa,
       location: u.location,
       avatarUrl: u.avatarUrl,
+      bannerUrl: u.bannerUrl,
       role: u.role,
       joinedAt: u.createdAt,
     },

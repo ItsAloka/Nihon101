@@ -59,6 +59,12 @@ const canonical = `/${locale}/u/${user.handle}`;
 ---
 <Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active="profile">
   <section class="pf-hero" style={`--atint:${atint};`}>
+    {user.bannerUrl && (
+      <>
+        <img class="pf-banner" src={user.bannerUrl} alt="" aria-hidden="true" />
+        <div class="pf-banner-scrim" aria-hidden="true"></div>
+      </>
+    )}
     <div class="wrap">
       <div class="pf-avatar">
         {user.avatarUrl ? <img src={user.avatarUrl} alt={user.displayName} /> : initials}
@@ -102,8 +108,13 @@ const canonical = `/${locale}/u/${user.handle}`;
   </main>
 
   <style define:vars={{ atint }}>
-    .pf-hero { background: linear-gradient(135deg, color-mix(in oklab, var(--atint) 40%, var(--bg)), var(--bg)); border-bottom: 1px solid var(--line); }
-    .pf-hero .wrap { padding: 64px 32px 52px; display: grid; grid-template-columns: auto 1fr auto; gap: 32px; align-items: center; }
+    /* Tint gradient is the fallback; an uploaded banner covers it. The scrim keeps
+       the name/bio legible over an arbitrary photo. */
+    .pf-hero { position: relative; background: linear-gradient(135deg, color-mix(in oklab, var(--atint) 40%, var(--bg)), var(--bg)); border-bottom: 1px solid var(--line); }
+    .pf-banner { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .pf-banner-scrim { position: absolute; inset: 0;
+      background: linear-gradient(180deg, color-mix(in oklab, var(--bg) 45%, transparent), color-mix(in oklab, var(--bg) 78%, transparent)); }
+    .pf-hero .wrap { position: relative; z-index: 1; padding: 64px 32px 52px; display: grid; grid-template-columns: auto 1fr auto; gap: 32px; align-items: center; }
     .pf-follow-slot { align-self: center; }
     .pf-avatar { width: 148px; height: 148px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line); flex-shrink: 0;
       background: linear-gradient(135deg, var(--atint), color-mix(in oklab, var(--atint) 50%, var(--surface2)));

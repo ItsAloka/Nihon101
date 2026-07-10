@@ -90,7 +90,7 @@ const now = () => Date.now();
 type PublicUser = {
   id: string; email: string; displayName: string; displayNameJa: string; role: string;
   handle: string; bio: string; bioJa: string; location: string; avatarUrl: string | null;
-  emailVerified: boolean;
+  bannerUrl: string | null; emailVerified: boolean;
 };
 const publicUser = (u: any): PublicUser => ({
   id: u.id,
@@ -103,8 +103,27 @@ const publicUser = (u: any): PublicUser => ({
   bioJa: u.bioJa,
   location: u.location,
   avatarUrl: u.avatarUrl,
+  bannerUrl: u.bannerUrl,
   emailVerified: !!u.emailVerified,
 });
+
+/** Accept only our OWN /media URLs (or null to clear) for user-supplied image
+ *  fields. The path shape alone isn't enough: `https://evil.example/media/x/y.jpg`
+ *  matches it, and an external host means a tracking pixel (readers' IPs logged on
+ *  every page the image renders) or an image swapped out after moderation saw it.
+ *  So the ORIGIN must be this API's own too. Returns null when the value is bad. */
+function ownMediaUrl(env: { API_ORIGIN: string; FRONTEND_ORIGIN: string }, raw: unknown): string | null | undefined {
+  if (raw === null) return null;
+  const url = String(raw);
+  if (!/^https?:\/\/[^/]+\/media\/[\w-]+\/[\w.-]+$/.test(url)) return undefined;
+  // Accept the API origin (prod) or the frontend origin (dev, where the Vite proxy
+  // mints upload URLs on the page's own origin).
+  const own = new Set<string>();
+  for (const o of [env.API_ORIGIN, env.FRONTEND_ORIGIN]) {
+    try { own.add(new URL(o).origin); } catch { /* unset in some dev setups */ }
+  }
+  try { return own.has(new URL(url).origin) ? url : undefined; } catch { return undefined; }
+}
 
 /** Mint a fresh single-use verification token (one pending per user — old ones
  *  cleared) and store only its hash. Returns the verification URL to email. The DB
@@ -423,24 +442,15 @@ auth.patch('/me', requireAuth, limits.profile, async (c) => {
     if (location.length > 60) return c.json({ error: 'location_too_long' }, 400);
     set.location = location;
   }
+  if (body.bannerUrl !== undefined) {
+    const bannerUrl = ownMediaUrl(c.env, body.bannerUrl);
+    if (bannerUrl === undefined) return c.json({ error: 'invalid_banner' }, 400);
+    set.bannerUrl = bannerUrl;
+  }
   if (body.avatarUrl !== undefined) {
     const avatarUrl = body.avatarUrl === null ? null : String(body.avatarUrl);
-    // Only our own /media URLs (or clearing) — no hotlinking arbitrary origins. The
-    // path shape alone isn't enough: `https://evil.example/media/x/y.jpg` matches it,
-    // and an external host means a tracking pixel (readers' IPs logged on every page
-    // the avatar renders) or an image swapped after moderation saw it. So the ORIGIN
-    // must be this API's own (env-configured) origin too.
     if (avatarUrl !== null) {
-      const shapeOk = /^https?:\/\/[^/]+\/media\/[\w-]+\/[\w.-]+$/.test(avatarUrl);
-      // Accept the API origin (prod) or the frontend origin (dev, where the Vite
-      // proxy mints upload URLs on the page's own origin).
-      const own = new Set<string>();
-      for (const o of [c.env.API_ORIGIN, c.env.FRONTEND_ORIGIN]) {
-        try { own.add(new URL(o).origin); } catch { /* unset in some dev setups */ }
-      }
-      let originOk = false;
-      try { originOk = own.has(new URL(avatarUrl).origin); } catch { /* malformed */ }
-      if (!shapeOk || !originOk) return c.json({ error: 'invalid_avatar' }, 400);
+      if (ownMediaUrl(c.env, avatarUrl) === undefined) return c.json({ error: 'invalid_avatar' }, 400);
     }
     set.avatarUrl = avatarUrl;
   }

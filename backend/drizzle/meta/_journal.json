@@ -169,6 +169,13 @@
       "when": 1783073103428,
       "tag": "0023_spotty_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783668729101,
+      "tag": "0024_flaky_talos",
+      "breakpoints": true
     }
   ]
 }

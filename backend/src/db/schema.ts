@@ -18,6 +18,7 @@ export const users = pgTable('users', {
   bioJa: text('bio_ja').notNull().default(''),           // JA bio (auto-translated at edit time, author-reviewable)
   location: text('location').notNull().default(''),
   avatarUrl: text('avatar_url'),              // R2 url via /media, null = initials
+  bannerUrl: text('banner_url'),              // R2 url via /media, null = tint gradient
   role: text('role').notNull().default('user'),  // 'user' | 'admin'
   // Ban state mirrored onto the user row for a fast O(1) check at login/refresh;
   // the full history (who/why/when) lives in `bans`. bannedUntil null + isBanned

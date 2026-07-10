@@ -39,6 +39,7 @@ function toAppUser(u, prev) {
     bio_en_raw: u.bio || '',
     bio_ja_raw: u.bioJa || '',
     avatarUrl: u.avatarUrl || null,
+    bannerUrl: u.bannerUrl || null,
     posts: (prev && prev.posts) || 0,
   };
 }
@@ -109,7 +110,8 @@ async function logout() {
 }
 const googleStartUrl = (lang) => `${API_BASE}/auth/google/start?locale=${loc(lang)}`;
 
-// Partial profile update: { displayName?, handle?, bio?, location?, avatarUrl? }.
+// Partial profile update: { displayName?, handle?, bio?, location?, avatarUrl?, bannerUrl? }.
+// avatarUrl/bannerUrl accept null to clear; the server only takes its own /media URLs.
 async function updateProfile(patch) {
   const d = await req('/auth/me', { method: 'PATCH', body: JSON.stringify(patch) });
   return d.user;
@@ -150,10 +152,10 @@ async function likedState(ids) {
   } catch (e) { return []; }
 }
 
-// Upload an avatar blob to R2 via /media; returns its public URL.
-async function uploadAvatar(blob) {
+// Upload a cropped image blob to R2 via /media; returns its public URL.
+async function uploadImage(blob, name = 'image.webp') {
   const form = new FormData();
-  form.append('file', blob, 'avatar.webp');
+  form.append('file', blob, name);
   const res = await fetch(API_BASE + '/media', {
     method: 'POST',
     credentials: 'include',
@@ -164,7 +166,9 @@ async function uploadAvatar(blob) {
   if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), { status: res.status, code: data.error });
   return data.url;
 }
+const uploadAvatar = (blob) => uploadImage(blob, 'avatar.webp');
+const uploadBanner = (blob) => uploadImage(blob, 'banner.webp');
 
 if (typeof window !== 'undefined') {
-  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, verifyEmail, resendVerification, getAccount, changePassword, deleteAccount, forgot, resetPassword, likedState };
+  window.N101_API = { API_BASE, getAccessToken: () => accessToken, toAppUser, register, login, verifyOtp, resendOtp, refresh, logout, googleStartUrl, updateProfile, uploadAvatar, uploadBanner, uploadImage, verifyEmail, resendVerification, getAccount, changePassword, deleteAccount, forgot, resetPassword, likedState };
 }

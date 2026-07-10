@@ -785,9 +785,11 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
   const [handle, setHandle] = React.useState(user.slug);
   const [city, setCity] = React.useState(user.city==='—' ? '' : user.city);
   const [cropFile, setCropFile] = React.useState(null);
+  const [bannerFile, setBannerFile] = React.useState(null);
   const [saveErr, setSaveErr] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const fileRef = React.useRef(null);
+  const bannerRef = React.useRef(null);
 
   const saveProfile = async () => {
     setSaving(true); setSaveErr('');
@@ -827,6 +829,24 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
       setSaveErr(lang==='jp'?'画像をアップロードできませんでした。':'Could not upload the image.');
     }
   };
+  const onBannerCropped = async (blob) => {
+    setBannerFile(null);
+    try {
+      const url = await window.N101_API.uploadBanner(blob);
+      const u = await window.N101_API.updateProfile({ bannerUrl: url });
+      onUpdateUser(window.N101_API.toAppUser(u, user));
+    } catch (e) {
+      setSaveErr(lang==='jp'?'画像をアップロードできませんでした。':'Could not upload the image.');
+    }
+  };
+  const removeBanner = async () => {
+    try {
+      const u = await window.N101_API.updateProfile({ bannerUrl: null });
+      onUpdateUser(window.N101_API.toAppUser(u, user));
+    } catch (e) {
+      setSaveErr(lang==='jp'?'保存できませんでした。':'Could not save.');
+    }
+  };
   const c = window.tintBg(user.tint, p);
   const totalLikes = published.reduce((s,po)=> s + (po.likes||0), 0);
 
@@ -835,8 +855,31 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
 
   return (
     <div>
-      <div style={{background:`linear-gradient(135deg, color-mix(in oklab, ${c} 40%, ${p.bg}), ${p.bg})`, borderBottom:`1px solid ${p.line}`}}>
-        <div className="spa-split spa-pad" style={{...wrap(), padding:'56px 32px 44px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:28, alignItems:'center'}}>
+      {/* Banner sits BEHIND the hero content, tint gradient is the fallback. The
+          scrim keeps the display name / stats legible over an arbitrary photo —
+          without it a bright banner makes the whole header unreadable. */}
+      <div style={{position:'relative', background:`linear-gradient(135deg, color-mix(in oklab, ${c} 40%, ${p.bg}), ${p.bg})`, borderBottom:`1px solid ${p.line}`}}>
+        {user.bannerUrl && (
+          <>
+            <img src={user.bannerUrl} alt="" aria-hidden="true" style={{position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover'}}/>
+            <div aria-hidden="true" style={{position:'absolute', inset:0, background:`linear-gradient(180deg, color-mix(in oklab, ${p.bg} 45%, transparent), color-mix(in oklab, ${p.bg} 78%, transparent))`}}/>
+          </>
+        )}
+        {editing && (
+          <div style={{position:'absolute', top:12, right:12, zIndex:2, display:'flex', gap:8}}>
+            <button onClick={()=>bannerRef.current?.click()} style={{...ghostBtn(p), padding:'7px 14px', fontSize:12}}>
+              {lang==='jp' ? (user.bannerUrl?'バナーを変更':'バナーを追加') : (user.bannerUrl?'Change banner':'Add banner')}
+            </button>
+            {user.bannerUrl && (
+              <button onClick={removeBanner} style={{...ghostBtn(p), padding:'7px 14px', fontSize:12}}>
+                {lang==='jp'?'削除':'Remove'}
+              </button>
+            )}
+            <input ref={bannerRef} type="file" accept="image/*" style={{display:'none'}}
+              onChange={(e)=>{ const f=e.target.files?.[0]; if(f) setBannerFile(f); e.target.value=''; }}/>
+          </div>
+        )}
+        <div className="spa-split spa-pad" style={{...wrap(), position:'relative', zIndex:1, padding:'56px 32px 44px', display:'grid', gridTemplateColumns:'auto 1fr auto', gap:28, alignItems:'center'}}>
           <div onClick={()=>{ if(editing) fileRef.current?.click(); }} style={{position:'relative', cursor: editing?'pointer':'default'}}>
             <Avatar user={user} p={p} size={132}/>
             {editing && (
@@ -975,6 +1018,15 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
         )}
       </div>
       {cropFile && <AvatarCropModal p={p} lang={lang} file={cropFile} onCancel={()=>setCropFile(null)} onDone={onAvatarCropped}/>}
+      {/* Banner reuses the shared crop modal (same one the editor uses for covers
+          and inline images). 3:1 at 1500px wide — matches Not Bagel. */}
+      {bannerFile && window.NihonCropModal && (
+        React.createElement(window.NihonCropModal, {
+          p, file: bannerFile, aspect: 3, outW: 1500,
+          title: lang==='jp' ? 'バナーを切り抜く — 3:1' : 'Crop banner — 3:1',
+          onDone: onBannerCropped, onCancel: ()=>setBannerFile(null),
+        })
+      )}
     </div>
   );
 }
