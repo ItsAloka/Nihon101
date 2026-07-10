@@ -4,3 +4,7 @@
 [test]
 coverage = true
 coverageThreshold = { line = 0.42, function = 0.30 }
+# Tests run against Neon (Singapore) since 2026-07-10 — each query carries real
+# network latency, so multi-request tests blow bun's 5s default per-test timeout.
+# bunfig has no timeout key: the raise lives in the package.json "test" script
+# (--timeout 20000) → run tests with `bun run test`, NOT bare `bun test`.

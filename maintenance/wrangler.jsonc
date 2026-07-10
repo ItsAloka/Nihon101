@@ -1,0 +1,14 @@
+{
+  "name": "nihon101-maintenance",
+  "main": "worker.ts",
+  "compatibility_date": "2024-12-01",
+  // Deploy to ENTER maintenance: `cd maintenance && bunx wrangler deploy`
+  // (this route captures all traffic and takes precedence over the app).
+  // To EXIT maintenance: `bunx wrangler delete` (removes the worker + route)
+  // and let the real site serve again.
+  // NOTE: the route deliberately collides with the frontend custom domain —
+  // deploying it takes over the whole site. That is the point; just remember.
+  "routes": [
+    { "pattern": "nihon101.com/*", "zone_name": "nihon101.com" }
+  ]
+}

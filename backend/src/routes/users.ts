@@ -3,7 +3,7 @@
  * follow/unfollow require auth. */
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
-import { getDb } from '../db/client';
+import { getDb, getDbCached } from '../db/client';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
@@ -66,18 +66,21 @@ app.get('/:handle/following', limits.publicRead, async (c) => {
 });
 
 app.get('/:handle', limits.publicRead, async (c) => {
-  const db = getDb(c);
-  const u = await getUserByHandle(db, c.req.param('handle').toLowerCase());
+  // Public profile shell is shared content → caching handle; the viewer's own
+  // profile re-reads live (they may have just saved Settings), and the per-viewer
+  // follow state always reads live.
+  const viewerId = await optionalUserId(c);
+  let u = await getUserByHandle(getDbCached(c), c.req.param('handle').toLowerCase());
+  if (u && viewerId === u.id) u = await getUserByHandle(getDb(c), c.req.param('handle').toLowerCase()) ?? u;
   if (!u) return c.json({ error: 'not_found' }, 404);
 
-  const viewerId = await optionalUserId(c);
   // Aggregates only — the profile's story feed pages via /search?author=, so this
   // endpoint never loads post rows (the old listPosts path selected up to 200 full
   // bodies per profile view AND per article read, purely to count them).
   const [pub, counts, viewerFollows] = await Promise.all([
-    publishedStats(db, u.id),
-    followCounts(db, u.id),
-    isFollowing(db, viewerId, u.id),
+    publishedStats(getDbCached(c), u.id),
+    followCounts(getDbCached(c), u.id),
+    isFollowing(getDb(c), viewerId, u.id),
   ]);
 
   return c.json({

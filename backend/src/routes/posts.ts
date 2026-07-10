@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { getDb, standaloneDb } from '../db/client';
+import { getDb, getDbCached, standaloneDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
@@ -15,6 +15,7 @@ import {
   createPost,
   getPostById,
   getPostBySlug,
+  getPostCounts,
   getPostWithAuthor,
   getPostWithAuthorBySlug,
   listPosts,
@@ -51,6 +52,9 @@ import {
 
 const app = new Hono<AppEnv>();
 const db = (c: Context<AppEnv>) => getDb(c);
+// Content-cache handle (60s Hyperdrive query cache in prod) — shared-content
+// reads only; per-user state always reads through db(c). See db/client.ts.
+const dbc = (c: Context<AppEnv>) => getDbCached(c);
 
 const MAX_COMMENT = 4_000;
 
@@ -206,10 +210,12 @@ app.get('/', limits.publicRead, async (c) => {
   // Default and 'published' → public. CARD shape (no bodies) + paginated, so a
   // public category/author listing can't be turned into an unbounded full-body
   // scrape. `page` is 0-based; `hasMore` lets a caller page without a COUNT.
+  // Published listings are shared content — identical for every viewer — so they
+  // read through the caching handle.
   const limit = Math.min(PUBLIC_LIST_MAX, Math.max(1, Number(c.req.query('limit')) || PUBLIC_LIST_LIMIT));
   const page = Math.max(0, Number(c.req.query('page')) || 0);
   const { cards, hasMore } = await listPostCards(
-    db(c),
+    dbc(c),
     { categoryId, authorId, status: 'published' },
     limit,
     page * limit,
@@ -218,17 +224,27 @@ app.get('/', limits.publicRead, async (c) => {
 });
 
 // Single post by slug (reading view). Drafts visible only to their author.
+// Cached shell + live overlay: the heavy body/author row may be up to 60s stale
+// (fine for prose), while everything a reader can change this minute — liked,
+// the counters — is re-read live and merged over it.
 app.get('/slug/:slug', limits.publicRead, async (c) => {
-  const post = await getPostWithAuthorBySlug(db(c), c.req.param('slug'));
+  let post = await getPostWithAuthorBySlug(dbc(c), c.req.param('slug'));
   if (!post) return c.json({ error: 'not_found' }, 404);
   const viewer = await currentUser(c);
+  // Read-your-own-writes: the author just edited/published, so the cached shell
+  // may be their pre-edit post. One live refetch, authors/admins only.
+  if (viewerCanSeePrivate(post, viewer)) post = (await getPostWithAuthorBySlug(db(c), c.req.param('slug'))) ?? post;
   const privileged = viewerCanSeePrivate(post, viewer);
   if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
   // Moderator-hidden: tell the public it was removed (don't leak the body) but let
   // the author/admin still load it.
   if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
-  const liked = await hasLikedPost(db(c), post.id, viewer?.id ?? null);
-  return c.json({ post: { ...publicPost(post), liked } });
+  const [liked, counts] = await Promise.all([
+    hasLikedPost(db(c), post.id, viewer?.id ?? null),
+    getPostCounts(db(c), post.id),
+  ]);
+  if (!counts) return c.json({ error: 'not_found' }, 404); // deleted; only the cache survived
+  return c.json({ post: { ...publicPost({ ...post, ...counts }), liked } });
 });
 
 // The requester's saved posts, card shape, newest-saved-first. Registered before
@@ -252,16 +268,22 @@ app.get('/liked-state', limits.publicRead, async (c) => {
   return c.json({ liked: [...set] });
 });
 
-// Single post. Drafts visible only to their author.
+// Single post. Drafts visible only to their author. Same cached-shell +
+// live-overlay pattern as /slug/:slug above.
 app.get('/:id', limits.publicRead, async (c) => {
-  const post = await getPostWithAuthor(db(c), c.req.param('id'));
+  let post = await getPostWithAuthor(dbc(c), c.req.param('id'));
   if (!post) return c.json({ error: 'not_found' }, 404);
   const viewer = await currentUser(c);
+  if (viewerCanSeePrivate(post, viewer)) post = (await getPostWithAuthor(db(c), c.req.param('id'))) ?? post;
   const privileged = viewerCanSeePrivate(post, viewer);
   if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
   if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
-  const liked = await hasLikedPost(db(c), post.id, viewer?.id ?? null);
-  return c.json({ post: { ...publicPost(post), liked } });
+  const [liked, counts] = await Promise.all([
+    hasLikedPost(db(c), post.id, viewer?.id ?? null),
+    getPostCounts(db(c), post.id),
+  ]);
+  if (!counts) return c.json({ error: 'not_found' }, 404);
+  return c.json({ post: { ...publicPost({ ...post, ...counts }), liked } });
 });
 
 // Create a draft or published post.
@@ -457,8 +479,14 @@ app.get('/:id/comments', limits.publicRead, async (c) => {
   const privileged = viewerCanSeePrivate(post, viewer);
   if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
   if (post.isHidden && !privileged) return c.json({ error: 'hidden' }, 451);
-  const rows = await listComments(d, post.id, viewer?.id ?? null);
-  return c.json({ comments: rows.map(publicComment) });
+  // Paginated: top-level comments page via ?offset (?sort=top|new); each parent's
+  // replies ride along. Stays on the live handle — the page carries the viewer's
+  // per-comment liked state.
+  const sort = c.req.query('sort') === 'top' ? 'top' as const : 'new' as const;
+  const offset = Number(c.req.query('offset')) || 0;
+  const limit = Number(c.req.query('limit')) || undefined;
+  const page = await listComments(d, post.id, viewer?.id ?? null, { sort, offset, limit });
+  return c.json({ comments: page.items.map(publicComment), total: page.total, nextOffset: page.nextOffset });
 });
 
 // Add a comment.

@@ -70,8 +70,10 @@ const filter = new FilterXSS({
  *  time (covers both the SSR and SPA read paths automatically). */
 export function sanitizeHtml(input: string): string {
   if (!input) return '';
-  return filter.process(input).replace(
-    /<img\b(?![^>]*\bloading=)/gi,
-    '<img loading="lazy" decoding="async"',
-  );
+  return filter.process(input)
+    .replace(/<img\b(?![^>]*\bloading=)/gi, '<img loading="lazy" decoding="async"')
+    // Blank paragraphs are legit spacing (the reader renders them slim), but cap
+    // runs at 3 — the editor does this client-side; enforce it against raw API
+    // bodies too so nobody publishes giant empty voids.
+    .replace(/(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*){4,}/gi, '<p></p><p></p><p></p>');
 }

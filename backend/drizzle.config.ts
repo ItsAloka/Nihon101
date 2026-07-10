@@ -1,8 +1,8 @@
 import { defineConfig } from 'drizzle-kit';
 
 // Postgres. DATABASE_URL is read from the env when running drizzle-kit
-// (generate/migrate/push). Locally it points at the Docker Postgres; in prod
-// it points at Neon.
+// (generate/migrate/push). Dev AND prod point at Neon — export it from
+// backend/.dev.vars before running any db:* script.
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/db/schema.ts',

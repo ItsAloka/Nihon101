@@ -1,0 +1,152 @@
+============================================================
+  nihon101 - Deployment Guide (copy-paste, in order)
+============================================================
+
+Run everything in Git Bash on native Windows (NO WSL, NO Docker — switched
+2026-07-10, same toolchain as Not Bagel: bun at ~/.bun/bin, Node LTS on PATH).
+Open a Git Bash terminal and paste this FIRST in every new terminal:
+
+cd /c/Users/aloka/Mine/Projects/Nihon101
+
+BRANCH: everything lives on main. Releases = git tags (v0.1N101, v0.2N101…),
+same scheme as Not Bagel's v0.1NB.
+
+
+============================================================
+0. ONE-TIME SETUP (first deploy only — from Not Bagel's launch day)
+============================================================
+# All in Git Bash after `bunx wrangler login` on the Cloudflare account.
+
+# a) DNS on Cloudflare: add nihon101.com as a zone, move nameservers there.
+# b) Workers Paid ($5/mo) — account-level. Not Bagel's free-plan KV cap
+#    (1,000 writes/day) caused a LOGIN OUTAGE on day 2. If nihon101 deploys on
+#    the SAME account as Not Bagel, it is already covered — verify, don't assume.
+# c) KV namespace for trending/rate-limit counters:
+cd backend && bunx wrangler kv namespace create TRENDING_KV
+#    → paste the id into backend/wrangler.toml [[kv_namespaces]].
+# d) TWO Hyperdrive configs pointing at the SAME Neon database
+#    (region tip: Not Bagel picked ap-southeast-1 Singapore for its audience;
+#     pick the region closest to nihon101's readers — Tokyo ap-northeast-1):
+bunx wrangler hyperdrive create nihon101-live   --connection-string="<neon-direct-url>" --caching-disabled
+bunx wrangler hyperdrive create nihon101-cached --connection-string="<neon-direct-url>"   # 60s cache ON (default)
+#    → uncomment the [[hyperdrive]] blocks in backend/wrangler.toml, paste both ids.
+# e) Secrets (backend/): DATABASE_URL JWT_SECRET REFRESH_PEPPER RESEND_API_KEY
+#    OPENAI_API_KEY OPENAI_EMBED_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET
+for s in DATABASE_URL JWT_SECRET REFRESH_PEPPER RESEND_API_KEY OPENAI_API_KEY OPENAI_EMBED_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do bunx wrangler secret put $s; done
+# f) backend/wrangler.toml [vars] for prod: FRONTEND_ORIGIN=https://nihon101.com,
+#    API_ORIGIN=https://api.nihon101.com, GOOGLE_REDIRECT_URI=https://api.nihon101.com/auth/google/callback
+# g) Migrations: ALREADY APPLIED to Neon (all 24, 2026-07-10 — dev now runs on
+#    the same Neon DB; db:verify green). For future schema changes:
+DATABASE_URL="<neon-url from backend/.dev.vars>" bun run db:migrate
+#    PRE-LAUNCH DATA STEP: delete the 4 @test.local seed authors (their posts
+#    cascade) once real content exists; kageloom + real users stay.
+# h) Resend: verify auth.nihon101.com (transactional) AND news.nihon101.com
+#    (Sunday Letter) — the newsletter cron FAILS if news. isn't verified.
+# i) Google OAuth console: add https://api.nihon101.com/auth/google/callback
+#    redirect + https://nihon101.com origin.
+# j) Frontend session KV:
+cd frontend && bunx wrangler kv namespace create SESSION
+#    → paste the id into frontend/wrangler.deploy.jsonc.
+# k) Enable Cloudflare Images on the account (backend [images] binding).
+# l) After first deploy: submit https://nihon101.com/sitemap.xml in Google
+#    Search Console (verify domain via DNS TXT — DNS is on Cloudflare).
+# m) Budget alerts: Cloudflare, Neon, OpenAI, Resend dashboards.
+
+
+============================================================
+1. SAVE YOUR WORK (commit + push)
+============================================================
+
+git status
+git add -A
+git commit -m "describe the change"
+git push
+
+
+============================================================
+2. MAINTENANCE MODE ON  (optional but safest)
+============================================================
+# Shows the bilingual 503 page on nihon101.com while you deploy.
+
+cd maintenance
+bunx wrangler deploy
+cd ..
+
+# nihon101.com now shows the maintenance page.
+# (api.nihon101.com keeps running - that's fine.)
+
+
+============================================================
+3. DEPLOY BACKEND  (api.nihon101.com)
+============================================================
+
+cd backend
+bunx tsc --noEmit && bun test          # don't ship red
+bunx wrangler deploy
+cd ..
+
+
+============================================================
+4. DEPLOY FRONTEND  (nihon101.com)
+============================================================
+
+cd frontend
+bun run build
+bunx wrangler deploy -c wrangler.deploy.jsonc
+cd ..
+
+
+============================================================
+5. MAINTENANCE MODE OFF
+============================================================
+
+cd maintenance
+bunx wrangler delete
+cd ..
+
+# Type y if it asks to confirm. Site is live again.
+
+
+============================================================
+6. SMOKE TEST (expect 200 / 200 / 301)
+============================================================
+
+curl -s -o /dev/null -w '%{http_code}\n' https://nihon101.com/ja/
+curl -s -o /dev/null -w '%{http_code}\n' https://api.nihon101.com/categories
+curl -s -o /dev/null -w '%{http_code}\n' https://www.nihon101.com/ja/   # www → apex 301
+
+# Then open nihon101.com in the browser and click around once
+# (home, an article, like something, a comment).
+
+
+============================================================
+7. MOVE THE RELEASE TAG (after a good deploy)
+============================================================
+
+git tag -fa v0.1N101 -m "v0.1N101 - live release"
+git push -f origin v0.1N101
+
+
+============================================================
+QUICK REFERENCE
+============================================================
+
+Save + push       : git add -A && git commit -m "msg" && git push
+Maintenance ON    : cd maintenance && bunx wrangler deploy && cd ..
+Deploy backend    : cd backend && bunx wrangler deploy && cd ..
+Deploy frontend   : cd frontend && bun run build && bunx wrangler deploy -c wrangler.deploy.jsonc && cd ..
+Maintenance OFF   : cd maintenance && bunx wrangler delete && cd ..
+Smoke test        : curl -s -o /dev/null -w '%{http_code}\n' https://nihon101.com/ja/
+Move release tag  : git tag -fa v0.1N101 -m "v0.1N101" && git push -f origin v0.1N101
+
+FLOW: commit+push -> maintenance ON -> backend -> frontend -> maintenance OFF -> smoke -> move tag
+
+HARD-WON RULES (from Not Bagel's launch, 2026-07-07..09):
+ - Never reuse a pg pool across Worker requests over Hyperdrive — it hangs
+   (intermittent 500s). db/client.ts already does this right; don't "optimize" it.
+ - Per-user data is NEVER cached; only content reads go through HYPERDRIVE_CACHED.
+ - Free-plan KV = 1,000 writes/day — the cron + rate limiter blow it. Paid plan.
+ - Wrangler dev over Hyperdrive needs the env var EXPORTED in the shell
+   (WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE) — .dev.vars is ignored.
+ - Owner's home NXDOMAIN right after DNS move = stale local cache, not an outage.
+============================================================

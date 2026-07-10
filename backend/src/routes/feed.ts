@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { getDb } from '../db/client';
+import { getDb, getDbCached } from '../db/client';
 import type { AppEnv } from '../types';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
@@ -27,16 +27,18 @@ async function optionalUserId(c: Context<AppEnv>): Promise<string | null> {
 // ?limit caps the slice (default 12, max 50); ?page is the 0-based page index.
 app.get('/', limits.feed, async (c) => {
   const userId = await optionalUserId(c);
-  const db = getDb(c);
+  // Logged-out feed is identical for everyone (pure trending+fresh) → caching
+  // handle. A logged-in feed is personal taste-ranked → always live.
+  const db = userId ? getDb(c) : getDbCached(c);
   const result = await forYouFeed(db, {
     userId,
     limit: Number(c.req.query('limit')) || undefined,
     page: Number(c.req.query('page')) || undefined,
     kv: c.env.TRENDING_KV,
   });
-  // Honest hearts: tag each card with whether this viewer liked it.
+  // Honest hearts: tag each card with whether this viewer liked it (live handle).
   if (userId && Array.isArray(result.feed) && result.feed.length) {
-    const liked = await likedPostIds(db, userId, result.feed.map((p: any) => p.id));
+    const liked = await likedPostIds(getDb(c), userId, result.feed.map((p: any) => p.id));
     (result as any).feed = result.feed.map((p: any) => ({ ...p, liked: liked.has(p.id) }));
   }
   return c.json(result);

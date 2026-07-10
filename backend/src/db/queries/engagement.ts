@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, asc, desc, isNull, sql, inArray } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, postLikes, postComments, commentLikes, postSaves, userSignals, users } from '../schema';
 import { id as newId } from '../../lib/ids';
@@ -100,7 +100,7 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
   return { saved, saves: row?.saves ?? 0 };
 }
 
-// Hard cap on the Saved tab. Same reasoning as OWNER_LIST_CAP/MAX_COMMENTS: the
+// Hard cap on the Saved tab. Same reasoning as OWNER_LIST_CAP/MAX_COMMENTS_PAGE: the
 // query must be bounded — a power user's multi-year save history would otherwise
 // load in full (ids here, then a card per id) on every Saved view. Newest-first
 // means the cap drops the oldest tail, which is what a bookmarks view wants.
@@ -127,38 +127,86 @@ export type CommentRow = typeof postComments.$inferSelect & {
   authorAvatarUrl: string | null;
 };
 
-// Hard cap on comments returned in one shot. A slow-reading magazine thread won't
-// realistically pass this, but the query must be bounded — without it a brigaded
-// post would load every comment row into the isolate's memory. (Keyset "load more"
-// can extend this later; newest-first means the cap drops the oldest tail.)
-export const MAX_COMMENTS = 500;
+const commentCols = {
+  id: postComments.id,
+  postId: postComments.postId,
+  userId: postComments.userId,
+  parentId: postComments.parentId,
+  body: postComments.body,
+  likes: postComments.likes,
+  isHidden: postComments.isHidden,
+  createdAt: postComments.createdAt,
+  updatedAt: postComments.updatedAt,
+  authorName: users.displayName,
+  authorNameJa: users.displayNameJa,
+  authorHandle: users.handle,
+  authorAvatarUrl: users.avatarUrl,
+};
 
-/** List a post's comments (newest first, capped) with author name and, when a
- * viewer is known, that viewer's per-comment liked state in one scoped query. */
-export async function listComments(db: DB, postId: string, viewerId: string | null): Promise<(CommentRow & { liked: boolean })[]> {
-  const rows = await db
-    .select({
-      id: postComments.id,
-      postId: postComments.postId,
-      userId: postComments.userId,
-      parentId: postComments.parentId,
-      body: postComments.body,
-      likes: postComments.likes,
-      isHidden: postComments.isHidden,
-      createdAt: postComments.createdAt,
-      updatedAt: postComments.updatedAt,
-      authorName: users.displayName,
-      authorNameJa: users.displayNameJa,
-      authorHandle: users.handle,
-      authorAvatarUrl: users.avatarUrl,
-    })
+export interface CommentPage {
+  items: (CommentRow & { liked: boolean })[];
+  total: number;            // post's full comment count (top-level + replies)
+  nextOffset: number | null;
+}
+
+const COMMENTS_PAGE = 50;
+const MAX_COMMENTS_PAGE = 100;
+
+/** A page of a post's comments. Only the TOP-LEVEL comments are paginated — a
+ * brigaded thread must never load in one unbounded query — and each returned
+ * parent's one level of replies rides along, so a thread is never split across
+ * a page boundary. Ordering ('top' = most-liked, 'new' = newest) is done in SQL
+ * so "Top" is a real global ranking, not a re-sort of whatever happened to load.
+ * When a viewer is known, their per-comment liked state comes in one extra query
+ * scoped to just this page's rows. */
+export async function listComments(
+  db: DB,
+  postId: string,
+  viewerId: string | null,
+  opts: { sort?: 'top' | 'new'; offset?: number; limit?: number } = {},
+): Promise<CommentPage> {
+  const limit = Math.min(MAX_COMMENTS_PAGE, Math.max(1, Math.trunc(opts.limit ?? COMMENTS_PAGE)));
+  const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
+  const order = opts.sort === 'top'
+    ? [desc(postComments.likes), desc(postComments.createdAt), desc(postComments.id)]
+    : [desc(postComments.createdAt), desc(postComments.id)];
+
+  // limit+1 to detect a next page without a second count query.
+  const topRows = await db
+    .select(commentCols)
     .from(postComments)
     .leftJoin(users, eq(postComments.userId, users.id))
-    .where(eq(postComments.postId, postId))
-    .orderBy(desc(postComments.createdAt))
-    .limit(MAX_COMMENTS);
+    .where(and(eq(postComments.postId, postId), isNull(postComments.parentId)))
+    .orderBy(...order)
+    .limit(limit + 1)
+    .offset(offset);
 
-  if (!viewerId || rows.length === 0) return rows.map((r) => ({ ...r, liked: false }));
+  const hasMore = topRows.length > limit;
+  const top = hasMore ? topRows.slice(0, limit) : topRows;
+
+  // Replies for exactly this page's parents — one batched IN query (no N+1),
+  // chronological under each parent.
+  const parentIds = top.map((r) => r.id);
+  const replies = parentIds.length
+    ? await db
+        .select(commentCols)
+        .from(postComments)
+        .leftJoin(users, eq(postComments.userId, users.id))
+        .where(and(eq(postComments.postId, postId), inArray(postComments.parentId, parentIds)))
+        .orderBy(asc(postComments.createdAt))
+    : [];
+
+  const rows = [...top, ...replies];
+
+  // Header shows the true total (from the post's denormalized counter), not just
+  // what's loaded on this page.
+  const [countRow] = await db.select({ total: posts.comments }).from(posts).where(eq(posts.id, postId));
+  const total = countRow?.total ?? rows.length;
+  const nextOffset = hasMore ? offset + limit : null;
+
+  if (!viewerId || rows.length === 0) {
+    return { items: rows.map((r) => ({ ...r, liked: false })), total, nextOffset };
+  }
 
   // Scope to the comments we're actually returning — not every like this viewer has
   // ever made site-wide (that set grows unbounded with a power user's activity).
@@ -167,7 +215,7 @@ export async function listComments(db: DB, postId: string, viewerId: string | nu
     .from(commentLikes)
     .where(and(eq(commentLikes.userId, viewerId), inArray(commentLikes.commentId, rows.map((r) => r.id))));
   const likedSet = new Set(liked.map((l) => l.commentId));
-  return rows.map((r) => ({ ...r, liked: likedSet.has(r.id) }));
+  return { items: rows.map((r) => ({ ...r, liked: likedSet.has(r.id) })), total, nextOffset };
 }
 
 /** Create a comment and bump the post's denormalized comment count.

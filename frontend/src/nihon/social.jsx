@@ -330,6 +330,7 @@ function CharCount({ p, n, max, suffix }){
 
 function ComposerPage({ p, lang, currentUser, editId }) {
   const Editor = window.NihonEditor;
+  const CropModal = window.NihonCropModal;
   // Single source language for the whole post. Fixed from the site language at
   // mount (or the post's own language when editing). The OTHER language is
   // machine-generated in the background on Publish — no tabs, no button.
@@ -421,9 +422,17 @@ function ComposerPage({ p, lang, currentUser, editId }) {
 
   const onEditorChange = React.useCallback((html)=>{ setBodyHtml(html); }, []);
 
-  const onCoverFile = async (e)=>{
+  // Picking a cover opens the shared crop modal framed at 21:9 (what every card
+  // and the reader hero actually show); Apply uploads the cropped WebP.
+  const [coverCrop, setCoverCrop] = React.useState(null);
+  const onCoverFile = (e)=>{
     const f = e.target.files?.[0]; e.target.value='';
     if (!f) return;
+    setCoverCrop(f);
+  };
+  const onCoverCropped = async (blob)=>{
+    setCoverCrop(null);
+    const f = new File([blob], 'cover.webp', { type: 'image/webp' });
     try { setCover(await window.N101_CONTENT.uploadImage(f, { maxEdge: 2400 })); }
     catch { setStatus('Cover upload failed — try a smaller file'); }
   };
@@ -469,12 +478,15 @@ function ComposerPage({ p, lang, currentUser, editId }) {
                         : await window.N101_CONTENT.postApi.create(payload);
       if (dirty) lastTranslated.current = snap;
       setPostId(po.id); setSavedStatus(st);
+      lastSavedSnap.current = autosaveSnap(payload);   // autosave sees this content as clean
       refreshCats();   // publish/unpublish/move changed post_count — refresh the badges
       if (st==='published') window.__nihon_go({name:'profile'});
       else setStatus('Draft saved');
     } catch (e) {
       setStatus(e.code === 'too_many_images'
         ? 'Too many images — a post can hold up to 50 (the cover doesn’t count)'
+        : e.code === 'rate_limited'
+        ? 'Too many saves — wait a few seconds and try again (your text is still here)'
         : 'Save failed — ' + (e.code || 'try again'));
     }
     finally { setBusy(false); }
@@ -487,24 +499,40 @@ function ComposerPage({ p, lang, currentUser, editId }) {
     catch { setBusy(false); setStatus('Delete failed — try again'); }
   };
 
-  // Autosave (2s) as a DRAFT — never translates (keeps the current status,
-  // never flips a live post, so editing never re-burns the API).
-  React.useEffect(()=>{
+  // Autosave — never translates (keeps the current status, never flips a live
+  // post, so editing never re-burns the API). Rebuilt to the WordPress/Ghost
+  // cadence after Not Bagel LOST part of a post to this: the old 2s-pause save
+  // blew the hourly edit limit mid-session, then every save 429'd silently.
+  // Now: saves only when content actually changed (idle tab sends nothing), at
+  // most one request per AUTOSAVE_MS, an instant flush when the tab hides or
+  // closes, and a failed save shows "⚠ Not saved — retrying" and retries on the
+  // next tick instead of dropping work without a word.
+  const AUTOSAVE_MS = 30_000;
+  const autosaveSnap = (payload)=>{ const { translate:_t, status:_s, ...rest } = payload; return JSON.stringify(rest); };
+  const lastSavedSnap = React.useRef('');
+  const autosaveTick = React.useRef(()=>{});
+  autosaveTick.current = async ()=>{
+    if (savingRef.current || busy) return;
     if (!hasContent || !cat) return;
     if (!postId && !bodyText.trim()) return;
-    const tmr = setTimeout(async ()=>{
-      if (savingRef.current || busy) return;
-      savingRef.current = true; setStatus('Saving…');
-      try {
-        const payload = buildPayload(savedStatus, false);
-        const po = postId ? await window.N101_CONTENT.postApi.update(postId, payload)
-                          : await window.N101_CONTENT.postApi.create(payload);
-        setPostId(po.id); setStatus('Saved');
-      } catch { setStatus(''); }
-      finally { savingRef.current = false; }
-    }, 2000);
-    return ()=>clearTimeout(tmr);
-  }, [title, excerpt, bodyHtml, cover, coverLabel, coverCredit, density, tags, cat]); // eslint-disable-line react-hooks/exhaustive-deps
+    const payload = buildPayload(savedStatus, false);
+    const snap = autosaveSnap(payload);
+    if (snap === lastSavedSnap.current) return;   // nothing changed → no request
+    savingRef.current = true; setStatus('Saving…');
+    try {
+      const po = postId ? await window.N101_CONTENT.postApi.update(postId, payload)
+                        : await window.N101_CONTENT.postApi.create(payload);
+      setPostId(po.id); lastSavedSnap.current = snap; setStatus('Saved');
+    } catch { setStatus('⚠ Not saved — retrying'); }   // snap stays dirty → retried next tick
+    finally { savingRef.current = false; }
+  };
+  React.useEffect(()=>{
+    const iv = setInterval(()=>autosaveTick.current(), AUTOSAVE_MS);
+    const flush = ()=>{ if (document.visibilityState === 'hidden') autosaveTick.current(); };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return ()=>{ clearInterval(iv); document.removeEventListener('visibilitychange', flush); window.removeEventListener('pagehide', flush); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const densityLabel = density==='compact'?'Compact':density==='normal'?'Normal':'Relaxed';
   const cycleDensity = ()=> setDensity(d=> d==='compact'?'normal':d==='normal'?'relaxed':'compact');
@@ -515,7 +543,10 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:18}}>
         <button onClick={()=>window.__nihon_go({name:'home'})} style={ghostBtn(p)}><ArrowLeft color={p.inkSoft}/> {lang==='jp'?'破棄':'Discard'}</button>
         <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, marginLeft:6}}>
-          {words} {lang==='jp'?'語':'words'} · {readMins} min{status?` · ${status}`:''}
+          {words} {lang==='jp'?'語':'words'} · {readMins} min
+          {status && (status.startsWith('⚠')
+            ? <span style={{color:'#c0392b', fontWeight:700}}> · {status}</span>
+            : ` · ${status}`)}
         </span>
         <div style={{marginLeft:'auto', display:'flex', gap:10, alignItems:'center'}}>
           {postId && <button disabled={busy} onClick={()=>setConfirmDel(true)} style={{...ghostBtn(p), color:'#c0392b', borderColor:'#e6b3ab'}}>{lang==='jp'?'削除':'Delete'}</button>}
@@ -631,6 +662,12 @@ function ComposerPage({ p, lang, currentUser, editId }) {
         </div>
       </div>
 
+      {coverCrop && CropModal && (
+        <CropModal p={p} file={coverCrop} aspect={21/9} outW={1680}
+          title={lang==='jp'?'表紙を切り抜く — 21:9':'Crop cover — 21:9'}
+          onDone={onCoverCropped} onCancel={()=>setCoverCrop(null)}/>
+      )}
+
       {confirmDel && (
         <div onClick={()=>!busy&&setConfirmDel(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50}}>
           <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, borderRadius:18, padding:28, maxWidth:420, border:`1px solid ${p.line}`}}>
@@ -664,7 +701,7 @@ function MyPostCard({ p, lang, post, onChanged }) {
   const [c1,c2] = window.tintGradient ? window.tintGradient(tint) : ['#eee','#ddd'];
   const me = window.__currentUser || { en:'', jp:'', initials:'?', tint:'rose', avatarUrl:null };
   const when = post.publishedAt ?? post.createdAt;
-  const dateStr = when ? new Date(when).toLocaleDateString(lang==='jp'?'ja-JP':'en-US', { year:'numeric', month:'short', day:'numeric' }) : '';
+  const dateStr = when ? new Date(when).toLocaleDateString(lang==='jp'?'ja-JP':'en-US', { year:'numeric', month:'short', day:'numeric', timeZone:'UTC' }) : '';
   const tags = Array.isArray(post.tags) ? post.tags.filter(Boolean).slice(0,3) : [];
   // Clicking the card opens the post in reading mode (where the owner gets
   // Edit/Delete). No actions on the card itself.

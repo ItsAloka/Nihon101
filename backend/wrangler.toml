@@ -41,10 +41,26 @@ new_classes = ["RateLimiterDO"]
 # Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday Letter (kill-switchable).
 crons = ["*/5 * * * *", "0 0 * * 0"]
 
-# In prod, set DB_POOLED = "true" here once Hyperdrive / Neon's pooler is in front
-# (and point DATABASE_URL at it) so the Worker reuses one per-isolate pool instead
-# of opening one per request. Left unset locally → direct Docker Postgres. See
-# db/client.ts.
+# PROD database path: TWO Hyperdrive configs in front of Neon (create with
+# `wrangler hyperdrive create`), uncomment + paste the ids at deploy time.
+#   • HYPERDRIVE        — caching DISABLED. The live handle: auth + everything
+#     per-user. db/client.ts opens a fresh per-request pool over its local socket
+#     (never reuse a pg socket across Worker invocations — it hangs; Not Bagel
+#     hit this live 2026-07-07).
+#   • HYPERDRIVE_CACHED — SAME Neon database, caching ON (60s). Content-only
+#     reads opt in via getDbCached (post bodies, listings, search, trending,
+#     categories, public profiles). Per-user data must never go through this.
+# Local dev needs neither (getDbCached falls back to the live handle).
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "<hyperdrive-config-id-caching-disabled>"
+# [[hyperdrive]]
+# binding = "HYPERDRIVE_CACHED"
+# id = "<hyperdrive-config-id-caching-60s>"
+#
+# DB_POOLED = "true" is the LEGACY no-Hyperdrive path (Neon `-pooler` direct with a
+# shared isolate pool) — carries the socket-reuse hang risk on Workers; prefer
+# Hyperdrive. Left unset locally → direct Docker Postgres. See db/client.ts.
 [vars]
 FRONTEND_ORIGIN = "http://localhost:4321"
 API_ORIGIN = "http://localhost:8787"

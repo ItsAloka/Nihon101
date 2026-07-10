@@ -6,7 +6,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --timeout 20000",
     "db:generate": "drizzle-kit generate && bun run scripts/normalize-journal.ts",
     "db:migrate": "drizzle-kit migrate",
     "db:verify": "bun run scripts/verify-migrations.ts",

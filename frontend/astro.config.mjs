@@ -3,6 +3,7 @@ import cloudflare from '@astrojs/cloudflare';
 import react from '@astrojs/react';
 
 export default defineConfig({
+  site: 'https://nihon101.com', // absolute canonical/OG URLs + sitemap origin
   output: 'server',
   adapter: cloudflare(),
   integrations: [react()],
@@ -17,10 +18,6 @@ export default defineConfig({
   // uses api.nihon101.com and is unaffected.
   vite: {
     server: {
-      // Poll for file changes: inotify doesn't fire for files on the Windows
-      // drive (/mnt/c) when the dev server runs in WSL, so without polling HMR
-      // never sees edits and serves stale modules. Dev-only.
-      watch: { usePolling: true, interval: 150 },
       proxy: {
         '/auth': 'http://localhost:8787',
         '/posts': 'http://localhost:8787',

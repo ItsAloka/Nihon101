@@ -125,7 +125,17 @@ const postApi = {
   // viewer's taste and drops the post from their For You feed. → {ok}
   notInterested: (id) => req(`/posts/${id}/not-interested`, { method: 'POST', auth: true }),
   listSaved: () => req('/posts/saved', { auth: true }).then((r) => r.posts), // viewer's saved cards, newest first
-  listComments: (id) => req(`/posts/${id}/comments`).then((r) => r.comments),
+  // Paginated: opts = { sort: 'top'|'new', offset, limit }. Returns the full
+  // payload { comments, total, nextOffset } — total is the true count, nextOffset
+  // feeds "Load more" (null = last page).
+  listComments: (id, opts = {}) => {
+    const q = new URLSearchParams();
+    if (opts.sort) q.set('sort', opts.sort);
+    if (opts.offset) q.set('offset', String(opts.offset));
+    if (opts.limit) q.set('limit', String(opts.limit));
+    const qs = q.toString();
+    return req(`/posts/${id}/comments${qs ? `?${qs}` : ''}`);
+  },
   addComment: (id, body, parentId) => req(`/posts/${id}/comments`, { method: 'POST', auth: true, body: { body, parentId: parentId || null } }).then((r) => r.comment),
   removeComment: (id, cid) => req(`/posts/${id}/comments/${cid}`, { method: 'DELETE', auth: true }),
   toggleCommentLike: (id, cid) => req(`/posts/${id}/comments/${cid}/like`, { method: 'POST', auth: true }), // → {liked, likes}
@@ -219,7 +229,8 @@ const translate = (to, fields) =>
 // reading view renders the stored HTML body (per locale) instead of seed arrays.
 function hydrateReal(po) {
   const ms = po.publishedAt || po.createdAt;
-  const date = new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  // timeZone pinned to match the SSR pages (Worker renders in UTC; readers in JST).
+  const date = new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
   const words = String(po.bodyEn || '').replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
   return {
     _real: true, _id: po.id, _authorId: po.authorId, _bodyEn: po.bodyEn, _bodyJa: po.bodyJa,

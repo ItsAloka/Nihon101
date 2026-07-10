@@ -146,16 +146,57 @@ const YoutubeNode = Youtube.extend({
   },
 });
 
+/* ---------------- Table: Enter in the last cell appends a row ---------------- */
+// (Tab-at-end already does this via the stock extension.) Enter elsewhere in a
+// table keeps its default behavior (new line inside the cell).
+const TableWithEnter = Table.extend({
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      Enter: () => {
+        if (!this.editor.isActive("table")) return false;
+        const $from = this.editor.state.selection.$from;
+        for (let d = $from.depth; d > 0; d--) {
+          if ($from.node(d).type.name !== "tableRow") continue;
+          const table = $from.node(d - 1);
+          const lastRow = $from.index(d - 1) === table.childCount - 1;
+          const lastCell = $from.index(d) === $from.node(d).childCount - 1;
+          if (lastRow && lastCell) return this.editor.chain().addRowAfter().goToNextCell().run();
+          return false;
+        }
+        return false;
+      },
+    };
+  },
+});
+
 /* ---------------- The editor component ---------------- */
-function stripEmptyParas(html) {
-  return html.replace(/<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>/gi, "");
+/** Blank paragraphs (Enter-only lines) survive save — the reader renders them
+ * slim exactly like the editor, so spacing is WYSIWYG. Only runs of 4+ blanks
+ * collapse to 3, so an accidental Enter-storm can't leave a giant void. */
+function capBlankParas(html) {
+  return html.replace(/(?:<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>\s*){4,}/gi, "<p></p><p></p><p></p>");
 }
+
+/** Shape choices for a body image crop — the closest to the photo's natural
+ * shape is pre-selected in the modal. */
+const INLINE_ASPECTS = [
+  { label: "Landscape", aspect: 16 / 9 },
+  { label: "Portrait", aspect: 3 / 4 },
+  { label: "Square", aspect: 1 },
+];
 
 // Imperative handle: parent gets { getHTML, setHTML, focus, chain } via onReady.
 function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel, onCycleDensity }) {
   const [linkBox, setLinkBox] = React.useState(null); // 'link'|'image'|'youtube'
   const [linkVal, setLinkVal] = React.useState("");
   const [insertMenu, setInsertMenu] = React.useState(false);
+  // Table size picker (hover a mini 6×6 grid, click to insert).
+  const [tablePick, setTablePick] = React.useState(false);
+  const [tableRC, setTableRC] = React.useState({ r: 3, c: 3 });
+  const openTablePick = () => { setTableRC({ r: 3, c: 3 }); setTablePick(true); };
+  // Pending body-image crop (Upload path only — paste/drag insert directly).
+  const [crop, setCrop] = React.useState(null); // { file, aspect, outW, presets }
   const imgFileRef = React.useRef(null);
 
   const insertImageFile = async (f) => {
@@ -165,20 +206,31 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
     } catch (e) { window.__nihon_toast?.("Image upload failed — try a smaller file"); }
   };
 
+  // Read a picked image's natural aspect — used to pre-select the closest shape
+  // chip (landscape / portrait / square) in the crop modal.
+  const imageAspect = (f) =>
+    new Promise((resolve) => {
+      const url = URL.createObjectURL(f);
+      const im = new window.Image(); // `Image` here is the TipTap extension import
+      im.onload = () => { resolve({ aspect: im.naturalWidth / im.naturalHeight || 1, width: im.naturalWidth || 1200 }); URL.revokeObjectURL(url); };
+      im.onerror = () => { resolve({ aspect: 1, width: 1200 }); URL.revokeObjectURL(url); };
+      im.src = url;
+    });
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2] }, link: { openOnClick: false } }),
       Highlight, // single-colour <mark> highlighter
       ResizableImage,
       YoutubeNode.configure({ width: 720, height: 405, nocookie: true }),
-      Table.configure({ resizable: true }),
+      TableWithEnter.configure({ resizable: true }),
       TableRow, TableHeader, TableCell,
     ],
     content: "",
     immediatelyRender: false,
     editorProps: {
       attributes: { class: "ed-body" },
-      transformPastedHTML: (html) => stripEmptyParas(html),
+      transformPastedHTML: (html) => capBlankParas(html),
       handleDrop: (_v, event) => {
         const f = event.dataTransfer?.files?.[0];
         if (f && f.type.startsWith("image/")) { event.preventDefault(); insertImageFile(f); return true; }
@@ -201,13 +253,31 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
         return false;
       },
     },
-    onUpdate: ({ editor }) => onChange?.(stripEmptyParas(editor.getHTML())),
+    onUpdate: ({ editor }) => onChange?.(capBlankParas(editor.getHTML())),
   });
+
+  // The active table's wrapper element — hosts a floating ✕ so a whole table can
+  // be removed (images/videos already have one; a table is otherwise stuck).
+  const [tableWrap, setTableWrap] = React.useState(null);
+  const editorRef = React.useRef(editor);
+  editorRef.current = editor;
+  React.useEffect(() => {
+    if (!editor) return;
+    const sync = () => {
+      if (!editor.isActive("table")) { setTableWrap(null); return; }
+      const dom = editor.view.domAtPos(editor.state.selection.$from.pos).node;
+      const el = dom instanceof HTMLElement ? dom : dom.parentElement;
+      setTableWrap((el?.closest(".tableWrapper")) ?? null);
+    };
+    editor.on("selectionUpdate", sync);
+    editor.on("transaction", sync);
+    return () => { editor.off("selectionUpdate", sync); editor.off("transaction", sync); };
+  }, [editor]);
 
   React.useEffect(() => {
     if (editor && onReady) {
       onReady({
-        getHTML: () => stripEmptyParas(editor.getHTML()),
+        getHTML: () => capBlankParas(editor.getHTML()),
         setHTML: (html) => editor.commands.setContent(html || ""),
         getText: () => editor.getText(),
         focus: () => editor.commands.focus(),
@@ -217,9 +287,20 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
   }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openBox = (mode) => { setLinkVal(""); setLinkBox(mode); };
+  // Upload path opens the crop modal (Landscape/Portrait/Square chips, closest
+  // to the photo's own shape pre-selected). Paste/drag still insert directly.
   const onImgFile = async (e) => {
     const f = e.target.files?.[0]; e.target.value = "";
-    if (!f) return; setLinkBox(null); await insertImageFile(f);
+    if (!f) return; setLinkBox(null);
+    const { aspect, width } = await imageAspect(f);
+    const closest = INLINE_ASPECTS.reduce((best, pr) =>
+      Math.abs(Math.log(aspect / pr.aspect)) < Math.abs(Math.log(aspect / best.aspect)) ? pr : best);
+    setCrop({ file: f, aspect: closest.aspect, outW: Math.min(1200, width), presets: INLINE_ASPECTS });
+  };
+  // Crop modal returned a blob → upload + insert at the caret.
+  const onCropDone = async (blob) => {
+    setCrop(null);
+    await insertImageFile(new File([blob], "image.webp", { type: "image/webp" }));
   };
   const applyBox = () => {
     const url = linkVal.trim(); const mode = linkBox; setLinkBox(null);
@@ -235,7 +316,7 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
   const inserts = [
     ["🖼", "Image", () => openBox("image")],
     ["▶", "YouTube video", () => openBox("youtube")],
-    ["▦", "Table", () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()],
+    ["▦", "Table", () => openTablePick()],
     ["</>", "Code block", () => editor?.chain().focus().toggleCodeBlock().run()],
     ["―", "Divider", () => editor?.chain().focus().setHorizontalRule().run()],
     ["❝", "Quote", () => editor?.chain().focus().toggleBlockquote().run()],
@@ -271,7 +352,7 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
         {tb("🔗", "Link", () => openBox("link"), isActive("link"))}
         {tb("🖼", "Image", () => openBox("image"), false)}
         {tb("▶", "YouTube", () => openBox("youtube"), false)}
-        {tb("▦", "Table", () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), false)}
+        {tb("▦", "Table", () => openTablePick(), isActive("table"))}
         <span className="tdiv" />
         <button type="button" title="Insert block" aria-label="Insert block"
           onMouseDown={(e) => e.preventDefault()} onClick={() => setInsertMenu(true)} style={{ fontWeight: 800 }}>＋</button>
@@ -296,6 +377,40 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
         document.body
       )}
 
+      {tablePick && typeof document !== "undefined" && createPortal(
+        <div className="ed-insert-backdrop" onMouseDown={() => setTablePick(false)}>
+          <div className="ed-insert" style={{ width: "auto" }} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ed-insert-h" style={{ textAlign: "center" }}>TABLE — {tableRC.r} × {tableRC.c}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 22px)", gap: 4, justifyContent: "center", padding: "0 4px 6px" }}>
+              {Array.from({ length: 36 }, (_, i) => {
+                const r = Math.floor(i / 6) + 1, c = (i % 6) + 1;
+                const on = r <= tableRC.r && c <= tableRC.c;
+                return (
+                  <div key={i}
+                    onMouseEnter={() => setTableRC({ r, c })}
+                    onClick={() => { setTablePick(false); editor?.chain().focus().insertTable({ rows: r, cols: c, withHeaderRow: true }).run(); }}
+                    style={{ width: 22, height: 22, borderRadius: 5, cursor: "pointer",
+                      border: `1px solid ${p.line}`, background: on ? p.stamp : p.bg }} />
+                );
+              })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {tableWrap && createPortal(
+        <button type="button" className="tbl-del" title="Delete table" aria-label="Delete table"
+          onMouseDown={(e) => { e.preventDefault(); editorRef.current?.chain().focus().deleteTable().run(); }}>✕</button>,
+        tableWrap
+      )}
+
+      {crop && (
+        <NihonCropModal p={p} file={crop.file} aspect={crop.aspect} outW={crop.outW}
+          presets={crop.presets} title="Crop image"
+          onDone={onCropDone} onCancel={() => setCrop(null)} />
+      )}
+
       {linkBox && (
         <div className="ed-linkbox">
           <input autoFocus value={linkVal}
@@ -318,10 +433,99 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
   );
 }
 
+/* ---------------- Shared pan/zoom crop modal ---------------- */
+// A fixed frame; the image pans (drag) and zooms (slider) under it. Apply renders
+// the framed region to a canvas at the output size and returns a WebP blob.
+// Optional shape presets (chips) switch the frame's aspect before cropping.
+// Used by the editor (body images) and the composer (21:9 cover).
+function NihonCropModal({ p, file, aspect: initialAspect, outW, title, presets, onDone, onCancel }) {
+  const [aspect, setAspect] = React.useState(initialAspect);
+  const W = 340;
+  const H = Math.round(W / aspect);
+  const [img, setImg] = React.useState(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [off, setOff] = React.useState({ x: 0, y: 0 });
+  const drag = React.useRef(null);
+  // Switching shape re-frames from center — pan resets, zoom is kept.
+  const pickAspect = (a) => { setAspect(a); setOff({ x: 0, y: 0 }); };
+
+  React.useEffect(() => {
+    const url = URL.createObjectURL(file);
+    const el = new window.Image();
+    el.onload = () => setImg(el);
+    el.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!img) return null;
+  const base = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+  const scale = base * zoom;
+  const maxX = Math.max(0, (img.naturalWidth * scale - W) / 2);
+  const maxY = Math.max(0, (img.naturalHeight * scale - H) / 2);
+  const ox = Math.min(maxX, Math.max(-maxX, off.x));
+  const oy = Math.min(maxY, Math.max(-maxY, off.y));
+  const left = W / 2 + ox - (img.naturalWidth * scale) / 2;
+  const top = H / 2 + oy - (img.naturalHeight * scale) / 2;
+
+  const apply = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = outW;
+    canvas.height = Math.round(outW / aspect);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, -left / scale, -top / scale, W / scale, H / scale, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((b) => b && onDone(b), "image/webp", 0.9);
+  };
+
+  const chip = (on) => ({
+    appearance: "none", cursor: "pointer", height: 32, padding: "0 14px", borderRadius: 999,
+    border: `1px solid ${on ? p.ink : p.line}`, background: on ? p.ink : p.surface,
+    color: on ? p.surface : p.ink, fontFamily: "var(--fontBody)", fontSize: 13, fontWeight: 600,
+  });
+  const btn = {
+    appearance: "none", cursor: "pointer", height: 38, padding: "0 18px", borderRadius: 10,
+    border: `1px solid ${p.line}`, background: p.surface, color: p.ink,
+    fontFamily: "var(--fontBody)", fontSize: 13.5, fontWeight: 600,
+  };
+
+  return (
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, zIndex: 130, background: "rgba(20,15,12,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: p.surface, border: `1px solid ${p.line}`, borderRadius: 20, padding: 24, width: W + 48, maxWidth: "92vw" }}>
+        <div style={{ fontFamily: "var(--fontDisplay)", fontWeight: 600, fontSize: 20, color: p.ink, marginBottom: 14 }}>{title}</div>
+        {presets && (
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 14 }}>
+            {presets.map((pr) => (
+              <button key={pr.label} type="button" style={chip(aspect === pr.aspect)} onClick={() => pickAspect(pr.aspect)}>
+                {pr.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div
+          style={{ width: W, height: H, overflow: "hidden", borderRadius: 14, position: "relative", cursor: "grab", touchAction: "none", margin: "0 auto", background: p.bg }}
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, ox, oy }; }}
+          onPointerMove={(e) => { if (!drag.current) return; setOff({ x: drag.current.ox + e.clientX - drag.current.x, y: drag.current.oy + e.clientY - drag.current.y }); }}
+          onPointerUp={() => { drag.current = null; }}
+        >
+          <img src={img.src} alt="" draggable={false}
+            style={{ position: "absolute", left, top, width: img.naturalWidth * scale, height: img.naturalHeight * scale, maxWidth: "none", userSelect: "none", pointerEvents: "none" }} />
+        </div>
+        <input type="range" min={1} max={3} step={0.01} value={zoom}
+          onChange={(e) => setZoom(Number(e.target.value))} style={{ width: "100%", margin: "14px 0", accentColor: p.stamp }} />
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button type="button" style={btn} onClick={onCancel}>Cancel</button>
+          <button type="button" style={{ ...btn, background: p.ink, color: p.surface, border: "none" }} onClick={apply}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditorStyles({ p, density }) {
+  // Density values MUST match both readers (p/[slug].astro .rd-body + screens.jsx
+  // .art-html) — same line-height + same block gap → the editor is WYSIWYG.
   const d = density === "normal" ? "normal" : density === "relaxed" ? "relaxed" : "compact";
-  const line = d === "compact" ? 1.6 : d === "normal" ? 1.7 : 1.85;
-  const gap = d === "compact" ? 12 : d === "normal" ? 16 : 26;
+  const line = d === "compact" ? 1.65 : d === "normal" ? 1.75 : 1.9;
+  const gap = d === "compact" ? 18 : d === "normal" ? 24 : 34;
   const css = `
   .nihon-editor .ed-toolbar { position:sticky; top:64px; z-index:20; display:flex; flex-wrap:wrap; align-items:center; gap:2px;
     padding:8px; margin-bottom:14px; border:1px solid ${p.line}; border-radius:12px; background:${p.surface};
@@ -339,21 +543,42 @@ function EditorStyles({ p, density }) {
     background:${p.surface}; color:${p.ink}; cursor:pointer; font-weight:600; }
   .nihon-editor .ed-body { min-height:340px; outline:none; font-family:var(--fontDisplay); font-size:20px; line-height:${line}; color:${p.ink}; }
   .nihon-editor .ed-body:focus { outline:none; }
-  .nihon-editor .ed-body h1 { font-size:34px; font-weight:600; margin:18px 0 8px; letter-spacing:-0.02em; }
-  .nihon-editor .ed-body h2 { font-size:26px; font-weight:600; margin:16px 0 6px; }
-  .nihon-editor .ed-body p { margin:0 0 ${gap}px; }
+  .nihon-editor .ed-body h1 { font-size:34px; font-weight:600; margin:32px 0 12px; letter-spacing:-0.02em; }
+  .nihon-editor .ed-body h2 { font-size:26px; font-weight:600; margin:28px 0 10px; }
+  .nihon-editor .ed-body p { margin:0; }
+  /* Density gap between ALL blocks (headings keep their own rhythm) — same rule
+   * shape as both readers, so the toggle is WYSIWYG. */
+  .nihon-editor .ed-body > * + *:not(h1):not(h2) { margin-top:${gap}px; }
+  /* Blank lines collapse to a slim break while writing (ProseMirror marks a truly
+   * empty paragraph with a trailing-break <br>; a Shift+Enter <br> inside a text
+   * paragraph must NOT squash — text nodes don't count for :only-child). */
+  .nihon-editor .ed-body p:has(> br.ProseMirror-trailingBreak:only-child) { line-height:1.15; }
   .nihon-editor .ed-body mark { background:color-mix(in oklab, ${p.stamp} 32%, transparent); color:inherit; padding:.05em .1em; border-radius:3px; }
-  .nihon-editor .ed-body blockquote { border-left:3px solid ${p.stamp}; padding-left:16px; color:${p.inkSoft}; font-style:italic; margin:16px 0; }
-  .nihon-editor .ed-body pre { background:${p.ink}; color:${p.surface}; padding:14px 16px; border-radius:10px; overflow:auto; font-family:var(--fontMono); font-size:14px; }
-  .nihon-editor .ed-body ul { padding-left:28px; margin:0 0 16px; list-style:disc outside; }
-  .nihon-editor .ed-body ol { padding-left:28px; margin:0 0 16px; list-style:decimal outside; }
-  .nihon-editor .ed-body li { margin:4px 0; }
+  .nihon-editor .ed-body blockquote { border-left:3px solid ${p.stamp}; padding-left:24px; color:${p.inkSoft}; font-style:italic; margin:0; }
+  .nihon-editor .ed-body pre { background:${p.ink}; color:${p.surface}; padding:14px 16px; border-radius:10px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0; }
+  .nihon-editor .ed-body ul { padding-left:28px; margin:0; list-style:disc outside; }
+  .nihon-editor .ed-body ol { padding-left:28px; margin:0; list-style:decimal outside; }
+  .nihon-editor .ed-body li { margin:6px 0; }
   .nihon-editor .ed-body li > p { margin:0; }
   .nihon-editor .ed-body li::marker { color:${p.stamp}; }
-  .nihon-editor .ed-body hr { border:none; border-top:1px solid ${p.line}; margin:24px 0; }
-  .nihon-editor .ed-body table { border-collapse:collapse; width:100%; margin:16px 0; }
+  .nihon-editor .ed-body hr { border:none; border-top:1px solid ${p.line}; margin:0; }
+  .nihon-editor .ed-body table { border-collapse:collapse; width:100%; margin:0; table-layout:fixed; }
   .nihon-editor .ed-body td,.nihon-editor .ed-body th { border:1px solid ${p.line}; padding:8px 10px; }
   .nihon-editor .ed-body th { background:${p.bg}; font-weight:700; }
+  /* Structural blocks clear a floated image → they render full-width BELOW it
+   * instead of squeezed into the narrow column beside it. Only running paragraphs
+   * wrap around images (magazine style). Same rule in both readers. */
+  .nihon-editor .ed-body blockquote, .nihon-editor .ed-body ul, .nihon-editor .ed-body ol,
+  .nihon-editor .ed-body pre, .nihon-editor .ed-body table, .nihon-editor .ed-body .tableWrapper,
+  .nihon-editor .ed-body h1, .nihon-editor .ed-body h2, .nihon-editor .ed-body hr,
+  .nihon-editor .ed-body [data-youtube-video], .nihon-editor .ed-body .ri-video { clear:both; }
+  /* Floating ✕ on the active table — portaled into .tableWrapper by the editor. */
+  .nihon-editor .ed-body .tableWrapper { position:relative; }
+  .nihon-editor .tbl-del { position:absolute; top:4px; right:4px; z-index:5; width:28px; height:28px;
+    appearance:none; cursor:pointer; background:${p.surface}; color:#c0392b; border:1px solid ${p.line};
+    border-radius:7px; box-shadow:0 4px 14px -6px rgba(0,0,0,.35); }
+  .nihon-editor .ed-body .selectedCell { background:color-mix(in oklab, ${p.stamp} 18%, transparent); }
+  .nihon-editor .ed-body .column-resize-handle { background:${p.stamp}; width:3px; position:absolute; right:-1px; top:0; bottom:0; pointer-events:none; }
   .nihon-editor .ri-wrap.ri-selected { outline:2px solid ${p.stamp}; outline-offset:2px; border-radius:10px; }
   .nihon-editor .ri-handle { position:absolute; right:-5px; top:50%; width:12px; height:40px; transform:translateY(-50%);
     background:${p.stamp}; border-radius:6px; cursor:ew-resize; }
@@ -380,5 +605,7 @@ function EditorStyles({ p, density }) {
 
 if (typeof window !== "undefined") {
   window.NihonEditor = NihonEditor;
+  window.NihonCropModal = NihonCropModal;
 }
 export default NihonEditor;
+export { NihonCropModal };

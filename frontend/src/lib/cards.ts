@@ -38,8 +38,11 @@ export function makeHelpers(categories: CatLike[], jp: boolean) {
   const catTint = (id: string) => { const c = catById.get(id); return (c && c.tint) || 'rose'; };
   const grad = (id: string) => TINT_GRAD[catTint(id)] || TINT_GRAD.rose;
   const glyphFor = (id: string) => GLYPH[catTint(id)] || '日';
+  // timeZone pinned: the Worker renders in UTC while readers sit in JST (+9) —
+  // unpinned, the same post dates differently server vs client (hydration
+  // mismatch on evening-published posts; Not Bagel's React #418 in production).
   const dateFmt = (msv: number) =>
-    new Date(msv).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    new Date(msv).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
   const initialsOf = (n: string) => ((n || '').trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 3) || '?').toUpperCase();
   const tintOf = (handle: string) => {
     const tints = Object.values(TINT_HEX).slice(0, 9);

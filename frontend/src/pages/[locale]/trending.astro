@@ -6,6 +6,7 @@ import Shell from "../../layouts/Shell.astro";
 import Grid from "../../components/Grid.astro";
 import Pager from "../../components/Pager.astro";
 import TrendingCatFilter from "../../components/TrendingCatFilter.astro";
+import { ssrFetch, fwdIp } from "../../lib/ssr";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -17,9 +18,10 @@ const cat = url.searchParams.get('cat') || '';
 const LIMIT = 12;
 
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const fwd = { headers: fwdIp(Astro) };
 const [tRes, cRes] = await Promise.all([
-  fetch(`${API}/trending?limit=${LIMIT}&page=${page}${cat ? `&cat=${encodeURIComponent(cat)}` : ''}`),
-  fetch(`${API}/categories`),
+  ssrFetch(`${API}/trending?limit=${LIMIT}&page=${page}${cat ? `&cat=${encodeURIComponent(cat)}` : ''}`, fwd),
+  ssrFetch(`${API}/categories`, fwd),
 ]);
 if (!tRes.ok || !cRes.ok) throw new Error(`trending: upstream ${tRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await tRes.json();
