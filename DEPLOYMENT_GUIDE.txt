@@ -59,13 +59,19 @@ for s in DATABASE_URL JWT_SECRET REFRESH_PEPPER RESEND_API_KEY OPENAI_API_KEY OP
 # g) Migrations: ALREADY APPLIED to Neon (all 24, 2026-07-10 — dev now runs on
 #    the same Neon DB; db:verify green). For future schema changes:
 DATABASE_URL="<neon-url from backend/.dev.vars>" bun run db:migrate
-#    PRE-LAUNCH DATA STEP: delete the 4 @test.local seed authors (their posts
-#    cascade) once real content exists; kageloom + real users stay.
-#    WARNING — `bun run test` RUNS AGAINST THIS SAME NEON DB. integration.test.ts
-#    rewrites admin_settings to test values (reportThreshold 1, autoHideThreshold 2)
-#    and newsletter.test.ts toggles newsletterEnabled. After ANY test run against
-#    prod data, reset the row:
-#      update admin_settings set report_threshold=3, auto_hide_threshold=8 where id='singleton';
+#    DATA STATE (2026-07-10): DONE. All seed data is gone — the 4 @test.local
+#    authors AND kageloom@gmail.com were deleted, their 52 posts cascaded, the 40
+#    seed reports were dropped, and categories.post_count was reconciled to 0. The
+#    only accounts on prod are thenihon101@gmail.com (@nihon101, admin) and
+#    alokawarnakula77@gmail.com (@aloka-warnakula, user). Never re-seed prod —
+#    seed a Neon dev branch instead.
+#    WARNING — `bun run test` RUNS AGAINST THIS SAME NEON DB, so step 3 below tells
+#    you to run a suite that WRITES to production. integration.test.ts rewrites
+#    admin_settings to test values (reportThreshold 1, autoHideThreshold 2) and
+#    newsletter.test.ts toggles newsletterEnabled back ON — which re-opens signup
+#    against the unverified news. sender (see h). Until dev has its own Neon branch,
+#    SKIP the tests when deploying, or reset the row afterwards:
+#      update admin_settings set newsletter_enabled=false, report_threshold=3, auto_hide_threshold=8 where id='singleton';
 #    (3 / 8 are the code defaults in db/queries/admin.ts. Left at 1 / 2, a single
 #    report surfaces a case and two auto-hide a live post.)
 # h) Resend: verify auth.nihon101.com (transactional) AND news.nihon101.com
@@ -117,7 +123,10 @@ cd ..
 ============================================================
 
 cd backend
-bunx tsc --noEmit && bun test          # don't ship red
+bunx wrangler whoami                   # MUST say thenihon101@gmail.com / ec695e38…
+bunx tsc --noEmit                      # don't ship red
+# `bun run test` writes to the PROD Neon DB (see 0.g) — run it only against a dev
+# branch, or reset admin_settings afterwards.
 bunx wrangler deploy
 cd ..
 

@@ -134,17 +134,20 @@ bun run build                     # astro check, then build
 > converting the islands to typed `.tsx` is its own piece of work (see the
 > security/scaling backlog), not a rename.
 
-## Test accounts (seeded on Neon by `backend/scripts/seed-posts.ts`)
+## Accounts
 
-Password for all four: `nihon-test-2026`. ~50 bilingual published posts spread
-across them + kageloom for testing feeds/rankings.
+**The seed data is gone (purged 2026-07-10, pre-launch).** The 4 `@test.local`
+authors and `kageloom@gmail.com` were deleted from Neon and their 52 posts
+cascaded. Only two accounts exist:
 
-- `yuki.writes@test.local` (@yuki-shirakawa) — language/culture/philosophy
-- `kenta.eats@test.local` (@kenta-hori) — food
-- `mari.travels@test.local` (@mari-aoki) — travel
-- `ren.frames@test.local` (@ren-takeda) — animation/history
-- `kageloom@gmail.com` (@kage-loom) — main dev account (password NOT stored here;
-  a real credential must never be committed — it lives outside the repo)
+- `thenihon101@gmail.com` (@nihon101) — **admin**, Google sign-in, no password
+- `alokawarnakula77@gmail.com` (@aloka-warnakula) — regular user
+
+`backend/scripts/seed-posts.ts` still recreates the 4 `@test.local` authors
+(password `nihon-test-2026`). **Never run it against prod** — dev and prod share
+one Neon database until a dev branch exists. The smoke scripts in
+`backend/scripts/*.sh` now take `N101_EMAIL` / `N101_PW` from the environment; a
+real credential must never be committed.
 
 ## Current state (2026-07-09)
 
