@@ -121,6 +121,7 @@ app.onError((err, c) => {
 app.notFound((c) => c.json({ error: 'not_found', requestId: c.var.requestId ?? '' }, 404));
 
 app.get('/', (c) => c.json({ ok: true, service: 'nihon101-api' }));
+app.get('/health', (c) => c.json({ ok: true }));
 
 app.route('/auth', auth);
 app.route('/auth/google', google);
@@ -145,8 +146,10 @@ export default {
     const { db, pool } = standaloneDb(env);
     try {
       // Sunday 00:00 UTC (09:00 JST): the weekly Sunday Letter. Its own trigger so
-      // it never piggybacks the per-5-min trending pass.
-      if (event.cron === '0 0 * * 0') {
+      // it never piggybacks the per-5-min trending pass. The day-of-week is the NAME
+      // form because Cloudflare rejects `0 0 * * 0`; must match wrangler.toml exactly
+      // or this branch never fires and the letter silently never sends.
+      if (event.cron === '0 0 * * SUN') {
         const r = await sendSundayLetter(db, env);
         console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
         return;

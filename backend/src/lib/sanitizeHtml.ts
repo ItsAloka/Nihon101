@@ -13,7 +13,7 @@
 import { FilterXSS, escapeAttrValue } from 'xss';
 
 const SAFE_URL = /^(https?:\/\/|\/)/i;
-const YT_EMBED = /^(?:https?:)?\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[\w-]{11}([/?#].*)?$/;
+const YT_EMBED = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[\w-]{11}([/?#].*)?$/;
 
 // Inline styles the composer serializes (figure width/float, img sizing, iframe box).
 const SAFE_CSS = new Set([

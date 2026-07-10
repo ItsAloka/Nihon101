@@ -1,11 +1,28 @@
+# Nihon101 has its OWN Cloudflare account — Not Bagel's is a different account and
+# shares nothing (plan, zone, KV/R2/Hyperdrive ids, Images). Run `bunx wrangler
+# whoami` before any create/deploy, or export CLOUDFLARE_ACCOUNT_ID, so a stale
+# login can't ship this Worker into the wrong account. DEPLOY DAY: paste the id
+# below to make that guard permanent.
+account_id = "ec695e381978442664558a818f75bce7"  # thenihon101@gmail.com — NOT Not Bagel's cbd7182b…
 name = "nihon101-api"
 main = "src/index.ts"
-compatibility_date = "2025-01-01"
+compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Postgres connection string lives in .dev.vars (local) and as a secret in prod
-# (`wrangler secret put DATABASE_URL`). Local dev points at Docker Postgres,
-# prod points at Neon.
+# We serve the API exclusively via the custom domain below, not workers.dev.
+workers_dev = false
+
+# Serve the API at api.nihon101.com. custom_domain = true makes Cloudflare
+# auto-create the DNS record + edge TLS cert for this hostname (the zone must be
+# active in this account first).
+routes = [
+  { pattern = "api.nihon101.com", custom_domain = true }
+]
+
+# Every request makes several DB round-trips, so run the Worker near the DB
+# (Neon, ap-southeast-1) instead of near the visitor — one long hop beats 5-10.
+[placement]
+mode = "smart"
 
 [[r2_buckets]]
 binding = "MEDIA"
@@ -17,12 +34,12 @@ bucket_name = "nihon101-media"
 [images]
 binding = "IMAGES"
 
-# Site-wide trending hot-cache (top-20 cards). Local dev (`wrangler dev`)
-# simulates KV with miniflare regardless of id. For prod, create the namespace
-# (`wrangler kv namespace create TRENDING_KV`) and paste the real id below.
+# Site-wide trending hot-cache (top-20 cards) + the weather bake. Local dev
+# (`wrangler dev`) simulates KV with miniflare regardless of id. DEPLOY DAY:
+# `bunx wrangler kv namespace create TRENDING_KV` and paste the real id here.
 [[kv_namespaces]]
 binding = "TRENDING_KV"
-id = "trending_kv_local"
+id = "eaa15faa24e94931bf118155e784ccad"
 
 # Exact atomic rate limiter for the auth brute-force class (login/register). One
 # DO instance per (bucket, ip); KV's eventual consistency would let a multi-region
@@ -33,16 +50,22 @@ class_name = "RateLimiterDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RateLimiterDO"]
+# SQLite-backed Durable Object — available on the free plan (standard/in-memory
+# DOs require Workers Paid). RateLimiterDO uses the KV-style storage API, which
+# SQLite DOs fully support, so this is a drop-in.
+new_sqlite_classes = ["RateLimiterDO"]
 
 [triggers]
 # Every 5 min: rescore momentum for the ACTIVE set (recent + freshly-engaged posts,
 # not the whole corpus) + bake the top-20 to KV. Minute-0 also ages out stale reports.
 # Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday Letter (kill-switchable).
-crons = ["*/5 * * * *", "0 0 * * 0"]
+# Day-of-week MUST be the name form: Cloudflare rejects `0 0 * * 0` with
+# "invalid cron string" (code 10100) — its parser has no 0 for Sunday.
+# index.ts branches on this exact string; keep the two in sync.
+crons = ["*/5 * * * *", "0 0 * * SUN"]
 
-# PROD database path: TWO Hyperdrive configs in front of Neon (create with
-# `wrangler hyperdrive create`), uncomment + paste the ids at deploy time.
+# PROD database path: TWO Hyperdrive configs in front of the SAME Neon DB
+# (`bunx wrangler hyperdrive create`), ids pasted at deploy time.
 #   • HYPERDRIVE        — caching DISABLED. The live handle: auth + everything
 #     per-user. db/client.ts opens a fresh per-request pool over its local socket
 #     (never reuse a pg socket across Worker invocations — it hangs; Not Bagel
@@ -50,20 +73,43 @@ crons = ["*/5 * * * *", "0 0 * * 0"]
 #   • HYPERDRIVE_CACHED — SAME Neon database, caching ON (60s). Content-only
 #     reads opt in via getDbCached (post bodies, listings, search, trending,
 #     categories, public profiles). Per-user data must never go through this.
-# Local dev needs neither (getDbCached falls back to the live handle).
-# [[hyperdrive]]
-# binding = "HYPERDRIVE"
-# id = "<hyperdrive-config-id-caching-disabled>"
-# [[hyperdrive]]
-# binding = "HYPERDRIVE_CACHED"
-# id = "<hyperdrive-config-id-caching-60s>"
-#
+# Local dev needs neither (getDbCached falls back to the live handle); once these
+# are uncommented, `wrangler dev` needs both
+# WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_* exported in the shell.
+# Created 2026-07-10 against the DIRECT Neon host (no `-pooler` — Hyperdrive is
+# itself the pooler; stacking it on PgBouncer means two poolers fighting).
+# Verified: nihon101-live → caching.disabled=true, nihon101-cached → false.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "d698a8690b63448fa420dfb363ff8b71"          # nihon101-live   — caching DISABLED
+
+[[hyperdrive]]
+binding = "HYPERDRIVE_CACHED"
+id = "61a04f714589470ab6476ed03f18f3ef"          # nihon101-cached — 60s query cache
+
 # DB_POOLED = "true" is the LEGACY no-Hyperdrive path (Neon `-pooler` direct with a
 # shared isolate pool) — carries the socket-reuse hang risk on Workers; prefer
-# Hyperdrive. Left unset locally → direct Docker Postgres. See db/client.ts.
+# Hyperdrive. Left unset → per-request pool. See db/client.ts.
+#
+# DATABASE_URL is NEVER set here — `wrangler secret put DATABASE_URL` in prod,
+# .dev.vars locally.
 [vars]
-FRONTEND_ORIGIN = "http://localhost:4321"
-API_ORIGIN = "http://localhost:8787"
+# PROD values. Local dev overrides every one of these via .dev.vars, so a plain
+# `wrangler deploy` ships the right origins. FRONTEND_ORIGIN is the exact origin
+# CORS trusts with credentials — get it wrong and the site cannot call the API.
+FRONTEND_ORIGIN = "https://nihon101.com"
+
+# Email from-addresses (public, not secret) — one verified subdomain per email class
+# so DKIM/SPF/DMARC are scoped and a newsletter blast can never hurt auth deliverability.
+#   transactional (OTP / verify / reset / welcome) → auth.nihon101.com
+#   Sunday Letter newsletter                       → news.nihon101.com
 RESEND_FROM = "Nihon101 <no-reply@auth.nihon101.com>"
 RESEND_FROM_NEWSLETTER = "Nihon101 Sunday Letter <sunday@news.nihon101.com>"
-GOOGLE_REDIRECT_URI = "http://localhost:8787/auth/google/callback"
+
+# Absolute Worker origin baked into newsletter unsubscribe links by the Sunday
+# cron — it has no request to derive it from.
+API_ORIGIN = "https://api.nihon101.com"
+
+# Google OAuth callback (public, not secret). Must exactly match an Authorized
+# redirect URI in the Google Cloud console. CLIENT_ID/SECRET stay wrangler secrets.
+GOOGLE_REDIRECT_URI = "https://api.nihon101.com/auth/google/callback"

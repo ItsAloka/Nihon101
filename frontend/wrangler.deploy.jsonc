@@ -4,7 +4,11 @@
   // plus its own dist/server/wrangler.json — but that one regenerates each build
   // with an empty SESSION id, so we keep this stable, hand-owned copy and deploy
   // with `bunx wrangler deploy -c wrangler.deploy.jsonc` from the frontend root.
-  // (Same pattern as Not Bagel, in production since 2026-07-07.)
+  // (Same pattern as Not Bagel, in production since 2026-07-07 — but a DIFFERENT
+  // Cloudflare account: nothing is shared between the two sites. Check
+  // `bunx wrangler whoami` before deploying; on deploy day uncomment the id below
+  // so a stale login can't ship this Worker into Not Bagel's account.)
+  "account_id": "ec695e381978442664558a818f75bce7", // thenihon101@gmail.com — NOT Not Bagel's cbd7182b…
   "name": "nihon101-frontend",
   "main": "./dist/server/entry.mjs",
   "compatibility_date": "2026-04-15",
@@ -24,10 +28,9 @@
   // Static assets (client build) served at the edge.
   "assets": { "binding": "ASSETS", "directory": "./dist/client" },
 
-  // Astro session store (Cloudflare KV). DEPLOY DAY: create the namespace
-  // (`bunx wrangler kv namespace create SESSION`) and paste the real id here.
+  // Astro session store (Cloudflare KV). Created 2026-07-10.
   "kv_namespaces": [
-    { "binding": "SESSION", "id": "<create-on-deploy-day>" }
+    { "binding": "SESSION", "id": "5076d7728f444e23b68e3ef65399384c" }
   ],
 
   // Cloudflare Images binding the adapter wires up for <Image> optimization.

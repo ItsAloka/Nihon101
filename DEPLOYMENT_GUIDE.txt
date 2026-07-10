@@ -8,6 +8,15 @@ Open a Git Bash terminal and paste this FIRST in every new terminal:
 
 cd /c/Users/aloka/Mine/Projects/Nihon101
 
+LOCAL BACKEND DEV — since the [[hyperdrive]] bindings went live (2026-07-10),
+`wrangler dev` REFUSES TO START without a local connection string for EACH one,
+and it reads them from the SHELL env only (not .dev.vars). The prefix is
+CLOUDFLARE_, not WRANGLER_ (wrangler >=4.106 renamed it). Paste before `bun run dev`:
+
+cd backend
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=$(sed -n 's/^DATABASE_URL=//p' .dev.vars | tr -d '"')
+export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_CACHED=$CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE
+
 BRANCH: everything lives on main. Releases = git tags (v0.1N101, v0.2N101…),
 same scheme as Not Bagel's v0.1NB.
 
@@ -15,15 +24,25 @@ same scheme as Not Bagel's v0.1NB.
 ============================================================
 0. ONE-TIME SETUP (first deploy only — from Not Bagel's launch day)
 ============================================================
-# All in Git Bash after `bunx wrangler login` on the Cloudflare account.
+# NIHON101 HAS ITS OWN CLOUDFLARE ACCOUNT — separate from Not Bagel's. Nothing
+# is shared: not the plan, not the zone, not KV/R2/Hyperdrive ids, not Images.
+# `bunx wrangler login` picks the LAST account you authenticated; before any
+# create/deploy command, confirm the target with `bunx wrangler whoami` (or pin
+# it with CLOUDFLARE_ACCOUNT_ID=<nihon101-account-id>). Deploying nihon101 into
+# Not Bagel's account (or vice versa) is the easy, expensive mistake here.
+# All commands below run in Git Bash, on the nihon101 account.
 
 # a) DNS on Cloudflare: add nihon101.com as a zone, move nameservers there.
-# b) Workers Paid ($5/mo) — account-level. Not Bagel's free-plan KV cap
-#    (1,000 writes/day) caused a LOGIN OUTAGE on day 2. If nihon101 deploys on
-#    the SAME account as Not Bagel, it is already covered — verify, don't assume.
+# b) Workers Paid ($5/mo) — account-level, and this account is NOT Not Bagel's,
+#    so the subscription is NOT inherited: buy it separately. On the free plan the
+#    KV write cap (1,000/day) caused a LOGIN OUTAGE on Not Bagel's day 2, and this
+#    site writes KV every 5 min from the trending cron alone.
 # c) KV namespace for trending/rate-limit counters:
 cd backend && bunx wrangler kv namespace create TRENDING_KV
 #    → paste the id into backend/wrangler.toml [[kv_namespaces]].
+# c2) R2 bucket for media (avatars, covers, in-post images). The [[r2_buckets]]
+#     binding in backend/wrangler.toml expects this exact name:
+bunx wrangler r2 bucket create nihon101-media
 # d) TWO Hyperdrive configs pointing at the SAME Neon database
 #    (region tip: Not Bagel picked ap-southeast-1 Singapore for its audience;
 #     pick the region closest to nihon101's readers — Tokyo ap-northeast-1):
@@ -33,15 +52,32 @@ bunx wrangler hyperdrive create nihon101-cached --connection-string="<neon-direc
 # e) Secrets (backend/): DATABASE_URL JWT_SECRET REFRESH_PEPPER RESEND_API_KEY
 #    OPENAI_API_KEY OPENAI_EMBED_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET
 for s in DATABASE_URL JWT_SECRET REFRESH_PEPPER RESEND_API_KEY OPENAI_API_KEY OPENAI_EMBED_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do bunx wrangler secret put $s; done
-# f) backend/wrangler.toml [vars] for prod: FRONTEND_ORIGIN=https://nihon101.com,
-#    API_ORIGIN=https://api.nihon101.com, GOOGLE_REDIRECT_URI=https://api.nihon101.com/auth/google/callback
+# f) DONE (2026-07-10) — backend/wrangler.toml already holds the prod [vars]
+#    (FRONTEND_ORIGIN / API_ORIGIN / GOOGLE_REDIRECT_URI on nihon101.com), plus
+#    the api.nihon101.com custom-domain route, workers_dev=false, smart placement
+#    and new_sqlite_classes. Local dev overrides the vars via backend/.dev.vars.
 # g) Migrations: ALREADY APPLIED to Neon (all 24, 2026-07-10 — dev now runs on
 #    the same Neon DB; db:verify green). For future schema changes:
 DATABASE_URL="<neon-url from backend/.dev.vars>" bun run db:migrate
 #    PRE-LAUNCH DATA STEP: delete the 4 @test.local seed authors (their posts
 #    cascade) once real content exists; kageloom + real users stay.
+#    WARNING — `bun run test` RUNS AGAINST THIS SAME NEON DB. integration.test.ts
+#    rewrites admin_settings to test values (reportThreshold 1, autoHideThreshold 2)
+#    and newsletter.test.ts toggles newsletterEnabled. After ANY test run against
+#    prod data, reset the row:
+#      update admin_settings set report_threshold=3, auto_hide_threshold=8 where id='singleton';
+#    (3 / 8 are the code defaults in db/queries/admin.ts. Left at 1 / 2, a single
+#    report surfaces a case and two auto-hide a live post.)
 # h) Resend: verify auth.nihon101.com (transactional) AND news.nihon101.com
 #    (Sunday Letter) — the newsletter cron FAILS if news. isn't verified.
+#    LAUNCH STATE (2026-07-10): only auth.nihon101.com is verified — Resend's free
+#    plan allows ONE domain. news.nihon101.com needs a paid Resend plan. Until then
+#    the newsletter is OFF at the DB kill switch (admin_settings.newsletter_enabled
+#    = false, set directly on Neon), so POST /newsletter returns 503 and the Sunday
+#    cron short-circuits with skipped:'disabled'. Nothing ever sends from the
+#    unverified news. sender. When you upgrade Resend: verify news.nihon101.com,
+#    then flip the switch back on in Admin → Newsletter (do NOT flip it on first —
+#    the confirm mail sends from RESEND_FROM_NEWSLETTER and would hard-fail).
 # i) Google OAuth console: add https://api.nihon101.com/auth/google/callback
 #    redirect + https://nihon101.com origin.
 # j) Frontend session KV:
