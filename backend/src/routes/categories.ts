@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import { getDb } from '../db/client';
+import { getDb, getDbCached } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
@@ -13,8 +13,9 @@ const app = new Hono<AppEnv>();
 const db = (c: Context<AppEnv>) => getDb(c);
 
 // Public list — categories power the composer picker and category pages.
+// Pure shared content on a hot path → the caching handle.
 app.get('/', limits.publicRead, async (c) => {
-  const rows = await listCategories(db(c));
+  const rows = await listCategories(getDbCached(c));
   return c.json({ categories: rows.map(publicCategory) });
 });
 

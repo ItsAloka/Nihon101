@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getDb } from '../db/client';
+import { getDbCached } from '../db/client';
 import type { AppEnv } from '../types';
 import { publicPostCard } from '../db/queries/posts';
 import { searchPosts, suggestPosts, searchAuthors, semanticSearchPosts, type SearchSort, type Loc } from '../db/queries/search';
@@ -20,7 +20,7 @@ const loc = (c: { req: { query: (k: string) => string | undefined } }): Loc =>
 // 0-based, 12 per page by default. Author matches ride along on the first page of a
 // text search.
 app.get('/', limits.search, async (c) => {
-  const db = getDb(c);
+  const db = getDbCached(c); // search over published posts — pure shared content
   const q = c.req.query('q')?.trim() || '';
   const categoryId = c.req.query('cat') || undefined;
   const tag = c.req.query('tag') || undefined;
@@ -70,7 +70,7 @@ app.get('/', limits.search, async (c) => {
 // Top tags by published-post usage — the "try searching for" suggestion chips on
 // the empty search page.
 app.get('/suggest', limits.search, async (c) => {
-  const rows = await topTags(getDb(c), 8);
+  const rows = await topTags(getDbCached(c), 8);
   return c.json({ tags: rows.map((t) => ({ id: t.id, label: t.label, postCount: t.postCount })) });
 });
 
@@ -78,7 +78,7 @@ app.get('/suggest', limits.search, async (c) => {
 // UI renders them — posts, categories, tags, authors. Each group is capped small;
 // the full results live on the /search page.
 app.get('/autocomplete', limits.autocomplete, async (c) => {
-  const db = getDb(c);
+  const db = getDbCached(c); // dropdown suggestions — shared content, hot path
   const q = c.req.query('q')?.trim() || '';
   if (!q) return c.json({ posts: [], categories: [], tags: [], authors: [] });
   const l = loc(c);

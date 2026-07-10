@@ -142,7 +142,11 @@ export const limits = {
 
   // ---- WRITE — KV, per user, split buckets ----
   postCreate:   rateLimit({ bucket: 'post-new',  limit: 30, windowSec: 3600, by: 'user' }),
-  postEdit:     rateLimit({ bucket: 'post-edit', limit: 60, windowSec: 3600, by: 'user' }),
+  // Per-MINUTE, not per-hour: the editor autosaves at most 1 req/30s, so 10/min is
+  // 5× what a real writer can send — only bots trip it, and a block clears in
+  // seconds. An hourly cap here once silently ate a long Not Bagel writing session
+  // (limit blown mid-post → every later autosave 429'd → work lost).
+  postEdit:     rateLimit({ bucket: 'post-edit', limit: 10, windowSec: 60,   by: 'user' }),
   postDelete:   rateLimit({ bucket: 'post-del',  limit: 30, windowSec: 3600, by: 'user' }),
   comment:      rateLimit({ bucket: 'comment',   limit: 12, windowSec: 60,   by: 'user' }),
   likePost:     rateLimit({ bucket: 'like-post', limit: 60, windowSec: 60,   by: 'user' }),

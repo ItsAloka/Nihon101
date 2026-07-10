@@ -122,6 +122,17 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
   return row as PostWithAuthor | undefined;
 }
 
+/** Live engagement counters for one post — merged over a getDbCached shell on the
+ * reading path, so a like/comment made this minute is never masked by the 60s
+ * query cache. Undefined when the row is gone (deleted; only the cache survived). */
+export async function getPostCounts(db: DB, id: string): Promise<{ likes: number; saves: number; comments: number } | undefined> {
+  const [row] = await db
+    .select({ likes: posts.likes, saves: posts.saves, comments: posts.comments })
+    .from(posts)
+    .where(eq(posts.id, id));
+  return row;
+}
+
 /** Card column set for list surfaces (home feed): everything except the bodies
  * plus a server-side character count so readMins never ships body bytes. */
 const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);

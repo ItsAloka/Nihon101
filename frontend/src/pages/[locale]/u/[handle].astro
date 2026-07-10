@@ -7,6 +7,7 @@ import Grid from "../../../components/Grid.astro";
 import SortBar from "../../../components/SortBar.astro";
 import Pager from "../../../components/Pager.astro";
 import { TINT_HEX } from "../../../lib/cards";
+import { ssrFetch, fwdIp } from "../../../lib/ssr";
 import FollowButton from "../../../nihon/FollowButton.jsx";
 import FollowStats from "../../../nihon/FollowStats.jsx";
 
@@ -22,16 +23,17 @@ if (!SORTS.includes(sort)) sort = 'new';
 const LIMIT = 12;
 
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const fwd = { headers: fwdIp(Astro) };
 const [profileRes, catsRes] = await Promise.all([
-  fetch(`${API}/users/${encodeURIComponent(handle)}`),
-  fetch(`${API}/categories`),
+  ssrFetch(`${API}/users/${encodeURIComponent(handle)}`, fwd),
+  ssrFetch(`${API}/categories`, fwd),
 ]);
 if (!profileRes.ok) return new Response(null, { status: 404 });
 const { user, stats } = await profileRes.json();
 const { categories } = catsRes.ok ? await catsRes.json() : { categories: [] };
 
 // Paginated/sorted story feed via the shared search endpoint (by author id).
-const feedRes = await fetch(`${API}/search?author=${encodeURIComponent(user.id)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`);
+const feedRes = await ssrFetch(`${API}/search?author=${encodeURIComponent(user.id)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`, fwd);
 const { posts, total } = feedRes.ok ? await feedRes.json() : { posts: [], total: 0 };
 const totalPages = Math.ceil(total / LIMIT);
 
@@ -45,7 +47,7 @@ const name = jp ? (user.displayNameJa || user.displayName) : user.displayName;
 const altName = jp ? (user.displayNameJa ? user.displayName : '') : user.displayNameJa;
 const bio = jp ? (user.bioJa || user.bio) : user.bio;
 const dateFmt = (ms: number) =>
-  new Date(ms).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  new Date(ms).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const joined = dateFmt(user.joinedAt);
 
 const sortHrefBase = `/${locale}/u/${user.handle}?sort=`;

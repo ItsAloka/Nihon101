@@ -207,7 +207,7 @@ Adapter at `backend/src/lib/translate.ts` — swappable to Workers AI / others.
 - **Drizzle dialect**: start `drizzle-orm/d1`; schema uses portable column types only.
 
 ## Hard rules
-- WSL/Bash for installs; PowerShell allowed for plain file ops.
+- Native Windows + Git Bash for all dev/shell work (NO WSL, NO Docker — since 2026-07-10; see CLAUDE.md).
 - Never store access tokens in localStorage / sessionStorage.
 - Never send refresh token in JSON.
 - Never weaken SameSite from Strict.

@@ -32,7 +32,7 @@ function useApi() {
 }
 
 const API_BASE = () => (typeof window !== "undefined" && window.N101_API?.API_BASE) || "";
-const fmtDate = (ms) => new Date(Number(ms)).toLocaleDateString();
+const fmtDate = (ms) => new Date(Number(ms)).toLocaleDateString(undefined, { timeZone: 'UTC' }); // match the SSR surfaces (UTC-pinned)
 const fmtBytes = (b) => b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : (b / 1e3).toFixed(0) + " KB";
 const relTime = (ms, loc) => {
   const s = Math.max(1, Math.floor((Date.now() - Number(ms)) / 1000));

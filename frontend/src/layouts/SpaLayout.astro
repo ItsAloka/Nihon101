@@ -17,7 +17,12 @@ const { lang = "ja", syncLang = false } = Astro.props;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    {/* Session-gated app shell — robots.txt disallows it too; this is the belt. */}
+    <meta name="robots" content="noindex" />
     <meta name="theme-color" content="#D63752" />
     <title>nihon101 — 日本101</title>
     <meta

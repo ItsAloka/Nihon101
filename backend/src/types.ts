@@ -10,6 +10,13 @@ export type AppBindings = {
   // bypass the client's shrinkImage (raw jpeg/png POSTed straight at /media).
   // Optional: absent → originals are stored as-is (cost issue, not security).
   IMAGES?: ImagesBinding;
+  // Hyperdrive (prod): pooled path to Neon. When bound, db/client.ts opens a FRESH
+  // per-request pool on its local socket — never reused across requests (a reused
+  // socket dies between Worker invocations and hangs the next request).
+  HYPERDRIVE?: { connectionString: string };
+  // Second Hyperdrive config with the 60s query cache ON. Content-only reads opt
+  // in via getDbCached; absent → getDbCached aliases getDb (uncached, never stale).
+  HYPERDRIVE_CACHED?: { connectionString: string };
 };
 
 export type AppVars = {

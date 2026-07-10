@@ -7,6 +7,7 @@ import Shell from "../../layouts/Shell.astro";
 import Grid from "../../components/Grid.astro";
 import SortBar from "../../components/SortBar.astro";
 import Pager from "../../components/Pager.astro";
+import { ssrFetch, fwdIp } from "../../lib/ssr";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -26,9 +27,10 @@ const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon10
 const qs = new URLSearchParams({ loc: locale, limit: String(LIMIT), page: String(page), sort });
 if (q) qs.set('q', q);
 if (cat) qs.set('cat', cat);
+const fwd = { headers: fwdIp(Astro) };
 const [sRes, cRes] = await Promise.all([
-  fetch(`${API}/search?${qs}`),
-  fetch(`${API}/categories`),
+  ssrFetch(`${API}/search?${qs}`, fwd),
+  ssrFetch(`${API}/categories`, fwd),
 ]);
 if (!sRes.ok || !cRes.ok) throw new Error(`search: upstream ${sRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await sRes.json();

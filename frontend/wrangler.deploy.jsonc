@@ -1,0 +1,37 @@
+{
+  // Frontend deploy config for the Astro SSR Worker (@astrojs/cloudflare v14).
+  // `bun run build` emits dist/server/entry.mjs (+ chunks) and dist/client/* assets,
+  // plus its own dist/server/wrangler.json — but that one regenerates each build
+  // with an empty SESSION id, so we keep this stable, hand-owned copy and deploy
+  // with `bunx wrangler deploy -c wrangler.deploy.jsonc` from the frontend root.
+  // (Same pattern as Not Bagel, in production since 2026-07-07.)
+  "name": "nihon101-frontend",
+  "main": "./dist/server/entry.mjs",
+  "compatibility_date": "2026-04-15",
+
+  // Pre-bundled by Astro — upload the emitted ES modules as-is.
+  "no_bundle": true,
+  "rules": [{ "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }],
+
+  // Served only via the custom domains below, not workers.dev.
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "nihon101.com", "custom_domain": true },
+    // www routes here too; src/middleware.ts 301-redirects it to the apex.
+    { "pattern": "www.nihon101.com", "custom_domain": true }
+  ],
+
+  // Static assets (client build) served at the edge.
+  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
+
+  // Astro session store (Cloudflare KV). DEPLOY DAY: create the namespace
+  // (`bunx wrangler kv namespace create SESSION`) and paste the real id here.
+  "kv_namespaces": [
+    { "binding": "SESSION", "id": "<create-on-deploy-day>" }
+  ],
+
+  // Cloudflare Images binding the adapter wires up for <Image> optimization.
+  "images": { "binding": "IMAGES" },
+
+  "observability": { "enabled": true }
+}

@@ -12,23 +12,66 @@ interface Props {
   description: string;
   canonicalPath: string; // e.g. "/en/search"
   active?: string;        // Nav item to highlight; default "search" (discovery pages)
+  /** Absolute or site-relative share image; falls back to the branded OG card. */
+  image?: string | null;
+  /** 'website' (default) or 'article' for the post reader. */
+  type?: 'website' | 'article';
+  /** Article metadata (post pages) → article:* OG tags. */
+  article?: { publishedTime?: string | null; modifiedTime?: string | null; author?: string | null; tags?: string[] } | null;
+  /** Structured data object → emitted as an escaped <script type="application/ld+json">. */
+  jsonLd?: Record<string, unknown> | null;
 }
-const { locale, title, description, canonicalPath, active = "search" } = Astro.props as Props;
+const {
+  locale, title, description, canonicalPath, active = "search",
+  image = null, type = 'website', article = null, jsonLd = null,
+} = Astro.props as Props;
 const jp = locale === 'ja';
 const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)/, '')}`;
+
+// Absolute canonical + share image (Astro.site = https://nihon101.com). An
+// already-absolute cover URL passes through new URL() unchanged.
+const base = Astro.site ?? new URL('https://nihon101.com');
+const canonicalAbs = new URL(canonicalPath, base).href;
+const ogImage = new URL(image || '/og-default.png', base).href;
 ---
 <!doctype html>
 <html lang={locale}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* Square favicons: Google requires 1:1 (96 = 48-multiple); /favicon.ico is the
+        crawler fallback; the SVG serves crisp tabs in modern browsers. */}
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#D63752" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={`https://nihon101.com${canonicalPath}`} />
+    <link rel="canonical" href={canonicalAbs} />
     <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
-    <link rel="alternate" hreflang={locale} href={`https://nihon101.com${canonicalPath}`} />
+    <link rel="alternate" hreflang={locale} href={canonicalAbs} />
+
+    {/* Open Graph + Twitter share cards */}
+    <meta property="og:site_name" content="nihon101" />
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalAbs} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:locale" content={jp ? 'ja_JP' : 'en_US'} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    {type === 'article' && article?.publishedTime && <meta property="article:published_time" content={article.publishedTime} />}
+    {type === 'article' && article?.modifiedTime && <meta property="article:modified_time" content={article.modifiedTime} />}
+    {type === 'article' && article?.author && <meta property="article:author" content={article.author} />}
+    {type === 'article' && article?.tags?.map((t) => <meta property="article:tag" content={t} />)}
+    {/* JSON-LD with `<` escaped — an unescaped post title could otherwise close the
+        script tag and run markup for every visitor (the stored-XSS Not Bagel found
+        in its production audit). */}
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />}
     <script is:inline>
       try { var __m = localStorage.getItem('nihon.mode') || 'light'; document.documentElement.dataset.mode = __m; document.documentElement.style.colorScheme = __m === 'dark' ? 'dark' : 'light'; } catch (e) {}
     </script>

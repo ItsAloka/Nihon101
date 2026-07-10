@@ -5,13 +5,14 @@
 // feature + editor's reading list are recency-ranked stand-ins until the admin pick
 // tool lands. The SPA (reader/composer/profile) lives at /{locale}/app.
 import { HomeHeader, HomeFooter } from "../../nihon/home-chrome.jsx";
+import { ssrFetch, fwdIp } from "../../lib/ssr";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
 const jp = locale === 'ja';
 
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
-const res = await fetch(`${API}/home`);
+const res = await ssrFetch(`${API}/home`, { headers: fwdIp(Astro) });
 if (!res.ok) throw new Error(`home: upstream ${res.status}`); // → branded 500.astro
 const { hero, feature, picks, recent, categories, topAuthors, weather } = await res.json();
 const heroSlides = (hero || []).filter(Boolean);
@@ -48,7 +49,7 @@ const catTint = (id: string) => { const c: any = catById.get(id); return (c && c
 const grad = (id: string) => TINT_GRAD[catTint(id)] || TINT_GRAD.rose;
 const glyphFor = (id: string) => GLYPH[catTint(id)] || '日';
 const dateFmt = (msv: number) =>
-  new Date(msv).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  new Date(msv).toLocaleDateString(jp ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const initialsOf = (n: string) => (n.trim().split(/\s+/).map((w: string) => w[0]).join('').slice(0, 3) || '?').toUpperCase();
 const tintOf = (handle: string) => {
   const tints = Object.values(TINT_HEX).slice(0, 9);
@@ -88,13 +89,28 @@ const pageDesc = jp
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#D63752" />
     <title>{pageTitle}</title>
     <meta name="description" content={pageDesc} />
     <link rel="canonical" href={`https://nihon101.com/${locale}/`} />
     <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
     <link rel="alternate" hreflang={locale} href={`https://nihon101.com/${locale}/`} />
+    {/* Open Graph + Twitter share cards (branded default image) */}
+    <meta property="og:site_name" content="nihon101" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDesc} />
+    <meta property="og:url" content={`https://nihon101.com/${locale}/`} />
+    <meta property="og:image" content="https://nihon101.com/og-default.png" />
+    <meta property="og:locale" content={jp ? 'ja_JP' : 'en_US'} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDesc} />
+    <meta name="twitter:image" content="https://nihon101.com/og-default.png" />
     <script is:inline>
       // Apply the saved theme before paint (no flash); the header island owns toggling.
       try { var __m = localStorage.getItem('nihon.mode') || 'light'; document.documentElement.dataset.mode = __m; document.documentElement.style.colorScheme = __m === 'dark' ? 'dark' : 'light'; } catch (e) {}

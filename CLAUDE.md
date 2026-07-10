@@ -18,11 +18,15 @@ notifications. Admins moderate (ban/hide/remove). Posts can trend.
 - **We are building for scale — target ~50,000 users.** Every decision (schema,
   indexes, query shape, caching, pagination) is made for a platform at that size,
   not a toy. Do not write code that only works for a handful of rows.
-- **Database: Postgres** (Drizzle on `drizzle-orm/node-postgres`). Local dev runs
-  Postgres in **Docker** (`docker-compose.yml`, port 5432); prod will run on
-  **Neon** — switching is just the `DATABASE_URL`. The connection is a per-request
-  `pg.Pool` via `backend/src/db/client.ts` (`getDb(c)`), closed by a cleanup
-  middleware in `src/index.ts`. Background work (waitUntil) uses `standaloneDb`.
+- **Database: Neon Postgres** (Drizzle on `drizzle-orm/node-postgres`). **Both
+  local dev and prod point at Neon** (ap-southeast-1 / Singapore, same region as
+  Not Bagel; switched off Docker 2026-07-10). `DATABASE_URL` lives in
+  `backend/.dev.vars` — use `?sslmode=require` and the `-pooler` host; do NOT
+  include `channel_binding=require` (node-postgres rejects it). Because dev writes
+  to the future prod DB, treat data as real; the `@test.local` seed authors get
+  purged before launch. The connection is a per-request `pg.Pool` via
+  `backend/src/db/client.ts` (`getDb(c)`), closed by a cleanup middleware in
+  `src/index.ts`. Background work (waitUntil) uses `standaloneDb`.
   - We moved off D1/SQLite entirely on 2026-06-09 — **no Portability Law anymore.**
     Use native Postgres types freely. (Old D1 migrations are gone.)
   - IDs are `text`, format `<prefix>_<nanoid21>` (good design, kept — not for portability).
@@ -42,16 +46,25 @@ notifications. Admins moderate (ban/hide/remove). Posts can trend.
   `schema.ts` (13 of them, e.g. user→cascade, category→restrict, self-ref
   comments→cascade). When you add a table or a relation, add its FK in the same
   change and regenerate the migration.
-- **PROD TODO before public launch — connection pooling.** The current Worker
-  opens + closes a Postgres connection **per request**. That's fine for Docker dev
-  but will exhaust connections and add latency at scale. Before going live on Neon,
-  do **one** of:
-  - **Cloudflare Hyperdrive** in front of Neon (recommended — pooling + edge
-    caching, the Worker connects to Hyperdrive instead of Neon directly), or
-  - **Neon's pooled connection string** (PgBouncer; use the `-pooler` host in
-    `DATABASE_URL`), and stop closing the pool per request.
+- **Prod DB path (built 2026-07-09, from Not Bagel's launch lessons): TWO
+  Hyperdrive configs** in front of the same Neon DB, bound as `HYPERDRIVE` (live,
+  caching disabled) and `HYPERDRIVE_CACHED` (60s query cache). `getDb(c)` = live;
+  `getDbCached(c)` = content-only reads (post bodies/listings, search, trending,
+  categories, public profiles, logged-out feed) — the reading path merges live
+  counts over the cached shell. **Caching law: per-user data is NEVER cached.**
+  - **HARD RULE (hang bug):** on Workers, never reuse a pg pool/socket across
+    requests over Hyperdrive — the socket dies between invocations and the next
+    request hangs → intermittent 500s (bit Not Bagel in prod 2026-07-07).
+    `db/client.ts` opens a fresh per-request pool over Hyperdrive's local socket;
+    don't "optimize" that away. Local dev needs neither binding (getDbCached
+    falls back to live; direct Neon over `DATABASE_URL`). Once the [[hyperdrive]]
+    bindings are uncommented, `wrangler dev` needs
+    `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` and `..._CACHED`
+    **exported in the shell** before launch (wrangler ≥4.107 does not read them
+    from `.dev.vars`; the values live there — see `.claude/launch.json` backend
+    entry for the export one-liner).
   Set the prod `DATABASE_URL` as a Wrangler secret (`wrangler secret put
-  DATABASE_URL`), never in `wrangler.toml`.
+  DATABASE_URL`), never in `wrangler.toml`. Deploy runbook: `DEPLOYMENT_GUIDE.txt`.
 
 ## Architecture (two independent Cloudflare deploys)
 
@@ -59,10 +72,14 @@ notifications. Admins moderate (ban/hide/remove). Posts can trend.
   (`wrangler dev`), prod `api.nihon101.com`. One route file per resource in
   `src/routes/`, mounted in `src/index.ts`. Query helpers in `src/db/queries/`,
   never inline Drizzle in routes.
-- `frontend/` — Cloudflare Pages: **Astro SSR + React 19 islands**. Dev on `:4321`,
-  prod `nihon101.com`. Locales `ja` (default) + `en` as file routes under
-  `src/pages/[locale]/`. **Islands only where interactivity is needed; everything
-  else is pure SSR HTML** (required for SEO).
+- `frontend/` — Cloudflare **Worker** (decided 2026-07-09; was Pages): **Astro SSR +
+  React 19 islands**. Dev on `:4321`, prod `nihon101.com` (+ www → apex 301 in
+  `src/middleware.ts`, which is the ONLY owner of page headers/CSP — there is no
+  `_headers` file). Deploys via `wrangler.deploy.jsonc` (see `DEPLOYMENT_GUIDE.txt`).
+  Locales `ja` (default) + `en` as file routes under `src/pages/[locale]/`.
+  **Islands only where interactivity is needed; everything else is pure SSR HTML**
+  (required for SEO). SSR pages fetch the API only through `lib/ssr.ts`
+  (`ssrFetch` = 5s timeout, `fwdIp` = visitor-IP forwarding for the rate limiter).
 
 ## Auth model (already built)
 
@@ -74,32 +91,42 @@ cost 10. See `backend/src/routes/auth.ts` + `google.ts`.
 
 ## Hard rules
 
-- WSL/bash for installs and `wrangler` (no Node on Windows PATH; bun lives in WSL).
+- **Native Windows + Git Bash for all dev/shell work — NO WSL, NO Docker** (same
+  as Not Bagel; switched 2026-07-10). bun at `~/.bun/bin`, Node LTS at
+  `C:\Program Files\nodejs`. Frontend dev runs under **node**, not bun (Astro 7
+  won't run on bun's runtime).
 - Never store access tokens in localStorage/sessionStorage.
 - Never send the refresh token in JSON; never weaken SameSite from Strict.
-- Docker must be running for backend dev (`docker compose up -d`).
 - Translation is **stored, not runtime** — no client-side translate widgets.
   DeepL fills the other locale at edit time; author reviews; both locales are SSR'd.
+- **Caching law:** per-user data is never cached anywhere; every cache must be
+  purgeable or cron-rewritten — no blind TTLs on data users can change.
+  `getDbCached` is content-only.
+- **Autosave law:** the editor never saves more than 1 req/30s, only on real
+  change, and NEVER fails silently (visible "not saved — retrying"). Write rate
+  limits for editors are per-minute, never per-hour (a blown hourly cap once ate
+  a Not Bagel post).
 - Default response style: terse, no preamble.
 
-## Common commands (run in WSL)
+## Common commands (run in Git Bash, native Windows)
 
 ```bash
-# backend
-docker compose up -d              # local Postgres on :5432 (run from repo root)
+# backend  (db:* scripts need DATABASE_URL exported; wrangler dev reads .dev.vars itself)
 cd backend && bun install
+export DATABASE_URL=$(sed -n 's/^DATABASE_URL=//p' .dev.vars | tr -d '"')
 bun run db:generate               # regenerate migration after a schema.ts change
-bun run db:migrate                # apply migrations to Postgres
+bun run db:migrate                # apply migrations to Neon
 bun run dev                       # :8787
 bunx tsc --noEmit                 # typecheck
+bun run test                      # tests vs Neon (script sets --timeout 20000; bare `bun test` flakes on latency)
 
 # frontend
 cd frontend && bun install
-bun run dev                       # :4321
+bun run dev                       # :4321 (script invokes node, not bun)
 bun run build                     # full typecheck + build
 ```
 
-## Local test accounts (dev DB only, seeded by `backend/scripts/seed-posts.ts`)
+## Test accounts (seeded on Neon by `backend/scripts/seed-posts.ts`)
 
 Password for all four: `nihon-test-2026`. ~50 bilingual published posts spread
 across them + kageloom for testing feeds/rankings.
@@ -111,7 +138,7 @@ across them + kageloom for testing feeds/rankings.
 - `kageloom@gmail.com` (@kage-loom) — main dev account (password NOT stored here;
   a real credential must never be committed — it lives outside the repo)
 
-## Current state (2026-07-02)
+## Current state (2026-07-09)
 
 Done: auth (register/login/refresh/logout/forgot/reset + login OTP 2FA + trusted
 devices), Google OAuth, account **Settings**, full blog writing/reading + bilingual
@@ -120,5 +147,10 @@ search (FTS + trigram + semantic), notifications, moderation (reports + auto-hid
 bans + audit log), Sunday Letter newsletter. **All reader surfaces run on the real
 backend** (SSR pages + islands; the old mock data was removed 2026-06-14).
 Frontend is on **Astro 7** (upgraded 2026-07-02, cleared all npm advisories).
-Full pre-hosting audit passed 2026-07-02; remaining deferred items + deploy steps
-live in the security backlog memory. Next steps: `development-plan.md`.
+Full pre-hosting audit passed 2026-07-02. **2026-07-09: every production lesson
+from Not Bagel's launch (07-07 → 07-09) ported ahead of hosting** — Hyperdrive
+two-config cache split, comment pagination, autosave rebuild, SSR timeouts +
+IP forwarding, CSP blob:/insights + www 301, full SEO layer (OG/JSON-LD/sitemap/
+robots/favicons), UTC dates, deploy kit (`DEPLOYMENT_GUIDE.txt`, maintenance
+worker, `wrangler.deploy.jsonc`). Deferred items live in the security backlog
+memory. Next steps: `development-plan.md`.

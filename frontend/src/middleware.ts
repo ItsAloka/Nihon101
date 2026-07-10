@@ -27,16 +27,30 @@ const CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  `img-src 'self' data: https: ${API_ORIGIN}`,
+  // blob: is required for the in-browser avatar/crop preview (URL.createObjectURL
+  // on the picked file, social.jsx) — without it the preview <img> never loads.
+  // Not Bagel shipped without it and the crop modal rendered empty in prod.
+  `img-src 'self' data: blob: https: ${API_ORIGIN}`,
   "font-src 'self' https://fonts.gstatic.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "script-src 'self' 'unsafe-inline'",
+  // static.cloudflareinsights.com = Cloudflare Web Analytics beacon (auto-injected
+  // when Web Analytics is enabled on the zone; harmless otherwise).
+  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
   "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
-  `connect-src 'self' ${API_ORIGIN} ws: wss:`,
+  // cloudflareinsights.com = where the Web Analytics beacon POSTs its data.
+  `connect-src 'self' ${API_ORIGIN} https://cloudflareinsights.com ws: wss:`,
   "form-action 'self'",
 ].join('; ');
 
-export const onRequest = defineMiddleware(async (_context, next) => {
+export const onRequest = defineMiddleware(async (context, next) => {
+  // Canonical host: 301 www → apex, preserving path + query (best for SEO — one
+  // canonical origin; the www custom domain in wrangler.deploy.jsonc routes here).
+  if (context.url.hostname === 'www.nihon101.com') {
+    const to = new URL(context.url);
+    to.hostname = 'nihon101.com';
+    return context.redirect(to.href, 301);
+  }
+
   const res = await next();
   if (!res.headers.get('content-type')?.includes('text/html')) return res;
 

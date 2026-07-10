@@ -32,10 +32,15 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
   const { HeartIcon, CommentIcon, BookmarkIcon, ShareIcon, PencilIcon, CommentSection } = window;
 
   const [user, setUser] = React.useState(null);
+  const [sessionReady, setSessionReady] = React.useState(false);
   const [liked, setLiked] = React.useState(false);
   const [likeCount, setLikeCount] = React.useState(likes);
   const [saved, setSaved] = React.useState(false);
   const [comments, setComments] = React.useState([]);
+  const [commentsTotal, setCommentsTotal] = React.useState(0);
+  const [commentsNext, setCommentsNext] = React.useState(null);
+  const [commentsSort, setCommentsSort] = React.useState("top");
+  const [commentsBusy, setCommentsBusy] = React.useState(false);
   const [commentsErr, setCommentsErr] = React.useState(false);
   const [commentsReload, setCommentsReload] = React.useState(0);
   const [confirmDel, setConfirmDel] = React.useState(false);
@@ -62,20 +67,40 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
       postApi.getBySlug(slug).then((po) => { if (live) { setLiked(!!po.liked); setLikeCount(po.likes); } }).catch(() => {});
       postApi.listSaved().then((rows) => { if (live) setSaved(rows.some((po) => po.slug === slug)); }).catch(() => {});
       feedApi.recordRead(postId);
-    }).catch(() => { if (live) setUser(null); });
+    }).catch(() => { if (live) setUser(null); })
+      .finally(() => { if (live) setSessionReady(true); });
     return () => { live = false; };
   }, [slug, postId]);
 
   // Comments load for both slots' sake (the engage slot renders them; the count
-  // is cheap to keep consistent).
+  // is cheap to keep consistent). Gated on the session restore so the first fetch
+  // already carries the token — otherwise the viewer's own comment-hearts render
+  // empty (the fetch would race the refresh and come back liked:false).
   React.useEffect(() => {
+    if (!sessionReady) return;
     let live = true;
     setCommentsErr(false);
-    window.N101_CONTENT.postApi.listComments(postId)
-      .then((rows) => { if (live) setComments(rows.map(toCommentView)); })
+    window.N101_CONTENT.postApi.listComments(postId, { sort: commentsSort === "top" ? "top" : "new" })
+      .then((r) => { if (live) { setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextOffset ?? null); } })
       .catch(() => { if (live) setCommentsErr(true); });
     return () => { live = false; };
-  }, [postId, commentsReload]);
+  }, [postId, commentsReload, sessionReady, commentsSort]);
+
+  // "Load more": append the next page of top-level threads (replies ride along).
+  const loadMoreComments = React.useCallback(async () => {
+    if (commentsNext == null || commentsBusy) return;
+    setCommentsBusy(true);
+    try {
+      const r = await window.N101_CONTENT.postApi.listComments(postId, { sort: commentsSort === "top" ? "top" : "new", offset: commentsNext });
+      setComments((prev) => {
+        const seen = new Set(prev.map((c) => c.id));
+        return [...prev, ...r.comments.map(toCommentView).filter((c) => !seen.has(c.id))];
+      });
+      setCommentsTotal((t) => r.total ?? t);
+      setCommentsNext(r.nextOffset ?? null);
+    } catch { /* keep the button; the reader can retry */ }
+    finally { setCommentsBusy(false); }
+  }, [postId, commentsNext, commentsBusy, commentsSort]);
 
   // Deep-link from a comment/reply notification (#comment-<id>): once comments are
   // in the DOM, scroll to the target and flash it. Runs after comments load so the
@@ -159,7 +184,7 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
       text, ts: Date.now(), likes: 0, liked: false, _real: false, userId: user.id, _pending: true,
     };
     setComments((prev) => [...prev, optimistic]);
-    try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => prev.map((x) => (x.id === tmpId ? toCommentView(c) : x))); }
+    try { const c = await window.N101_CONTENT.postApi.addComment(postId, text, parentId); setComments((prev) => prev.map((x) => (x.id === tmpId ? toCommentView(c) : x))); setCommentsTotal((t) => t + 1); }
     catch { setComments((prev) => prev.filter((x) => x.id !== tmpId)); }
   };
   const onLikeComment = async (_slug, cid) => {
@@ -168,7 +193,9 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
     catch { setComments((prev) => prev.map((c) => (c.id === cid ? { ...c, liked: !c.liked, likes: c.likes + (c.liked ? 1 : -1) } : c))); }
   };
   const onDeleteComment = async (cid) => {
+    const removed = comments.filter((c) => c.id === cid || c.parentId === cid).length;
     setComments((prev) => prev.filter((c) => c.id !== cid && c.parentId !== cid));
+    setCommentsTotal((t) => Math.max(0, t - removed));
     try { await window.N101_CONTENT.postApi.removeComment(postId, cid); } catch {}
   };
   const doDelete = async () => {
@@ -224,7 +251,7 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
             </button>
             <a href="#comments" onClick={(e) => { e.preventDefault(); const el = document.getElementById("comments"); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" }); }}
               style={pill({ padding: "12px 18px", gap: 8, fontSize: 14, fontWeight: 600, textDecoration: "none" })}>
-              <CommentIcon color={p.ink} /> {comments.length}
+              <CommentIcon color={p.ink} /> {Math.max(commentsTotal, comments.length)}
               <span style={{ color: p.inkFaint, fontSize: 12, fontWeight: 500 }}>{lang === "jp" ? "コメント" : "comments"}</span>
             </a>
           </div>
@@ -253,6 +280,9 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
         <CommentSection p={p} lang={lang} slug={slug} comments={comments}
           onAdd={onAddComment} onLike={onLikeComment} onDelete={onDeleteComment}
           onReport={openReportComment}
+          total={Math.max(commentsTotal, comments.length)}
+          sort={commentsSort} onSortChange={setCommentsSort}
+          hasMore={commentsNext != null} onLoadMore={loadMoreComments} loadingMore={commentsBusy}
           canModerate={isOwner} currentUser={user} onRequireLogin={requireLogin} />
       </div>
 
@@ -277,7 +307,7 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
           </button>
           <span style={floatSep} />
           <a href="#comments" onClick={(e) => { e.preventDefault(); const el = document.getElementById("comments"); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" }); }} style={floatBtn(p.ink)}>
-            <CommentIcon color={p.ink} /> <span>{comments.length}</span>
+            <CommentIcon color={p.ink} /> <span>{Math.max(commentsTotal, comments.length)}</span>
           </a>
         </div>
       )}

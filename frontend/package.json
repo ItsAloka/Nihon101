@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
+    "dev": "ASTRO_DEV_BACKGROUND=1 node node_modules/astro/bin/astro.mjs dev",
     "build": "astro build",
     "preview": "astro preview",
     "typecheck": "tsc --noEmit"

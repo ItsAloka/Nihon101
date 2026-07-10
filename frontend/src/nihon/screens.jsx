@@ -124,7 +124,8 @@ function RealAuthorCard({ p, lang, name, handle }) {
   );
 }
 
-function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, onDeleteComment, canModerate, currentUser, onRequireLogin }) {
+function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, comments, onAddComment, onLikeComment, onDeleteComment, canModerate, currentUser, onRequireLogin,
+  commentsTotal, commentsSort, onCommentsSortChange, commentsHasMore, onLoadMoreComments, commentsLoadingMore }) {
   const containerRef = React.useRef(null);
 
   const title = lang==='jp'?post.title_jp:post.title_en;
@@ -325,6 +326,8 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
           <CommentSection p={p} lang={lang} slug={post.slug}
             comments={comments||[]} onAdd={onAddComment} onLike={onLikeComment}
             onDelete={onDeleteComment} canModerate={canModerate}
+            total={commentsTotal} sort={commentsSort} onSortChange={onCommentsSortChange}
+            hasMore={commentsHasMore} onLoadMore={onLoadMoreComments} loadingMore={commentsLoadingMore}
             currentUser={currentUser} onRequireLogin={onRequireLogin}/>
         </div>
       </div>
@@ -367,28 +370,37 @@ function ArticleHtml({ p, html, density }) {
   const gap = d === 'compact' ? 18 : d === 'normal' ? 24 : 34;
   const css = `
   .art-html { font-family:var(--fontDisplay); font-size:20px; line-height:${line}; color:${p.ink}; }
-  .art-html p { margin:0 0 ${gap}px; }
+  .art-html p { margin:0; }
+  .art-html > * + *:not(h1):not(h2) { margin-top:${gap}px; }
   .art-html h1 { font-size:34px; font-weight:600; letter-spacing:-0.02em; margin:32px 0 12px; }
   .art-html h2 { font-size:26px; font-weight:600; margin:28px 0 10px; }
-  .art-html blockquote { border-left:3px solid ${p.stamp}; padding-left:24px; margin:28px 0; font-style:italic; color:${p.inkSoft}; }
-  .art-html ul { padding-left:28px; margin:0 0 24px; list-style:disc outside; }
-  .art-html ol { padding-left:28px; margin:0 0 24px; list-style:decimal outside; }
+  .art-html blockquote { border-left:3px solid ${p.stamp}; padding-left:24px; margin:0; font-style:italic; color:${p.inkSoft}; }
+  .art-html ul { padding-left:28px; margin:0; list-style:disc outside; }
+  .art-html ol { padding-left:28px; margin:0; list-style:decimal outside; }
   .art-html li { margin:6px 0; }
   .art-html li::marker { color:${p.stamp}; }
   .art-html a { color:${p.stamp}; text-decoration:underline; }
   .art-html mark { background:color-mix(in oklab, ${p.stamp} 32%, transparent); color:inherit; padding:.05em .1em; border-radius:3px; }
-  .art-html hr { border:none; border-top:1px solid ${p.line}; margin:32px 0; }
-  .art-html pre { background:${p.ink}; color:${p.surface}; padding:16px; border-radius:12px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0 0 24px; }
+  .art-html hr { border:none; border-top:1px solid ${p.line}; margin:0; }
+  .art-html pre { background:${p.ink}; color:${p.surface}; padding:16px; border-radius:12px; overflow:auto; font-family:var(--fontMono); font-size:14px; margin:0; }
   .art-html img { max-width:100%; height:auto; border-radius:12px; }
   .art-html figure { margin:24px 0; }
   .art-html figcaption { font-family:var(--fontMono); font-size:12px; color:${p.inkFaint}; text-align:center; margin-top:8px; }
-  .art-html table { border-collapse:collapse; width:100%; margin:24px 0; }
+  .art-html table { border-collapse:collapse; width:100%; margin:0; }
   .art-html td,.art-html th { border:1px solid ${p.line}; padding:8px 10px; }
   .art-html th { background:${p.bg}; font-weight:700; }
   .art-html > p:first-of-type::first-letter { float:left; font-family:var(--fontDisplay); font-weight:600; font-size:96px; line-height:0.8; color:${p.stamp}; margin:8px 14px 0 0; }
   .art-html [data-youtube-video], .art-html iframe { max-width:100%; }
-  .art-html [data-youtube-video] iframe, .art-html iframe { width:100%; aspect-ratio:16/9; height:auto; border:0; border-radius:12px; margin:24px 0; display:block; }
+  .art-html [data-youtube-video] iframe, .art-html iframe { width:100%; aspect-ratio:16/9; height:auto; border:0; border-radius:12px; display:block; }
   .art-html::after { content:""; display:table; clear:both; }
+  /* Structural blocks clear floated images — full-width below, never squeezed
+   * beside (matches the editor; only running paragraphs wrap, magazine style). */
+  .art-html blockquote, .art-html ul, .art-html ol, .art-html pre, .art-html table,
+  .art-html h1, .art-html h2, .art-html hr, .art-html [data-youtube-video] { clear:both; }
+  /* Blank paragraphs keep a slim height (matching the editor) so spacing used
+   * for rhythm doesn't collapse to nothing when published. */
+  .art-html p:empty { line-height:1.15; }
+  .art-html p:empty::before { content:'\\00a0'; }
   `;
   return (
     <>
@@ -448,14 +460,35 @@ function RealArticle(props) {
   const [liked, setLiked] = React.useState(!!post.liked);
   const [likeCount, setLikeCount] = React.useState(post.likes || 0);
   const [comments, setComments] = React.useState([]);
+  const [commentsTotal, setCommentsTotal] = React.useState(0);
+  const [commentsNext, setCommentsNext] = React.useState(null);
+  const [commentsSort, setCommentsSort] = React.useState('top');
+  const [commentsBusy, setCommentsBusy] = React.useState(false);
 
+  // currentUser?.id in the deps: when the session restores after mount, refetch so
+  // the viewer's own comment-hearts fill in (the first fetch had no token yet).
   React.useEffect(()=>{
     let live = true;
-    window.N101_CONTENT.postApi.listComments(id)
-      .then(rows=>{ if(live) setComments(rows.map(toCommentView)); })
+    window.N101_CONTENT.postApi.listComments(id, { sort: commentsSort==='top'?'top':'new' })
+      .then(r=>{ if(live){ setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextOffset ?? null); } })
       .catch(()=>{});
     return ()=>{ live=false; };
-  }, [id]);
+  }, [id, commentsSort, currentUser?.id]);
+
+  const loadMoreComments = React.useCallback(async ()=>{
+    if (commentsNext == null || commentsBusy) return;
+    setCommentsBusy(true);
+    try {
+      const r = await window.N101_CONTENT.postApi.listComments(id, { sort: commentsSort==='top'?'top':'new', offset: commentsNext });
+      setComments(prev=>{
+        const seen = new Set(prev.map(c=>c.id));
+        return [...prev, ...r.comments.map(toCommentView).filter(c=>!seen.has(c.id))];
+      });
+      setCommentsTotal(t=> r.total ?? t);
+      setCommentsNext(r.nextOffset ?? null);
+    } catch { /* keep the button; the reader can retry */ }
+    finally { setCommentsBusy(false); }
+  }, [id, commentsNext, commentsBusy, commentsSort]);
 
   // Record the read — the For You affinity signal (no-op when logged out).
   React.useEffect(()=>{ if (currentUser) window.N101_CONTENT.feedApi.recordRead(id); }, [id, currentUser]);
@@ -474,12 +507,13 @@ function RealArticle(props) {
       author:{ slug:u.slug, handle:u.slug, avatarUrl:u.avatarUrl||null, en:u.en, jp:u.jp, initials:u.initials, tint:u.tint },
       text, ts:Date.now(), likes:0, liked:false, _real:false, userId:u.id, _pending:true };
     setComments(prev=>[...prev, optimistic]);
-    try { const c = await window.N101_CONTENT.postApi.addComment(id, text, parentId); setComments(prev=>prev.map(x=> x.id===tmpId ? toCommentView(c) : x)); }
+    try { const c = await window.N101_CONTENT.postApi.addComment(id, text, parentId); setComments(prev=>prev.map(x=> x.id===tmpId ? toCommentView(c) : x)); setCommentsTotal(t=>t+1); }
     catch { setComments(prev=>prev.filter(x=> x.id!==tmpId)); }
   }, [id, currentUser]);
 
   const onDeleteComment = React.useCallback(async (cid)=>{
     setComments(prev=>prev.filter(c=> c.id!==cid && c.parentId!==cid));   // optimistic (drop replies too)
+    setCommentsTotal(t=>Math.max(0, t-1)); // at least the comment itself; a refetch corrects reply counts
     try { await window.N101_CONTENT.postApi.removeComment(id, cid); } catch {}
   }, [id]);
 
@@ -496,7 +530,9 @@ function RealArticle(props) {
     <ArticlePage {...props} post={postAdj}
       claps={{ [post.slug]: liked ? 1 : 0 }} onClap={onClap}
       comments={comments} onAddComment={onAddComment} onLikeComment={onLikeComment}
-      onDeleteComment={onDeleteComment} canModerate={currentUser && currentUser.id===post._authorId}/>
+      onDeleteComment={onDeleteComment} canModerate={currentUser && currentUser.id===post._authorId}
+      commentsTotal={Math.max(commentsTotal, comments.length)} commentsSort={commentsSort} onCommentsSortChange={setCommentsSort}
+      commentsHasMore={commentsNext != null} onLoadMoreComments={loadMoreComments} commentsLoadingMore={commentsBusy}/>
   );
 }
 
@@ -684,11 +720,18 @@ function Thread({ p, lang, slug, c, replies, currentUser, onLike, onReply, onDel
   );
 }
 
-function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onReport, canModerate, currentUser, onRequireLogin }) {
+function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onReport, canModerate, currentUser, onRequireLogin,
+  total, sort: sortProp, onSortChange, hasMore, onLoadMore, loadingMore }) {
   // Tag onDelete with moderation capability so CommentItem can show Delete for
   // the post owner on any comment (not just their own).
   const del = React.useMemo(()=>{ if(!onDelete) return undefined; const f=(id)=>onDelete(id); f.canModerate=!!canModerate; return f; }, [onDelete, canModerate]);
-  const [sort, setSort] = React.useState('top'); // 'top' (most liked) | 'recent'
+  // Sort is server-driven when the caller paginates (sortProp + onSortChange —
+  // "Top" must be a global ranking, not a re-sort of the loaded page); otherwise
+  // it falls back to the original local sort for un-paginated callers.
+  const [localSort, setLocalSort] = React.useState('top'); // 'top' (most liked) | 'recent'
+  const sort = sortProp ?? localSort;
+  const setSort = onSortChange ?? setLocalSort;
+  const headerCount = total ?? comments.length;
 
   const cmp = sort==='top'
     ? (a,b)=> (b.likes||0)-(a.likes||0) || b.ts - a.ts   // most liked, ties broken by newest
@@ -713,7 +756,7 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onRe
         <div style={{display:'flex', alignItems:'center', gap:12}}>
           <CommentIcon color={p.ink} size={22}/>
           <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:28, letterSpacing:'-0.02em', color:p.ink}}>
-            {lang==='jp'?`コメント ${comments.length}`:`${comments.length} ${comments.length===1?'comment':'comments'}`}
+            {lang==='jp'?`コメント ${headerCount}`:`${headerCount} ${headerCount===1?'comment':'comments'}`}
           </h2>
         </div>
         {topLevel.length>1 && (
@@ -756,6 +799,19 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onRe
           );
         })}
       </div>
+
+      {/* Server pagination: pull the next page of threads (replies ride along). */}
+      {hasMore && onLoadMore && (
+        <div style={{display:'flex', justifyContent:'center', marginTop:32}}>
+          <button onClick={onLoadMore} disabled={!!loadingMore} style={{
+            appearance:'none', cursor: loadingMore?'default':'pointer', border:`1px solid ${p.line}`,
+            background:p.surface, color:p.ink, fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600,
+            padding:'11px 26px', borderRadius:999, opacity: loadingMore?0.6:1,
+          }}>
+            {loadingMore ? (lang==='jp'?'読み込み中…':'Loading…') : (lang==='jp'?'もっと見る':'Load more comments')}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

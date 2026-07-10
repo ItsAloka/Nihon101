@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getDb } from '../db/client';
+import { getDbCached } from '../db/client';
 import type { AppEnv } from '../types';
 import { listRecentPosts, publicPostCard, type PostCardRow } from '../db/queries/posts';
 import { listCategories, publicCategory } from '../db/queries/categories';
@@ -21,7 +21,7 @@ const app = new Hono<AppEnv>();
 // the admin pins fills it, else recency fills in. picks + grid are plain recency,
 // minus anything already shown above.
 app.get('/', limits.feed, async (c) => {
-  const d = getDb(c);
+  const d = getDbCached(c); // whole aggregate is shared content, same for every visitor
   const [featured, heroTop, postRows, cats, topAuthors, weather] = await Promise.all([
     listFeatured(d),
     trendingTop(d, { limit: 3, kv: c.env.TRENDING_KV }),

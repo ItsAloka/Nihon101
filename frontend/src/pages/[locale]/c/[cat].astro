@@ -5,6 +5,7 @@ import Shell from "../../../layouts/Shell.astro";
 import Grid from "../../../components/Grid.astro";
 import SortBar from "../../../components/SortBar.astro";
 import Pager from "../../../components/Pager.astro";
+import { ssrFetch, fwdIp } from "../../../lib/ssr";
 
 const { locale, cat } = Astro.params as { locale: string; cat: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -18,9 +19,10 @@ if (!SORTS.includes(sort)) sort = 'new';
 const LIMIT = 12;
 
 const API = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
+const fwd = { headers: fwdIp(Astro) };
 const [sRes, cRes] = await Promise.all([
-  fetch(`${API}/search?cat=${encodeURIComponent(cat)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`),
-  fetch(`${API}/categories`),
+  ssrFetch(`${API}/search?cat=${encodeURIComponent(cat)}&loc=${locale}&limit=${LIMIT}&page=${page}&sort=${sort}`, fwd),
+  ssrFetch(`${API}/categories`, fwd),
 ]);
 if (!sRes.ok || !cRes.ok) throw new Error(`category: upstream ${sRes.status}/${cRes.status}`); // → branded 500.astro
 const { posts, total } = await sRes.json();

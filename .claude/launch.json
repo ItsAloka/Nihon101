@@ -3,22 +3,17 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "wsl",
-      "runtimeArgs": [
-        "bash",
-        "-lc",
-        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/frontend && exec bun run dev -- --host"
-      ],
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["frontend\\dev-preview.mjs", "dev"],
       "port": 4321,
       "autoPort": false
     },
     {
       "name": "backend",
-      "runtimeExecutable": "wsl",
+      "runtimeExecutable": "bash",
       "runtimeArgs": [
-        "bash",
-        "-lc",
-        "cd /mnt/c/Users/aloka/Mine/Projects/Nihon101/backend && exec bun run dev"
+        "-c",
+        "cd '/c/Users/aloka/Mine/Projects/Nihon101/backend' && export WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$(sed -n 's/^WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=//p' .dev.vars | tr -d '\"')\" && export WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_CACHED=\"$(sed -n 's/^WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_CACHED=//p' .dev.vars | tr -d '\"')\" && '/c/Users/aloka/.bun/bin/bun.exe' run dev"
       ],
       "port": 8787,
       "autoPort": false
