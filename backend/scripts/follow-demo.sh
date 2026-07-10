@@ -2,14 +2,17 @@
 # Seed a few follow edges so the Readers/Writers modal has content to show.
 set -e
 B=http://localhost:8787
+: "${N101_EMAIL:?set N101_EMAIL}"
+: "${N101_PW:?set N101_PW}"
+SEED_PW="${SEED_PW:-nihon-test-2026}"
 jq() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 login() { curl -s -X POST "$B/auth/login" -H 'Content-Type: application/json' -d "{\"email\":\"$1\",\"password\":\"$2\"}" | jq 'd["access"]'; }
 
-K=$(login kageloom@gmail.com REDACTED)
-Y=$(login yuki.writes@test.local nihon-test-2026)
-KE=$(login kenta.eats@test.local nihon-test-2026)
-M=$(login mari.travels@test.local nihon-test-2026)
-R=$(login ren.frames@test.local nihon-test-2026)
+K=$(login "$N101_EMAIL" "$N101_PW")
+Y=$(login yuki.writes@test.local "$SEED_PW")
+KE=$(login kenta.eats@test.local "$SEED_PW")
+M=$(login mari.travels@test.local "$SEED_PW")
+R=$(login ren.frames@test.local "$SEED_PW")
 
 # kageloom follows yuki + kenta + mari (kageloom's "Writers")
 for h in yuki-shirakawa kenta-hori mari-aoki; do curl -s -X POST "$B/users/$h/follow" -H "Authorization: Bearer $K" -o /dev/null; done

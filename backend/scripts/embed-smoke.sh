@@ -2,10 +2,12 @@
 # Step 3 smoke: read a few food posts → taste vector → check feed similarity.
 set -e
 B=http://localhost:8787
+: "${N101_EMAIL:?set N101_EMAIL}"
+: "${N101_PW:?set N101_PW}"
 jq() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 
 TOK=$(curl -s -X POST "$B/auth/login" -H 'Content-Type: application/json' \
-  -d '{"email":"kageloom@gmail.com","password":"REDACTED"}' | jq 'd["access"]')
+  -d "{\"email\":\"$N101_EMAIL\",\"password\":\"$N101_PW\"}" | jq 'd["access"]')
 echo "token len: ${#TOK}"
 
 FOOD=$(curl -s "$B/search?cat=food&limit=3&loc=en" | jq '" ".join(p["id"] for p in d["posts"])')

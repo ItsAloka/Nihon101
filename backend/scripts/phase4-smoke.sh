@@ -2,6 +2,9 @@
 # Phase 4 smoke: For You feed + follow + notifications. Run from repo root via WSL.
 set -e
 B=http://localhost:8787
+: "${N101_EMAIL:?set N101_EMAIL}"
+: "${N101_PW:?set N101_PW}"
+SEED_PW="${SEED_PW:-nihon-test-2026}"
 jq() { python3 -c "import sys,json;d=json.load(sys.stdin);print($1)"; }
 
 login() { # email password -> token
@@ -9,8 +12,8 @@ login() { # email password -> token
     -d "{\"email\":\"$1\",\"password\":\"$2\"}" | jq 'd.get("access","")'
 }
 
-TOK=$(login kageloom@gmail.com REDACTED)
-echo "kageloom token len: ${#TOK}"
+TOK=$(login "$N101_EMAIL" "$N101_PW")
+echo "token len: ${#TOK}"
 
 # yuki's user id + handle (we'll follow her)
 YUKI=$(curl -s "$B/users/yuki-shirakawa")
@@ -30,7 +33,7 @@ echo "--- yuki profile now (as kageloom) ---"
 curl -s "$B/users/yuki-shirakawa" -H "Authorization: Bearer $TOK" | jq '("isFollowing",d["isFollowing"],"followers",d["stats"].get("followers"))'
 
 echo "--- yuki gets a follow notification ---"
-YTOK=$(login yuki.writes@test.local nihon-test-2026)
+YTOK=$(login yuki.writes@test.local "$SEED_PW")
 curl -s "$B/notifications" -H "Authorization: Bearer $YTOK" | jq '("unread",d["unread"],"latest",(d["notifications"][0]["type"], d["notifications"][0]["actorHandle"]) if d["notifications"] else None)'
 
 echo "--- unfollow yuki ---"
