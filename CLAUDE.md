@@ -123,8 +123,16 @@ bun run test                      # tests vs Neon (script sets --timeout 20000; 
 # frontend
 cd frontend && bun install
 bun run dev                       # :4321 (script invokes node, not bun)
-bun run build                     # full typecheck + build
+bun run check                     # astro check (.astro + inline scripts) + tsc --noEmit
+bun run build                     # astro check, then build
 ```
+
+> **Frontend type coverage is partial.** The React islands are `.jsx`, so `tsc`
+> loads them (`allowJs`) but checks nothing (`checkJs` off). `astro check` now
+> covers the `.astro` pages and their inline scripts; the ~8.7k lines of island
+> code are still unchecked. `tsc --checkJs` currently reports ~1,700 errors —
+> converting the islands to typed `.tsx` is its own piece of work (see the
+> security/scaling backlog), not a rename.
 
 ## Test accounts (seeded on Neon by `backend/scripts/seed-posts.ts`)
 

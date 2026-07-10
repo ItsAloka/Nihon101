@@ -70,11 +70,14 @@ const curLabel = current ? (jp ? cur?.labelJa : cur?.labelEn) ?? '' : jp ? '„Åô„
 
 <script>
   document.querySelectorAll('[data-tcat]').forEach((root) => {
-    const btn = root.querySelector('[data-tcat-toggle]');
-    const panel = root.querySelector('[data-tcat-panel]');
-    const search = root.querySelector('[data-tcat-search]');
-    const items = Array.from(root.querySelectorAll('[data-tcat-item]'));
-    const open = (on) => {
+    const btn = root.querySelector<HTMLButtonElement>('[data-tcat-toggle]');
+    const panel = root.querySelector<HTMLElement>('[data-tcat-panel]');
+    const search = root.querySelector<HTMLInputElement>('[data-tcat-search]');
+    // Bail if the markup ever drifts from this script ‚Äî better an inert filter
+    // than a TypeError that kills every later inline script on the page.
+    if (!btn || !panel || !search) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-tcat-item]'));
+    const open = (on: boolean) => {
       panel.hidden = !on;
       btn.setAttribute('aria-expanded', String(on));
       if (on) setTimeout(() => search.focus(), 0);
@@ -88,6 +91,8 @@ const curLabel = current ? (jp ? cur?.labelJa : cur?.labelEn) ?? '' : jp ? '„Åô„
       }
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') open(false); });
-    document.addEventListener('mousedown', (e) => { if (!root.contains(e.target)) open(false); });
+    document.addEventListener('mousedown', (e) => {
+      if (e.target instanceof Node && !root.contains(e.target)) open(false);
+    });
   });
 </script>
