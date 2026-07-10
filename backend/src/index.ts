@@ -87,7 +87,20 @@ app.use('*', async (c, next) => {
 let configOk = false;
 app.use('*', async (c, next) => {
   if (!configOk) {
-    const bad = (['JWT_SECRET', 'REFRESH_PEPPER'] as const).filter((k) => (c.env[k] ?? '').length < 32);
+    const bad: string[] = (['JWT_SECRET', 'REFRESH_PEPPER'] as const).filter((k) => (c.env[k] ?? '').length < 32);
+    // The rate limiter silently falls back DO → KV → per-isolate memory when a
+    // binding is absent (middleware/rateLimit.ts), which in prod turns brute-force
+    // protection into a no-op with no visible symptom. So missing bindings are fatal
+    // in prod; local dev (localhost FRONTEND_ORIGIN) keeps the fallback so work isn't
+    // blocked, but logs one loud warning per isolate.
+    const missing = (['RATE_LIMITER', 'TRENDING_KV'] as const).filter((k) => !c.env[k]);
+    if (missing.length) {
+      if ((c.env.FRONTEND_ORIGIN ?? '').includes('localhost')) {
+        console.warn(JSON.stringify({ level: 'warn', requestId: c.var.requestId ?? '', msg: 'rate_limit_fallback_active', missing }));
+      } else {
+        bad.push(...missing);
+      }
+    }
     if (bad.length) {
       console.error(JSON.stringify({ level: 'fatal', requestId: c.var.requestId ?? '', msg: 'insecure_config', fields: bad }));
       return c.json({ error: 'server_misconfigured', requestId: c.var.requestId ?? '' }, 500);
