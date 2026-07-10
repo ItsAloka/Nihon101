@@ -237,7 +237,6 @@ const pageDesc = jp
       .hero-photo { position: relative; }
       .hero-photo .photo { border-radius: 24px; box-shadow: 0 40px 70px -50px color-mix(in oklab, var(--accentDeep) 60%, transparent); }
       .hero-photo .cover-hanko { border-radius: 16%; }
-      .tategaki { position: absolute; left: -34px; top: 52px; writing-mode: vertical-rl; text-orientation: mixed; font-family: var(--fontDisplay); font-size: 14px; letter-spacing: 0.5em; color: var(--inkFaint); }
 
       /* hero carousel controls */
       .hero-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 32px; }
@@ -352,7 +351,6 @@ const pageDesc = jp
         .hero-photo { order: -1; }                       /* image above the headline on narrow screens */
         .hero-photo .photo { height: 320px !important; } /* beats the inline height */
         .feature-card .photo { height: 260px !important; }
-        .tategaki { display: none; }
       }
       /* ---- responsive: phone ---- */
       @media (max-width: 640px) {
@@ -428,7 +426,6 @@ const pageDesc = jp
                   <span class="cover-hanko">{catKanji(po.categoryId)}</span>
                   {po.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {po.coverLabel}</span>}
                 </a>
-                <div class="tategaki">日本の物語 · stories from japan</div>
               </div>
             </div>
           </div>
@@ -607,8 +604,9 @@ const pageDesc = jp
         const hero = document.querySelector('.hero');
         const slides = Array.from(document.querySelectorAll('.hero-slide'));
         const dots = Array.from(document.querySelectorAll('.hero-dot'));
-        let i = 0, timer = null;
-        function show(n) {
+        let i = 0;
+        let timer: ReturnType<typeof setInterval> | null = null;
+        function show(n: number) {
           i = (n + slides.length) % slides.length;
           slides.forEach((s, k) => s.classList.toggle('active', k === i));
           dots.forEach((d, k) => d.classList.toggle('on', k === i));
@@ -632,14 +630,15 @@ const pageDesc = jp
       // Weather ribbon — cycle one city at a time (~6s). Data is SSR'd into a
       // data-attr, so no fetch here; it just rotates the already-loaded list.
       (function () {
+        interface WxCity { glyph: string; ja: string; en: string; temp: number; condJa: string; condEn: string }
         const el = document.querySelector('.ribbon-wx');
-        const out = el && el.querySelector('.ribbon-wx-text');
+        const out = el && el.querySelector<HTMLElement>('.ribbon-wx-text');
         if (!el || !out) return;
-        let cities = [];
+        let cities: WxCity[] = [];
         try { cities = JSON.parse(el.getAttribute('data-wx') || '[]'); } catch (e) { return; }
         if (!cities.length) return;
         const jp = el.getAttribute('data-jp') === '1';
-        const fmt = (c) => `${c.glyph} ${jp ? c.ja : c.en} ${c.temp}° · ${jp ? c.condJa : c.condEn}`;
+        const fmt = (c: WxCity) => `${c.glyph} ${jp ? c.ja : c.en} ${c.temp}° · ${jp ? c.condJa : c.condEn}`;
         let i = 0;
         setInterval(() => {
           i = (i + 1) % cities.length;

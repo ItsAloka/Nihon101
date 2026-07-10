@@ -164,15 +164,6 @@ function HeroSplit({p, lang, post, t, saved, onSave}) {
         </div>
         <div style={{position:'relative'}}>
           <Photo p={p} hue={post.cover.hue} label={post.cover.label} h={560} radius={22} accent={'文化'}/>
-          {/* Vertical tategaki label */}
-          <div style={{
-            position:'absolute', left:-32, top:48,
-            writingMode:'vertical-rl', textOrientation:'mixed',
-            fontFamily:'var(--fontDisplay)', fontSize:13, letterSpacing:'0.4em',
-            color:p.inkFaint,
-          }}>
-            日本の物語 · stories from japan
-          </div>
         </div>
       </div>
     </section>
