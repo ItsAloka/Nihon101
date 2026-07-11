@@ -318,6 +318,10 @@ function htmlToText(html){ const d = document.createElement('div'); d.innerHTML 
 const MAX_TITLE = 300;
 const MAX_EXCERPT = 600;
 const MAX_BODY = 200_000;
+const MAX_BODY_IMAGES = 100;
+// Counter appears at half the cap — invisible for normal posts, runway warning
+// for a listicle before it hits the publish wall.
+const countImages = (html) => (html.match(/<img\b/gi) || []).length;
 
 // Small mono "n/max" counter; turns to the red stamp accent past 90%.
 function CharCount({ p, n, max, suffix }){
@@ -523,7 +527,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       else setStatus('Draft saved');
     } catch (e) {
       setStatus(e.code === 'too_many_images'
-        ? 'Too many images — a post can hold up to 50 (the cover doesn’t count)'
+        ? 'Too many images — a post can hold up to 100 (the cover doesn’t count)'
         : e.code === 'rate_limited'
         ? 'Too many saves — wait a few seconds and try again (your text is still here)'
         : 'Save failed — ' + (e.code || 'try again'));
@@ -681,8 +685,11 @@ function ComposerPage({ p, lang, currentUser, editId }) {
           density={density} densityLabel={densityLabel} onCycleDensity={cycleDensity}/>
         {/* body length + word count */}
         {(()=>{ const words = htmlToText(bodyHtml).trim().split(/\s+/).filter(Boolean).length;
+          const imgs = countImages(bodyHtml);
+          const imgSuffix = imgs >= MAX_BODY_IMAGES/2
+            ? ` · ${ja ? `画像 ${imgs}/${MAX_BODY_IMAGES}` : `${imgs}/${MAX_BODY_IMAGES} images`}` : '';
           return <div style={{marginTop:10}}><CharCount p={p} n={bodyHtml.length} max={MAX_BODY}
-            suffix={`${words} ${ja?'語':words===1?'word':'words'}`}/></div>; })()}
+            suffix={`${words} ${ja?'語':words===1?'word':'words'}`+imgSuffix}/></div>; })()}
 
         {/* tags */}
         <div style={{marginTop:24}}>

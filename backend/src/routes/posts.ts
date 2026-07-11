@@ -69,9 +69,9 @@ const MAX_BODY = 200_000;
 const clampBody = (v: unknown) => sanitizeHtml(String(v ?? '').slice(0, MAX_BODY));
 
 // In-body images per post. The cover is a separate field and is NOT counted, so a
-// post may carry 50 body images + 1 cover. Keeps a "Top 50" listicle workable
+// post may carry 100 body images + 1 cover. Keeps a "Top 100" listicle workable
 // while blocking a body stuffed with thousands of <img> (page-weight abuse).
-const MAX_BODY_IMAGES = 50;
+const MAX_BODY_IMAGES = 100;
 const imageCount = (html: string) => (html.match(/<img\b/gi) || []).length;
 const tooManyImages = (...bodies: string[]) => bodies.some((b) => imageCount(b) > MAX_BODY_IMAGES);
 
