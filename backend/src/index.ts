@@ -27,6 +27,7 @@ import { pruneDeadRefreshTokens, pruneExpiredAuthArtifacts } from './db/queries/
 import { pruneUnconfirmedSubscribers } from './db/queries/newsletter';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
+import { runTranslationSweep } from './lib/translation-sweep';
 import weather from './routes/weather';
 
 // Durable Object class must be exported from the Worker entry to be bound.
@@ -194,6 +195,15 @@ export default {
         ]);
         if (n || s || r || rt || au || pr || ns) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr} newsletter=${ns}`);
       }
+      // LAST, because it can hold the tick for minutes on long posts (scheduled()
+      // has a 15-min wall budget where waitUntil had ~30s, which is the whole
+      // point) and the cheap KV bakes/prunes above must never wait behind it:
+      // drain the auto-translate queue (rows publish/edit/retry marked 'pending').
+      const t = await runTranslationSweep(db, env).catch((e) => {
+        console.error(JSON.stringify({ level: 'error', msg: 'translation_sweep_crashed', err: e instanceof Error ? e.message : String(e) }));
+        return null;
+      });
+      if (t && (t.claimed || t.failed)) console.log(`[translate] claimed=${t.claimed} done=${t.done} failed=${t.failed}`);
     } finally {
       await pool.end();
     }

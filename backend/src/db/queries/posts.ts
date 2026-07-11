@@ -67,6 +67,8 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     coverCredit: input.coverCredit,
     status: input.status,
     translationStatus: input.translationStatus ?? 'none',
+    translationClaimedAt: null,
+    translationAttempts: 0,
     isHidden: false,
     hiddenReason: '',
     density: input.density,
@@ -246,6 +248,8 @@ export interface UpdatePostInput {
   coverCredit?: string;
   status?: PostStatus;
   translationStatus?: TranslationStatus;
+  translationAttempts?: number;        // reset to 0 when (re)queueing
+  translationClaimedAt?: number | null; // cleared when (re)queueing
   density?: PostDensity;
   score?: number | null;
   tags?: string[];

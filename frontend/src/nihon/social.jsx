@@ -757,10 +757,11 @@ function MyPostCard({ p, lang, post, onChanged }) {
     ? {name:'compose', editId: post.id}
     : {name:'article', slug: post.slug});
   // Background-translation state — the "never fails silently" surface. pending →
-  // quiet chip; failed → a retry button (also covers a Worker-killed job that
-  // left 'pending' behind: the chip itself is clickable to re-kick). A post with
-  // NO status but a missing other-locale title (published before this pipeline
-  // existed, or translation skipped) gets a "translate" chip too.
+  // a pure STATUS chip (not clickable): the per-minute cron queue owns retries
+  // now, including rescuing killed jobs, so there is nothing for the owner to
+  // babysit. failed (auto-retries exhausted) → a retry button that re-queues
+  // with fresh attempts. A post with NO status but a missing other-locale title
+  // (published before this pipeline existed) gets a "translate" chip too.
   const [tstat, setTstat] = React.useState(post.translationStatus);
   React.useEffect(()=>{ setTstat(post.translationStatus); }, [post.translationStatus]);
   const otherLangLabel = post.lang==='ja' ? 'EN' : 'JA';
@@ -782,8 +783,8 @@ function MyPostCard({ p, lang, post, onChanged }) {
       <div style={{position:'relative', height:200, borderRadius:14, overflow:'hidden', background: post.cover?undefined:`linear-gradient(135deg, ${c1}, ${c2})`}}>
         {post.status==='draft' && <span style={{position:'absolute', top:10, left:10, zIndex:2, background:p.ink, color:p.surface, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', textTransform:'uppercase', padding:'4px 8px', borderRadius:999}}>{lang==='jp'?'下書き':'draft'}</span>}
         {tstat==='pending' && (
-          <button onClick={retryTranslate} title={lang==='jp'?'クリックで再実行':'Click to re-run'}
-            style={tChip(p.surface, p.inkSoft, '')}>⏳ {otherLangLabel} {lang==='jp'?'翻訳中…':'translating…'}</button>
+          <span onClick={(e)=>e.stopPropagation()} title={lang==='jp'?'自動で翻訳されます':'Translates automatically'}
+            style={{...tChip(p.surface, p.inkSoft, ''), cursor:'default'}}>⏳ {otherLangLabel} {lang==='jp'?'翻訳中…':'translating…'}</span>
         )}
         {tstat==='failed' && (
           <button onClick={retryTranslate}

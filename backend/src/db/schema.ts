@@ -164,10 +164,17 @@ export const posts = pgTable('posts', {
   coverCredit: text('cover_credit').notNull().default(''), // credit line under it
   status: text('status').notNull().default('draft'),   // 'draft' | 'published'
   // Background auto-translate bookkeeping: 'none' (never scheduled) | 'pending'
-  // (job scheduled/running — also what a killed Worker leaves behind, so pending
-  // is retryable) | 'done' | 'failed'. Owner surfaces show pending/failed with
-  // a retry; readers never see this.
+  // (queued for the per-minute cron sweep) | 'done' | 'failed' (attempts
+  // exhausted — the owner's retry chip re-queues it). Translation runs ONLY in
+  // the scheduled() cron (15-min wall budget), never in waitUntil (~30s kill).
   translationStatus: text('translation_status').notNull().default('none'),
+  // Lease + retry bookkeeping for the cron queue. A claimed row (claimed_at
+  // within the lease) is being translated by some cron tick; an expired claim
+  // means that tick died (deploy, wall kill, OpenAI outage) and the row is
+  // claimable again — the lease doubles as the retry backoff. Every enqueue
+  // (publish/edit/manual retry) resets both so a fresh save gets fresh attempts.
+  translationClaimedAt: ms('translation_claimed_at'),
+  translationAttempts: integer('translation_attempts').notNull().default(0),
   // Moderator hide: a published post can be hidden (drops from every public read)
   // without losing its 'published' status, so unhiding restores it cleanly.
   isHidden: boolean('is_hidden').notNull().default(false),
@@ -190,6 +197,9 @@ export const posts = pgTable('posts', {
   index('posts_category_idx').on(t.categoryId),
   index('posts_status_idx').on(t.status),
   index('posts_trend_idx').on(t.trendScore),
+  // The per-minute translation sweep scans for queued work; partial index keeps
+  // that scan O(queue length), not O(all posts) — the queue is almost always empty.
+  index('posts_translation_queue_idx').on(t.updatedAt).where(sql`translation_status = 'pending'`),
 ]);
 
 // ---- Engagement: per-user likes + flat comments ----

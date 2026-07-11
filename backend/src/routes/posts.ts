@@ -32,7 +32,7 @@ import {
   type PostStatus,
   type PostDensity,
 } from '../db/queries/posts';
-import { translatePost, type Locale } from '../lib/openai';
+import type { Locale } from '../lib/openai';
 import { overAiQuota } from '../lib/aiQuota';
 import { createNotification, notifyFollowersOfPost } from '../db/queries/notifications';
 import { getUserById } from '../db/queries/users';
@@ -92,42 +92,18 @@ function canTranslate(c: Context<AppEnv>, post: Pick<PostRow, 'lang' | 'titleEn'
   return !!((ja ? post.titleJa : post.titleEn) || (ja ? post.excerptJa : post.excerptEn) || (ja ? post.bodyJa : post.bodyEn));
 }
 
-/** Fire-and-forget: translate a post's source language into the other, then
- * store it. Runs in the background (waitUntil) so Publish stays instant; the
- * body goes through translatePost (chunked + parallel), so the whole job fits
- * inside the ~30s waitUntil window even for long posts. Writes
- * translation_status 'done'/'failed' so a failure is never silent — the owner
- * sees a retry chip instead of a mysteriously-English JA page. Only triggered
- * by explicit manual saves — never autosave. */
-function scheduleTranslation(c: Context<AppEnv>, post: PostRow) {
-  if (!canTranslate(c, post)) return;
-  const from: Locale = post.lang === 'ja' ? 'ja' : 'en';
-  const to: Locale = from === 'en' ? 'ja' : 'en';
-  const src = {
-    title: from === 'en' ? post.titleEn : post.titleJa,
-    excerpt: from === 'en' ? post.excerptEn : post.excerptJa,
-    body: from === 'en' ? post.bodyEn : post.bodyJa,
-  };
+/* Translation itself does NOT run here anymore. A save/publish/retry only marks
+ * the row translation_status='pending' (with fresh attempts/claim — see
+ * enqueueTranslation); the per-minute scheduled() cron drains the queue
+ * (lib/translation-sweep.ts). waitUntil gave the job ~30s before the isolate
+ * was killed mid-flight, which stranded every long post at 'pending' forever;
+ * the cron gets a 15-min wall budget and retries with a lease, so post size and
+ * publish bursts can never kill a translation again. */
 
-  const job = (async () => {
-    // Own pool — this outlives the request, so it can't share the request pool
-    // (which the cleanup middleware closes when the response is sent).
-    const { db: bgDb, pool } = standaloneDb(c.env);
-    try {
-      const out = await translatePost(c.env.OPENAI_API_KEY, to, src);
-      const patch: Record<string, unknown> = { translationStatus: 'done' };
-      if (out.title != null) patch[to === 'en' ? 'titleEn' : 'titleJa'] = out.title;
-      if (out.excerpt != null) patch[to === 'en' ? 'excerptEn' : 'excerptJa'] = out.excerpt;
-      if (out.body != null) patch[to === 'en' ? 'bodyEn' : 'bodyJa'] = sanitizeHtml(out.body);
-      await updatePost(bgDb, post.id, patch);
-    } catch {
-      // Never silent: surface the failure so the owner can retry it.
-      try { await updatePost(bgDb, post.id, { translationStatus: 'failed' }); } catch { /* noop */ }
-    }
-    finally { try { await pool.end(); } catch { /* noop */ } }
-  })();
-  c.executionCtx.waitUntil(job);
-}
+/** Queue-reset fields to ride the SAME write that sets 'pending': a fresh save
+ * gets fresh attempts, and clearing the claim guards against a rare stale lease
+ * from a prior run of this same post. */
+const enqueueTranslation = { translationStatus: 'pending' as const, translationAttempts: 0, translationClaimedAt: null };
 
 /** Fire-and-forget: embed a post's text into posts.embedding for the semantic layer
  * (For You flavor term + semantic search). Background, so publish stays instant; runs
@@ -354,7 +330,6 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
     await bumpTagCounts(d, post.tags, 1);
     fanOutNewPost(c, post.authorId, post.id);
   }
-  if (translating) scheduleTranslation(c, post);
   // Embed published posts for the semantic layer (no-op without an embed key).
   if (status === 'published') scheduleEmbedding(c, post.id);
   return c.json({ post: publicPost(post) }, 201);
@@ -394,12 +369,12 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   if (body?.score !== undefined) patch.score = parseScore(body.score);
   if (body?.tags !== undefined) patch.tags = parseTags(body.tags);
 
-  // Explicit manual save (draft or publish), not autosave → refill the other
-  // language in the background. Decide against the post as it will exist AFTER
+  // Explicit manual save (draft or publish), not autosave → queue the other
+  // language for the cron sweep. Decide against the post as it will exist AFTER
   // this patch, and store 'pending' in the same write.
   const merged = { ...existing, ...patch } as PostRow;
   const translating = body?.translate === true && canTranslate(c, merged);
-  if (translating) patch.translationStatus = 'pending';
+  if (translating) Object.assign(patch, enqueueTranslation);
 
   const post = await updatePost(d, existing.id, patch);
 
@@ -429,7 +404,6 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
     if (removed.length) await bumpTagCounts(d, removed, -1);
   }
 
-  if (translating && post) scheduleTranslation(c, post);
   // Re-embed when text changed on a published post (no-op without an embed key).
   if (post && post.status === 'published' && (body?.bodyEn !== undefined || body?.bodyJa !== undefined || body?.titleEn !== undefined || body?.titleJa !== undefined)) {
     scheduleEmbedding(c, post.id);
@@ -438,10 +412,11 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   return c.json({ post: publicPost(post!) });
 });
 
-// Re-run the background translation (owner only) — the recovery path for a
-// 'failed' (or Worker-killed 'pending') job, surfaced as a retry chip on the
-// owner's post cards. Unlike the publish-time run this is an explicit spend,
-// so it also checks the daily AI quota.
+// Re-queue the background translation (owner only) — the recovery path for a
+// 'failed' post (attempts exhausted) or a legacy 'none' one, surfaced as a chip
+// on the owner's post cards. Resets attempts, so the cron gives it a fresh set.
+// Unlike the publish-time queue this is an explicit spend, so it also checks
+// the daily AI quota.
 app.post('/:id/translate', requireAuth, limits.translate, async (c) => {
   const d = db(c);
   const existing = await getPostById(d, c.req.param('id'));
@@ -451,8 +426,7 @@ app.post('/:id/translate', requireAuth, limits.translate, async (c) => {
   if (!canTranslate(c, existing)) return c.json({ error: 'nothing_to_translate' }, 400);
   if (await overAiQuota(c, c.var.user!.id)) return c.json({ error: 'ai_quota_exceeded' }, 429);
 
-  const post = await updatePost(d, existing.id, { translationStatus: 'pending' });
-  scheduleTranslation(c, post!);
+  await updatePost(d, existing.id, enqueueTranslation);
   return c.json({ translationStatus: 'pending' });
 });
 

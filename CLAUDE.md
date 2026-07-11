@@ -18,15 +18,19 @@ notifications. Admins moderate (ban/hide/remove). Posts can trend.
 - **We are building for scale — target ~50,000 users.** Every decision (schema,
   indexes, query shape, caching, pagination) is made for a platform at that size,
   not a toy. Do not write code that only works for a handful of rows.
-- **Database: Neon Postgres** (Drizzle on `drizzle-orm/node-postgres`). **Both
-  local dev and prod point at Neon** (ap-southeast-1 / Singapore, same region as
-  Not Bagel; switched off Docker 2026-07-10). `DATABASE_URL` lives in
-  `backend/.dev.vars` — use `?sslmode=require` and the `-pooler` host; do NOT
-  include `channel_binding=require` (node-postgres rejects it). Because dev writes
-  to the future prod DB, treat data as real; the `@test.local` seed authors get
-  purged before launch. The connection is a per-request `pg.Pool` via
-  `backend/src/db/client.ts` (`getDb(c)`), closed by a cleanup middleware in
-  `src/index.ts`. Background work (waitUntil) uses `standaloneDb`.
+- **Database: Neon Postgres** (Drizzle on `drizzle-orm/node-postgres`),
+  ap-southeast-1 / Singapore, same region as Not Bagel; switched off Docker
+  2026-07-10. **Since 2026-07-11 dev and prod are SEPARATE Neon branches:**
+  `backend/.dev.vars` `DATABASE_URL` points at the **`testing` branch**
+  (`ep-wandering-butterfly…`) — local dev, `bun run test`, seed scripts, and
+  `bun run db:migrate` all hit ONLY that branch and are safe to run. Prod is the
+  parent branch (`ep-orange-wave…`); its URL lives only in the Wrangler secret
+  `DATABASE_URL`, and prod migrations are a deploy-day step
+  (`DEPLOYMENT_GUIDE.txt`). Use `?sslmode=require` and the `-pooler` host; do
+  NOT include `channel_binding=require` (node-postgres rejects it). The
+  connection is a per-request `pg.Pool` via `backend/src/db/client.ts`
+  (`getDb(c)`), closed by a cleanup middleware in `src/index.ts`. Background
+  work (waitUntil + the scheduled() cron) uses `standaloneDb`.
   - We moved off D1/SQLite entirely on 2026-06-09 — **no Portability Law anymore.**
     Use native Postgres types freely. (Old D1 migrations are gone.)
   - IDs are `text`, format `<prefix>_<nanoid21>` (good design, kept — not for portability).
@@ -136,18 +140,16 @@ bun run build                     # astro check, then build
 
 ## Accounts
 
-**The seed data is gone (purged 2026-07-10, pre-launch).** The 4 `@test.local`
-authors and `kageloom@gmail.com` were deleted from Neon and their 52 posts
-cascaded. Only two accounts exist:
+**Prod** (purged 2026-07-10, pre-launch) holds real accounts only, e.g.
+`thenihon101@gmail.com` (@nihon101) — **admin**, Google sign-in, no password —
+plus the owner's writing accounts.
 
-- `thenihon101@gmail.com` (@nihon101) — **admin**, Google sign-in, no password
-- `alokawarnakula77@gmail.com` (@aloka-warnakula) — regular user
-
-`backend/scripts/seed-posts.ts` still recreates the 4 `@test.local` authors
-(password `nihon-test-2026`). **Never run it against prod** — dev and prod share
-one Neon database until a dev branch exists. The smoke scripts in
-`backend/scripts/*.sh` now take `N101_EMAIL` / `N101_PW` from the environment; a
-real credential must never be committed.
+**The `testing` Neon branch** (what `.dev.vars` points at) is seeded:
+`kageloom@gmail.com` (branch admin) + 4 `@test.local` authors with 52 posts,
+all password `nihon-test-2026` (`backend/scripts/seed-posts.ts` recreates them).
+That seed script and `bun run test` only ever see the branch now. The smoke
+scripts in `backend/scripts/*.sh` take `N101_EMAIL` / `N101_PW` from the
+environment; a real credential must never be committed.
 
 ## Current state (2026-07-09)
 

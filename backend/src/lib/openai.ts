@@ -71,15 +71,16 @@ export async function translateFields(
   return parsed;
 }
 
-/* ---- Whole-post translation (chunked + parallel) --------------------------
+/* ---- Whole-post translation (chunked, bounded-parallel) --------------------
  * One call for a full post body used to time out: gpt-5-mini emitting several
- * thousand output tokens takes well over the 30s fetch timeout, and the whole
- * job runs in waitUntil, which Workers kills ~30s after the response anyway.
- * So the body is split into standalone chunks of complete top-level blocks and
- * every piece (title+excerpt, then each chunk) is translated in PARALLEL —
- * total wall time ≈ the slowest single small call, comfortably inside both
- * limits. All-or-nothing: any failed piece rejects the whole translation, so
- * a half-translated body is never stored. */
+ * thousand output tokens takes well over the 30s fetch timeout. So the body is
+ * split into standalone chunks of complete top-level blocks and the pieces
+ * (title+excerpt, then each chunk) run through a small concurrency pool. The
+ * cap matters more than speed: this runs inside the per-minute cron sweep
+ * (15-min wall budget — a 100-chunk post at 4-wide ≈ 5-6 min fits fine), and a
+ * bounded pool means a burst of queued posts can never fire enough simultaneous
+ * OpenAI calls to trip rate limits. All-or-nothing: any failed piece rejects
+ * the whole translation, so a half-translated body is never stored. */
 
 // Void tags in sanitized TipTap output (see sanitizeHtml whitelist) — they
 // never close, so they must not move the depth counter.
@@ -117,22 +118,38 @@ export function splitHtmlBlocks(html: string, maxLen = 2000): string[] {
   return chunks.filter((c) => c.trim());
 }
 
+/** Run every job through `width` workers. Rejects like Promise.all, but never
+ * more than `width` fetches are in flight, and a failure stops the remaining
+ * queue instead of burning tokens on a translation that's already doomed. */
+async function runPool(jobs: (() => Promise<void>)[], width: number): Promise<void> {
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < jobs.length) {
+      const job = jobs[next++];
+      try { await job(); } catch (e) { failed = true; throw e; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(width, jobs.length) }, worker));
+}
+
 /** Translate a whole post (title/excerpt/body) into `to`, chunking the body.
  * Throws if ANY piece fails — callers store either a complete translation or
- * nothing. */
+ * nothing. `concurrency` caps simultaneous OpenAI calls (see pool note above). */
 export async function translatePost(
   apiKey: string,
   to: Locale,
   fields: TranslateFields,
+  opts: { concurrency?: number } = {},
 ): Promise<TranslateFields> {
   const out: TranslateFields = {};
-  const jobs: Promise<void>[] = [];
+  const jobs: (() => Promise<void>)[] = [];
 
   const meta: TranslateFields = {};
   if (fields.title?.trim()) meta.title = fields.title;
   if (fields.excerpt?.trim()) meta.excerpt = fields.excerpt;
   if (Object.keys(meta).length) {
-    jobs.push(translateFields(apiKey, to, meta).then((r) => {
+    jobs.push(() => translateFields(apiKey, to, meta).then((r) => {
       if (meta.title && !r.title) throw new Error('openai_missing_title');
       if (r.title != null) out.title = r.title;
       if (r.excerpt != null) out.excerpt = r.excerpt;
@@ -142,13 +159,13 @@ export async function translatePost(
   const chunks = fields.body?.trim() ? splitHtmlBlocks(fields.body) : [];
   const bodyParts: string[] = new Array(chunks.length);
   chunks.forEach((chunk, i) => {
-    jobs.push(translateFields(apiKey, to, { body: chunk }).then((r) => {
+    jobs.push(() => translateFields(apiKey, to, { body: chunk }).then((r) => {
       if (!r.body) throw new Error('openai_missing_body_chunk');
       bodyParts[i] = r.body;
     }));
   });
 
-  await Promise.all(jobs);
+  await runPool(jobs, opts.concurrency ?? 4);
   if (chunks.length) out.body = bodyParts.join('');
   return out;
 }
