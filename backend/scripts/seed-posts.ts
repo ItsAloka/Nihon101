@@ -198,11 +198,33 @@ const SEEDS: Seed[] = [
 const passwordHash = bcrypt.hashSync(TEST_PASSWORD, 10);
 const authorIds: Record<string, string> = {};
 
-// kageloom already exists
+// kageloom: reuse if present, otherwise create (dev branches start empty —
+// the real account was purged from prod 2026-07-10; this one is test-only).
 {
   const [kage] = await db.select({ id: users.id }).from(users).where(eq(users.email, 'kageloom@gmail.com'));
-  if (!kage) throw new Error('kageloom@gmail.com not found — seed expects the existing dev account');
-  authorIds.kage = kage.id;
+  if (kage) {
+    authorIds.kage = kage.id;
+  } else {
+    const uid = newId('usr');
+    await db.insert(users).values({
+      id: uid,
+      email: 'kageloom@gmail.com',
+      passwordHash,
+      displayName: 'Kage Loom',
+      displayNameJa: '',
+      handle: 'kage-loom',
+      bio: 'Editor-in-residence. Slow walks, old shrines, long reads.',
+      bioJa: '',
+      location: 'Tokyo, JP',
+      avatarUrl: null,
+      role: 'admin',
+      emailVerified: true,
+      createdAt: now - 120 * DAY,
+      updatedAt: now - 120 * DAY,
+    });
+    authorIds.kage = uid;
+    console.log('created account: kageloom@gmail.com (@kage-loom, admin, test pw)');
+  }
 }
 
 for (const a of AUTHORS) {
