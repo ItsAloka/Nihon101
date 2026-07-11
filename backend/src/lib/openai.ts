@@ -22,12 +22,20 @@ function systemPrompt(to: Locale): string {
   const tone = to === 'ja'
     ? 'Use natural, casual, friendly modern Japanese (カジュアルな話し言葉寄りの自然な日本語) — the voice of a youthful culture magazine, NOT stiff/formal 敬語-heavy translationese. Keep it warm and readable.'
     : 'Use natural, casual, friendly modern English — the voice of a youthful culture magazine, not stiff or literal.';
+  // Chunks arrive with NO surrounding context (a chunk can be a lone <h2>), so
+  // the rules must be explicit that fragments are still content — this is what
+  // used to leave short headings untranslated on otherwise-complete pages.
+  const loanwords = to === 'ja'
+    ? `Japanese culture terms written in romaji in the source (kamon, sakura, onsen, ...) become the normal Japanese word (家紋, 桜, 温泉, ...).`
+    : `Japanese culture terms (家紋, 桜, 温泉, ...) become their usual romaji form, with a brief English gloss on first natural opportunity (e.g. "kamon (family crests)").`;
   return [
     `You are a professional translator for a bilingual blog about Japan.`,
     `Translate the given fields into ${LANG_NAME[to]}.`,
     tone,
-    `The "body" field is HTML: translate ONLY the human-readable text, and keep every HTML tag, attribute, and structure exactly as-is. Do not add, remove, or reorder tags.`,
-    `Do not translate proper nouns that are normally left as-is, code, or URLs.`,
+    `Translate EVERY piece of human-readable text — headings, section titles, list items, captions, and short standalone phrases included. You may receive a fragment with no surrounding context; it is still content: translate it, never return it unchanged because it is short or looks like a title.`,
+    `The "body" field is HTML: keep every HTML tag, attribute value, URL, code snippet, hashtag, and @handle exactly as-is. Do not add, remove, or reorder tags.`,
+    `Names of people, places, brands, and works are written the way ${LANG_NAME[to]} conventionally writes them (e.g. Kyoto ↔ 京都, Miyazaki ↔ 宮崎). ${loanwords}`,
+    `Text already in ${LANG_NAME[to]} stays as it is — do not re-translate it.`,
     `Return ONLY a JSON object with the same keys you were given ("title", "excerpt", "body" — whichever were provided), each holding the translated string. No commentary.`,
   ].join(' ');
 }
