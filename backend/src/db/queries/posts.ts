@@ -339,6 +339,9 @@ export function publicPost(p: PostRow | PostWithAuthor) {
     likes: p.likes,
     saves: p.saves,
     comments: p.comments,
+    // Same ~1100 chars/min as publicPostCard's bodyChars, so the owner list
+    // (this shape) shows the same read time as every public card surface.
+    readMins: Math.max(1, Math.round(((p.bodyEn ?? '').length + (p.bodyJa ?? '').length) / 1100)),
     publishedAt: p.publishedAt,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,

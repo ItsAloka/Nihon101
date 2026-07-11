@@ -275,7 +275,10 @@ function hydrateReal(po) {
     authorAvatarUrl: po.authorAvatarUrl || null,
     tags: po.tags || [],
     date,
-    readMins: Math.max(1, Math.round(words / 200)),
+    // Trust the API's readMins (chars/1100, present on cards AND full posts);
+    // the words/200 fallback only covers shapes without it — words is 0 when the
+    // payload has no body, which is what made profile cards all say "1 min".
+    readMins: po.readMins || Math.max(1, Math.round(words / 200)),
     likes: po.likes || 0,
     liked: !!po.liked,
     commentCount: po.comments || 0,
