@@ -6,7 +6,7 @@
 import { fetchWithTimeout } from './http';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const MODEL = 'gpt-5-mini'; // cheaper than 4.1, more natural casual JP for blog prose
+const MODEL = 'gpt-5.4-mini'; // successor of gpt-5-mini (delisted 2026); holds inline tags/tone far better — fewer check-retries
 
 export type Locale = 'en' | 'ja';
 
@@ -33,7 +33,7 @@ function systemPrompt(to: Locale): string {
     `Translate the given fields into ${LANG_NAME[to]}.`,
     tone,
     `Translate EVERY piece of human-readable text — headings, section titles, list items, captions, and short standalone phrases included. You may receive a fragment with no surrounding context; it is still content: translate it, never return it unchanged because it is short or looks like a title.`,
-    `The "body" field is HTML: keep every HTML tag, attribute value, URL, code snippet, hashtag, and @handle exactly as-is. Do not add, remove, or reorder tags.`,
+    `The "body" field is HTML: keep every HTML tag, attribute value, URL, code snippet, hashtag, and @handle exactly as-is. Do not add, remove, or reorder tags; never split or merge paragraphs; keep inline formatting (<strong>, <em>, ...) around the corresponding translated words; always write tags with ASCII angle brackets < >, never full-width ＜ ＞.`,
     `Names of people, places, brands, and works are written the way ${LANG_NAME[to]} conventionally writes them (e.g. Kyoto ↔ 京都, Miyazaki ↔ 宮崎). ${loanwords}`,
     `Text already in ${LANG_NAME[to]} stays as it is — do not re-translate it.`,
     `Return ONLY a JSON object with the same keys you were given ("title", "excerpt", "body" — whichever were provided), each holding the translated string. No commentary.`,
@@ -54,10 +54,10 @@ export async function translateFields(
   const payload = {
     model: MODEL,
     // GPT-5 reasoning models only accept the default temperature — don't set it.
-    // Translation needs no chain-of-thought: minimal effort skips the reasoning
-    // tokens, which is what kept full-post calls from finishing inside the 30s
-    // fetch timeout / Workers waitUntil window.
-    reasoning_effort: 'minimal' as const,
+    // Translation needs no chain-of-thought: 'none' (gpt-5.4's rename of the old
+    // 'minimal') skips the reasoning tokens, which is what keeps full-post calls
+    // finishing inside the 30s fetch timeout / Workers waitUntil window.
+    reasoning_effort: 'none' as const,
     response_format: { type: 'json_object' as const },
     messages: [
       { role: 'system', content: systemPrompt(to) },
