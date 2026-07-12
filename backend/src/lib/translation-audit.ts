@@ -13,7 +13,7 @@
  * human reads the report, then pulls the trigger. */
 
 import type { DB } from '../db/client';
-import { htmlHasUntranslatedBlock, textLooksUntranslated, type Locale } from './openai';
+import { hasFullWidthTagArtifact, htmlHasUntranslatedBlock, textLooksUntranslated, type Locale } from './openai';
 import { listDoneTranslations, requeueTranslations, type DoneTranslationRow } from '../db/queries/translation';
 
 export interface TranslationAuditFinding {
@@ -43,7 +43,9 @@ function auditPost(p: DoneTranslationRow): TranslationAuditFinding | null {
   const fields: TranslationAuditFinding['fields'] = [];
   if (title.trim() && textLooksUntranslated(title, to, true)) fields.push('title');
   if (excerpt.trim() && textLooksUntranslated(excerpt, to, true)) fields.push('excerpt');
-  if (body.trim() && htmlHasUntranslatedBlock(body, to)) fields.push('body');
+  // Body is broken if a block is still in the source language OR the model
+  // re-typed tags with full-width brackets (＜strong＞ shows as literal text).
+  if (body.trim() && (htmlHasUntranslatedBlock(body, to) || hasFullWidthTagArtifact(body))) fields.push('body');
   return fields.length ? { id: p.id, slug: p.slug, lang: p.lang, locale: to, fields } : null;
 }
 

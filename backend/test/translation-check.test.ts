@@ -3,7 +3,10 @@
  * language (the bug that left English sections mid-page on the Japanese reader).
  * Pure logic: no DB, no OpenAI. */
 import { describe, it, expect } from 'bun:test';
-import { textLooksUntranslated, htmlHasUntranslatedBlock, splitHtmlBlocks } from '../src/lib/openai';
+import {
+  textLooksUntranslated, htmlHasUntranslatedBlock, splitHtmlBlocks,
+  fixFullWidthTags, hasFullWidthTagArtifact,
+} from '../src/lib/openai';
 
 const JA_P = '<p>神道は日本固有の宗教で、自然や祖先への敬意から生まれました。</p>';
 const EN_P = '<p>Shinto is Japan’s native spiritual tradition, built on respect for nature and ancestors.</p>';
@@ -64,6 +67,26 @@ describe('htmlHasUntranslatedBlock', () => {
     // One flat string would drown the English in kana counts; per-block it is caught.
     const body = JA_P.repeat(6) + EN_P + JA_P.repeat(6);
     expect(htmlHasUntranslatedBlock(body, 'ja')).toBe(true);
+  });
+});
+
+describe('full-width tag artifacts (＜strong＞ shown as literal text — live bug 2026-07-12)', () => {
+  it('repairs full-width formatting tags back into real HTML', () => {
+    expect(fixFullWidthTags('<p>＜strong＞1549年＜/strong＞、ザビエルが日本に到着。</p>'))
+      .toBe('<p><strong>1549年</strong>、ザビエルが日本に到着。</p>');
+    expect(fixFullWidthTags('＜h2＞見出し＜/h2＞')).toBe('<h2>見出し</h2>');
+  });
+  it('leaves Japanese decorative brackets and non-tag content alone', () => {
+    const s = '<p>＜注意＞ここは装飾の括弧です。</p>';
+    expect(fixFullWidthTags(s)).toBe(s);
+    expect(hasFullWidthTagArtifact(s)).toBe(false);
+  });
+  it('flags tag-shaped leftovers the repair did not cover', () => {
+    expect(hasFullWidthTagArtifact('<p>＜div class="x"＞テキスト＜/div＞</p>')).toBe(true);
+    expect(hasFullWidthTagArtifact('<p>＜a href="/x"＞リンク＜/a＞</p>')).toBe(true);
+  });
+  it('repaired output passes the artifact check', () => {
+    expect(hasFullWidthTagArtifact(fixFullWidthTags('＜strong＞太字＜/strong＞'))).toBe(false);
   });
 });
 

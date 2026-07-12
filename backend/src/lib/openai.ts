@@ -80,6 +80,7 @@ export async function translateFields(
   if (!content) throw new Error('openai_empty');
 
   const parsed = JSON.parse(content) as TranslateFields;
+  if (typeof parsed.body === 'string') parsed.body = fixFullWidthTags(parsed.body);
   return parsed;
 }
 
@@ -152,6 +153,27 @@ const UNTRANSLATED_RETRY_NOTE =
   'IMPORTANT: a previous attempt returned some of this text still in its source language. ' +
   'Translate EVERY heading, paragraph, list item, and caption into the target language. ' +
   'Only HTML tags, URLs, code, proper names, and established loanwords may stay as they are.';
+
+/* When writing Japanese the model sometimes re-types HTML tags with FULL-WIDTH
+ * brackets — ＜strong＞…＜/strong＞ (U+FF1C/FF1E) — which are not tags at all, so
+ * the reader shows them as literal text (found live on the Shinto post,
+ * 2026-07-12). Deterministic repair first: attribute-less formatting tags in
+ * full-width brackets are converted back to real tags. Anything ASCII-tag-shaped
+ * still left in full-width brackets afterwards fails the output check and gets
+ * the retry → failed-chip path, same as an untranslated block. */
+const FW_TAG_RE = /＜(\/?)(strong|b|em|i|s|strike|u|mark|sub|sup|small|code|kbd|p|br|hr|li|ul|ol|blockquote|h[1-6])＞/gi;
+
+/** Repair full-width-bracket tags in translated HTML. */
+export function fixFullWidthTags(html: string): string {
+  return html.replace(FW_TAG_RE, (_, slash: string, name: string) => `<${slash}${name.toLowerCase()}>`);
+}
+
+/** True when output still contains something ASCII-tag-shaped in full-width
+ * brackets (e.g. ＜div …＞). Japanese text in full-width brackets (＜注意＞) is
+ * untouched — the pattern requires an ASCII letter after the bracket. */
+export function hasFullWidthTagArtifact(html: string): boolean {
+  return /＜\/?[a-zA-Z][^＜＞]*＞/.test(html);
+}
 
 /** Visible text of an HTML fragment minus everything that legitimately stays in
  * the source language: tags, URLs, entities, and <pre>/<code> content. */
@@ -241,7 +263,7 @@ export async function translatePost(
   chunks.forEach((chunk, i) => {
     jobs.push(async () => {
       const r = await translateChecked(apiKey, to, { body: chunk }, (x) =>
-        !x.body || htmlHasUntranslatedBlock(x.body, to));
+        !x.body || htmlHasUntranslatedBlock(x.body, to) || hasFullWidthTagArtifact(x.body));
       bodyParts[i] = r.body!;
     });
   });
