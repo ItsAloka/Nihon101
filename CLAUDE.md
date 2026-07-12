@@ -65,8 +65,10 @@ notifications. Admins moderate (ban/hide/remove). Posts can trend.
     bindings are uncommented, `wrangler dev` needs
     `WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` and `..._CACHED`
     **exported in the shell** before launch (wrangler ≥4.107 does not read them
-    from `.dev.vars`; the values live there — see `.claude/launch.json` backend
-    entry for the export one-liner).
+    from `.dev.vars`; the values live there — `backend/dev-preview.mjs` exports
+    them and spawns `wrangler dev`; the `.claude/launch.json` backend entry runs
+    it under node, because the old bash one-liner broke on launchers whose
+    `/bin/bash` is not Git Bash).
   Set the prod `DATABASE_URL` as a Wrangler secret (`wrangler secret put
   DATABASE_URL`), never in `wrangler.toml`. Deploy runbook: `DEPLOYMENT_GUIDE.txt`.
 

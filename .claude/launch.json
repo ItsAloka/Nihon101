@@ -10,11 +10,8 @@
     },
     {
       "name": "backend",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": [
-        "-c",
-        "cd '/c/Users/aloka/Mine/Projects/Nihon101/backend' && DB=\"$(sed -n 's/^DATABASE_URL=//p' .dev.vars | tr -d '\"')\" && export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=\"$DB\" && export CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_CACHED=\"$DB\" && '/c/Users/aloka/.bun/bin/bun.exe' run dev"
-      ],
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["backend\\dev-preview.mjs"],
       "port": 8787,
       "autoPort": false
     },
