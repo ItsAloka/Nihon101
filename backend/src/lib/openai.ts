@@ -40,11 +40,14 @@ function systemPrompt(to: Locale): string {
   ].join(' ');
 }
 
-/** Translate the provided fields into `to`. Throws on a missing key or API error. */
+/** Translate the provided fields into `to`. Throws on a missing key or API error.
+ * `extraNote` rides along as a second user message — used by the untranslated-
+ * output retry to tell the model its first pass skipped content. */
 export async function translateFields(
   apiKey: string,
   to: Locale,
   fields: TranslateFields,
+  extraNote?: string,
 ): Promise<TranslateFields> {
   if (!apiKey) throw new Error('no_api_key');
 
@@ -59,6 +62,7 @@ export async function translateFields(
     messages: [
       { role: 'system', content: systemPrompt(to) },
       { role: 'user', content: JSON.stringify(fields) },
+      ...(extraNote ? [{ role: 'user', content: extraNote }] : []),
     ],
   };
 
@@ -126,6 +130,72 @@ export function splitHtmlBlocks(html: string, maxLen = 2000): string[] {
   return chunks.filter((c) => c.trim());
 }
 
+/* ---- Untranslated-output detection ------------------------------------------
+ * The model sometimes returns a chunk with whole blocks still in the source
+ * language ("text already in the target stays as it is" gives it an out, and
+ * context-free fragments make it worse) — the exact bug that left English
+ * sections in the middle of a Japanese page. The HTML comes back structurally
+ * intact, so only a script check can catch it: Japanese output must carry
+ * kana/kanji, English output must not be dominated by them. A flagged piece
+ * gets ONE corrective retry, then the whole post fails — all-or-nothing, so the
+ * queue's backoff/failed-chip semantics take over. Deliberately conservative:
+ * tags, URLs, entities and <pre>/<code> content are ignored, and short Latin
+ * runs (names, "photo: ..." credits) are tolerated. A false positive costs a
+ * visible retry chip; a miss costs a silently half-English page — so when in
+ * doubt this stays quiet. */
+
+// 々 + hiragana/katakana (+ phonetic extensions) + CJK ideographs + half-width katakana.
+const JA_SCRIPT_RE = /[々぀-ヿㇰ-ㇿ一-鿿ｦ-ﾟ]/g;
+const LATIN_RE = /[A-Za-z]/g;
+
+const UNTRANSLATED_RETRY_NOTE =
+  'IMPORTANT: a previous attempt returned some of this text still in its source language. ' +
+  'Translate EVERY heading, paragraph, list item, and caption into the target language. ' +
+  'Only HTML tags, URLs, code, proper names, and established loanwords may stay as they are.';
+
+/** Visible text of an HTML fragment minus everything that legitimately stays in
+ * the source language: tags, URLs, entities, and <pre>/<code> content. */
+function visibleText(html: string): string {
+  return html
+    .replace(/<(pre|code)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/&[a-zA-Z#0-9]+;/g, ' ');
+}
+
+/** True when plain text is clearly NOT written in `to`. `short` lowers the
+ * evidence bar for one-liner fields (title/excerpt). */
+export function textLooksUntranslated(text: string, to: Locale, short = false): boolean {
+  const ja = (text.match(JA_SCRIPT_RE) ?? []).length;
+  const latin = (text.match(LATIN_RE) ?? []).length;
+  // Real Japanese prose always carries kana/kanji; substantial pure-Latin text is a skip.
+  if (to === 'ja') return ja === 0 && latin >= (short ? 10 : 25);
+  // English keeping a couple of Japanese terms (家紋, 初詣…) is fine — flag only
+  // when Japanese script outweighs the Latin around it.
+  return ja >= (short ? 4 : 15) && ja > latin;
+}
+
+/** True when any top-level block of a translated HTML fragment is still in the
+ * source language — the shape of the "one section left in English" bug. */
+export function htmlHasUntranslatedBlock(html: string, to: Locale): boolean {
+  return splitHtmlBlocks(html, 1).some((b) => textLooksUntranslated(visibleText(b), to));
+}
+
+/** translateFields + the untranslated-output check: one corrective retry, then
+ * throw — a caller never receives a half-translated result. */
+async function translateChecked(
+  apiKey: string,
+  to: Locale,
+  fields: TranslateFields,
+  isBad: (r: TranslateFields) => boolean,
+): Promise<TranslateFields> {
+  const first = await translateFields(apiKey, to, fields);
+  if (!isBad(first)) return first;
+  const second = await translateFields(apiKey, to, fields, UNTRANSLATED_RETRY_NOTE);
+  if (isBad(second)) throw new Error('openai_untranslated');
+  return second;
+}
+
 /** Run every job through `width` workers. Rejects like Promise.all, but never
  * more than `width` fetches are in flight, and a failure stops the remaining
  * queue instead of burning tokens on a translation that's already doomed. */
@@ -157,20 +227,23 @@ export async function translatePost(
   if (fields.title?.trim()) meta.title = fields.title;
   if (fields.excerpt?.trim()) meta.excerpt = fields.excerpt;
   if (Object.keys(meta).length) {
-    jobs.push(() => translateFields(apiKey, to, meta).then((r) => {
-      if (meta.title && !r.title) throw new Error('openai_missing_title');
+    jobs.push(async () => {
+      const r = await translateChecked(apiKey, to, meta, (x) =>
+        (meta.title != null && (!x.title || textLooksUntranslated(x.title, to, true))) ||
+        (meta.excerpt != null && x.excerpt != null && textLooksUntranslated(x.excerpt, to, true)));
       if (r.title != null) out.title = r.title;
       if (r.excerpt != null) out.excerpt = r.excerpt;
-    }));
+    });
   }
 
   const chunks = fields.body?.trim() ? splitHtmlBlocks(fields.body) : [];
   const bodyParts: string[] = new Array(chunks.length);
   chunks.forEach((chunk, i) => {
-    jobs.push(() => translateFields(apiKey, to, { body: chunk }).then((r) => {
-      if (!r.body) throw new Error('openai_missing_body_chunk');
-      bodyParts[i] = r.body;
-    }));
+    jobs.push(async () => {
+      const r = await translateChecked(apiKey, to, { body: chunk }, (x) =>
+        !x.body || htmlHasUntranslatedBlock(x.body, to));
+      bodyParts[i] = r.body!;
+    });
   });
 
   await runPool(jobs, opts.concurrency ?? 4);

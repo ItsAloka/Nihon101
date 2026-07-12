@@ -28,6 +28,7 @@ import {
   type ReportStatus, type BanDuration, type FeaturedSection,
 } from '../db/queries/admin';
 import { newsletterStats, listSubscribers } from '../db/queries/newsletter';
+import { auditTranslations } from '../lib/translation-audit';
 
 const app = new Hono<AppEnv>();
 app.use('*', requireAdmin);
@@ -41,6 +42,28 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /* ───────────── dashboard ───────────── */
 app.get('/stats', async (c) => c.json(await adminStats(getDb(c))));
+
+/* ───────────── translation audit ───────────── */
+
+// Scan every translated post for source-language segments left in the GENERATED
+// locale (see lib/translation-audit.ts for why this is manual). Dry-run by
+// default — the report lists offending slugs; body { requeue: true } sends them
+// back through the cron translation queue.
+app.post('/translation-audit', async (c) => {
+  const db = getDb(c);
+  const body = await c.req.json().catch(() => null);
+  const requeue = body?.requeue === true;
+  const res = await auditTranslations(db, requeue);
+  if (res.requeued > 0) {
+    await logAdminAction(db, {
+      actorId: c.var.user!.id,
+      action: 'translation_requeue',
+      targetType: 'post',
+      detail: { count: res.requeued, ids: res.findings.map((f) => f.id) },
+    });
+  }
+  return c.json(res);
+});
 
 /* ───────────── reports ───────────── */
 

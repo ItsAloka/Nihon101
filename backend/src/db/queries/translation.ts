@@ -18,8 +18,9 @@
  * author edited the post mid-translation, the stale result is dropped on the
  * floor and the author's fresh 'pending' goes through the queue again. */
 
-import { sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import type { DB } from '../client';
+import { posts } from '../schema';
 import { getPostById, type PostRow } from './posts';
 
 /** A claim older than this is dead (its cron tick was killed) and claimable
@@ -137,6 +138,44 @@ export async function failTranslation(db: DB, postId: string, seenUpdatedAt: num
     UPDATE posts SET translation_status = 'failed', translation_claimed_at = NULL
     WHERE id = ${postId} AND updated_at = ${seenUpdatedAt}
   `);
+}
+
+/** The columns the stored-translation audit reads (lib/translation-audit.ts):
+ * both locales of every text field — the audit decides which side is the
+ * generated one from `lang` — paged stably oldest-first. */
+export interface DoneTranslationRow {
+  id: string; slug: string; lang: string;
+  titleEn: string; titleJa: string;
+  excerptEn: string; excerptJa: string;
+  bodyEn: string; bodyJa: string;
+}
+
+export function listDoneTranslations(db: DB, limit: number, offset: number): Promise<DoneTranslationRow[]> {
+  return db
+    .select({
+      id: posts.id, slug: posts.slug, lang: posts.lang,
+      titleEn: posts.titleEn, titleJa: posts.titleJa,
+      excerptEn: posts.excerptEn, excerptJa: posts.excerptJa,
+      bodyEn: posts.bodyEn, bodyJa: posts.bodyJa,
+    })
+    .from(posts)
+    .where(eq(posts.translationStatus, 'done'))
+    .orderBy(asc(posts.createdAt), asc(posts.id))
+    .limit(limit)
+    .offset(offset) as Promise<DoneTranslationRow[]>;
+}
+
+/** Send audited posts back through the queue — the same reset the owner's retry
+ * chip uses (fresh attempts, cleared claim), so the cron sweep re-translates
+ * them under the per-chunk untranslated-output check. */
+export async function requeueTranslations(db: DB, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await db.update(posts).set({
+    translationStatus: 'pending',
+    translationAttempts: 0,
+    translationClaimedAt: null,
+    updatedAt: Date.now(),
+  }).where(inArray(posts.id, ids));
 }
 
 /** Release a transiently-failed post for another attempt after
