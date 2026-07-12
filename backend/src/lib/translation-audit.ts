@@ -13,15 +13,21 @@
  * human reads the report, then pulls the trigger. */
 
 import type { DB } from '../db/client';
-import { hasFullWidthTagArtifact, htmlHasUntranslatedBlock, textLooksUntranslated, type Locale } from './openai';
+import {
+  hasFullWidthTagArtifact, htmlHasUntranslatedBlock, htmlStructureMismatch,
+  textLooksUntranslated, type Locale,
+} from './openai';
 import { listDoneTranslations, requeueTranslations, type DoneTranslationRow } from '../db/queries/translation';
 
 export interface TranslationAuditFinding {
   id: string;
   slug: string;
-  lang: string;                             // source locale — the other side is generated
-  locale: Locale;                           // generated locale that failed the check
-  fields: ('title' | 'excerpt' | 'body')[]; // which parts still look untranslated
+  lang: string;    // source locale — the other side is generated
+  locale: Locale;  // generated locale that failed the check
+  // 'body' = untranslated blocks or full-width tag artifacts; 'structure' =
+  // markup drift vs the source (dropped bold, changed links/images).
+  fields: ('title' | 'excerpt' | 'body' | 'structure')[];
+  detail?: string; // first structure mismatch reason, e.g. "tag_strong_7_vs_5"
 }
 
 export interface TranslationAuditResult {
@@ -39,14 +45,23 @@ function auditPost(p: DoneTranslationRow): TranslationAuditFinding | null {
   const title = to === 'ja' ? p.titleJa : p.titleEn;
   const excerpt = to === 'ja' ? p.excerptJa : p.excerptEn;
   const body = to === 'ja' ? p.bodyJa : p.bodyEn;
+  const srcBody = to === 'ja' ? p.bodyEn : p.bodyJa;
 
   const fields: TranslationAuditFinding['fields'] = [];
+  let detail: string | undefined;
   if (title.trim() && textLooksUntranslated(title, to, true)) fields.push('title');
   if (excerpt.trim() && textLooksUntranslated(excerpt, to, true)) fields.push('excerpt');
   // Body is broken if a block is still in the source language OR the model
   // re-typed tags with full-width brackets (＜strong＞ shows as literal text).
   if (body.trim() && (htmlHasUntranslatedBlock(body, to) || hasFullWidthTagArtifact(body))) fields.push('body');
-  return fields.length ? { id: p.id, slug: p.slug, lang: p.lang, locale: to, fields } : null;
+  // Markup drift vs the source (dropped bold, changed links/images). NOTE: an
+  // author who hand-edited the generated side can trip this legitimately —
+  // which is exactly why the audit reports first and only requeues on demand.
+  if (body.trim() && srcBody.trim()) {
+    const mismatch = htmlStructureMismatch(srcBody, body);
+    if (mismatch) { fields.push('structure'); detail = mismatch; }
+  }
+  return fields.length ? { id: p.id, slug: p.slug, lang: p.lang, locale: to, fields, detail } : null;
 }
 
 export async function auditTranslations(db: DB, requeue: boolean): Promise<TranslationAuditResult> {

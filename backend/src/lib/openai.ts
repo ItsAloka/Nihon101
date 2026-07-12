@@ -149,10 +149,12 @@ export function splitHtmlBlocks(html: string, maxLen = 2000): string[] {
 const JA_SCRIPT_RE = /[々぀-ヿㇰ-ㇿ一-鿿ｦ-ﾟ]/g;
 const LATIN_RE = /[A-Za-z]/g;
 
-const UNTRANSLATED_RETRY_NOTE =
-  'IMPORTANT: a previous attempt returned some of this text still in its source language. ' +
-  'Translate EVERY heading, paragraph, list item, and caption into the target language. ' +
-  'Only HTML tags, URLs, code, proper names, and established loanwords may stay as they are.';
+const OUTPUT_RETRY_NOTE =
+  'IMPORTANT: a previous attempt was rejected. Two rules were violated: ' +
+  '(1) translate EVERY heading, paragraph, list item, and caption into the target language — ' +
+  'only URLs, code, proper names, and established loanwords may stay; ' +
+  '(2) preserve the HTML markup EXACTLY — every tag that is in the input must be in the output, ' +
+  'unchanged and with normal ASCII angle brackets: never drop, add, merge, or rewrite tags or attributes.';
 
 /* When writing Japanese the model sometimes re-types HTML tags with FULL-WIDTH
  * brackets — ＜strong＞…＜/strong＞ (U+FF1C/FF1E) — which are not tags at all, so
@@ -203,6 +205,36 @@ export function htmlHasUntranslatedBlock(html: string, to: Locale): boolean {
   return splitHtmlBlocks(html, 1).some((b) => textLooksUntranslated(visibleText(b), to));
 }
 
+/** Open/close tag counts per name ("strong", "/strong", …). */
+function tagCensus(html: string): Map<string, number> {
+  const census = new Map<string, number>();
+  for (const t of html.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>/g)) {
+    const key = t[1] + t[2].toLowerCase();
+    census.set(key, (census.get(key) ?? 0) + 1);
+  }
+  return census;
+}
+
+/** First structural difference between source HTML and its translation, or
+ * null when the markup survived intact. Translation must never add, drop, or
+ * rewrite markup — bold silently disappearing (<strong> counts drifting) was a
+ * live bug, 2026-07-12 — so open and close counts must match per tag name, and
+ * image sources / link targets must be byte-identical. The reason string
+ * ("tag_strong_7_vs_5") is for logs and the audit report. */
+export function htmlStructureMismatch(src: string, out: string): string | null {
+  const a = tagCensus(src);
+  const b = tagCensus(out);
+  for (const k of new Set([...a.keys(), ...b.keys()])) {
+    if ((a.get(k) ?? 0) !== (b.get(k) ?? 0)) return `tag_${k}_${a.get(k) ?? 0}_vs_${b.get(k) ?? 0}`;
+  }
+  const urls = (h: string, re: RegExp) => [...h.matchAll(re)].map((m) => m[1]).sort().join('\n');
+  const IMG_SRC = /<img\b[^>]*\bsrc="([^"]*)"/gi;
+  const A_HREF = /<a\b[^>]*\bhref="([^"]*)"/gi;
+  if (urls(src, IMG_SRC) !== urls(out, IMG_SRC)) return 'img_src_changed';
+  if (urls(src, A_HREF) !== urls(out, A_HREF)) return 'a_href_changed';
+  return null;
+}
+
 /** translateFields + the untranslated-output check: one corrective retry, then
  * throw — a caller never receives a half-translated result. */
 async function translateChecked(
@@ -213,8 +245,8 @@ async function translateChecked(
 ): Promise<TranslateFields> {
   const first = await translateFields(apiKey, to, fields);
   if (!isBad(first)) return first;
-  const second = await translateFields(apiKey, to, fields, UNTRANSLATED_RETRY_NOTE);
-  if (isBad(second)) throw new Error('openai_untranslated');
+  const second = await translateFields(apiKey, to, fields, OUTPUT_RETRY_NOTE);
+  if (isBad(second)) throw new Error('openai_output_check_failed');
   return second;
 }
 
@@ -263,7 +295,8 @@ export async function translatePost(
   chunks.forEach((chunk, i) => {
     jobs.push(async () => {
       const r = await translateChecked(apiKey, to, { body: chunk }, (x) =>
-        !x.body || htmlHasUntranslatedBlock(x.body, to) || hasFullWidthTagArtifact(x.body));
+        !x.body || htmlHasUntranslatedBlock(x.body, to) || hasFullWidthTagArtifact(x.body)
+        || htmlStructureMismatch(chunk, x.body) != null);
       bodyParts[i] = r.body!;
     });
   });

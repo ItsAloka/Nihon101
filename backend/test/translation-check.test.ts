@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'bun:test';
 import {
   textLooksUntranslated, htmlHasUntranslatedBlock, splitHtmlBlocks,
-  fixFullWidthTags, hasFullWidthTagArtifact,
+  fixFullWidthTags, hasFullWidthTagArtifact, htmlStructureMismatch,
 } from '../src/lib/openai';
 
 const JA_P = '<p>神道は日本固有の宗教で、自然や祖先への敬意から生まれました。</p>';
@@ -87,6 +87,35 @@ describe('full-width tag artifacts (＜strong＞ shown as literal text — live 
   });
   it('repaired output passes the artifact check', () => {
     expect(hasFullWidthTagArtifact(fixFullWidthTags('＜strong＞太字＜/strong＞'))).toBe(false);
+  });
+});
+
+describe('htmlStructureMismatch (bold disappearing — live bug 2026-07-12)', () => {
+  const SRC = '<p>Christianity arrived in the <strong>16th century</strong> via <a href="/en/p/history">missionaries</a>.</p>';
+  it('passes a faithful translation: same tags, translated text', () => {
+    expect(htmlStructureMismatch(SRC,
+      '<p>キリスト教は<strong>16世紀</strong>に<a href="/en/p/history">宣教師</a>によって伝わりました。</p>')).toBeNull();
+  });
+  it('flags a dropped bold span, naming the tag and counts', () => {
+    expect(htmlStructureMismatch('<p>A <strong>b</strong> c <strong>d</strong>.</p>', '<p>あ <strong>い</strong> う。</p>'))
+      .toBe('tag_strong_2_vs_1');
+  });
+  it('flags an added tag and an unbalanced close', () => {
+    expect(htmlStructureMismatch('<p>a</p>', '<p><em>あ</em></p>')).toBe('tag_em_0_vs_1');
+    // Doubled open + missing close: the open-count drift is reported first.
+    expect(htmlStructureMismatch('<p><strong>a</strong></p>', '<p><strong>あ<strong></p>')).toBe('tag_strong_1_vs_2');
+    // Open counts equal but a close tag was dropped: the close key trips.
+    expect(htmlStructureMismatch('<p>a</p><p>b</p>', '<p>あ<p>い</p>')).toBe('tag_/p_2_vs_1');
+  });
+  it('flags rewritten link targets and image sources', () => {
+    expect(htmlStructureMismatch(SRC,
+      '<p>キリスト教は<strong>16世紀</strong>に<a href="/ja/other">宣教師</a>によって。</p>')).toBe('a_href_changed');
+    expect(htmlStructureMismatch('<figure><img src="/media/a.webp" alt></figure>',
+      '<figure><img src="/media/b.webp" alt></figure>')).toBe('img_src_changed');
+  });
+  it('ignores harmless attribute/order differences when counts and URLs match', () => {
+    expect(htmlStructureMismatch('<p class="x">a <em>b</em> <strong>c</strong></p>',
+      '<p class="x"><strong>い</strong> <em>あ</em> う</p>')).toBeNull();
   });
 });
 

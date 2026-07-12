@@ -19,10 +19,12 @@ afterAll(async () => {
 });
 
 const JA_P = '<p>神道は日本固有の宗教で、自然や祖先への敬意から生まれました。</p>';
-const EN_SECTION = '<h2>Shinto Shrines: Places Where People Connect With Kami</h2>'
-  + '<p>Shinto is Japan’s native spiritual tradition, built on respect for nature and ancestors.</p>';
+const EN_P = '<p>Shinto is Japan’s native spiritual tradition, built on respect for nature and ancestors.</p>';
+const EN_SECTION = '<h2>Shinto Shrines: Places Where People Connect With Kami</h2>' + EN_P;
 
-async function makeDonePost(authorId: string, bodyJa: string) {
+/** bodyEn defaults to the same tag structure as the given bodyJa, so only the
+ * defect under test fires — the audit also compares markup between the sides. */
+async function makeDonePost(authorId: string, bodyJa: string, bodyEn?: string) {
   const made = await makePost(authorId);
   cleanups.push(made.cleanup);
   const { db: d, pool } = db();
@@ -31,7 +33,7 @@ async function makeDonePost(authorId: string, bodyJa: string) {
       lang: 'en',
       titleEn: 'Religion in Japan', titleJa: '日本の宗教',
       excerptEn: 'A gentle introduction.', excerptJa: 'やさしい入門。',
-      bodyEn: '<p>Shinto and Buddhism have shaped daily life in Japan for centuries.</p>',
+      bodyEn: bodyEn ?? bodyJa.replace(/<p>[^<]*<\/p>/g, EN_P).replace(/<h2>[^<]*<\/h2>/g, '<h2>A Heading</h2>'),
       bodyJa,
       translationStatus: 'done',
     }).where(eq(posts.id, made.id));
@@ -65,6 +67,23 @@ describe('translation audit', () => {
       // asserted to zero (seed content may change), but surfaced loudly.
       const others = res.findings.filter((f) => f.id !== brokenId);
       if (others.length) console.warn('translation-audit canary — seeded posts flagged:', others.map((f) => f.slug));
+    } finally { await pool.end(); }
+  }, 30_000);
+
+  it('flags markup drift: a bold span dropped by the translation', async () => {
+    const u = await makeUser('trc'); created.push(u.id);
+    const id = await makeDonePost(
+      u.id,
+      '<p>キリスト教は16世紀に日本へ伝わりました。</p>', // bold lost in translation
+      '<p>Christianity arrived in Japan in the <strong>16th century</strong>.</p>',
+    );
+    const { db: d, pool } = db();
+    try {
+      const res = await auditTranslations(d, false);
+      const f = res.findings.find((x) => x.id === id);
+      expect(f).toBeDefined();
+      expect(f!.fields).toEqual(['structure']);
+      expect(f!.detail).toBe('tag_strong_1_vs_0');
     } finally { await pool.end(); }
   }, 30_000);
 
