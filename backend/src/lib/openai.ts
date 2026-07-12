@@ -208,7 +208,9 @@ export function htmlHasUntranslatedBlock(html: string, to: Locale): boolean {
 /** Open/close tag counts per name ("strong", "/strong", …). */
 function tagCensus(html: string): Map<string, number> {
   const census = new Map<string, number>();
-  for (const t of html.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>/g)) {
+  // `\/?>` — self-closing style (<br/> vs <br>) is a spelling, not a structural
+  // difference; both must land on the same census key (missed live, 2026-07-12).
+  for (const t of html.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?\/?>/g)) {
     const key = t[1] + t[2].toLowerCase();
     census.set(key, (census.get(key) ?? 0) + 1);
   }
@@ -237,18 +239,75 @@ export function htmlStructureMismatch(src: string, out: string): string | null {
 
 /** translateFields + the untranslated-output check: one corrective retry, then
  * throw — a caller never receives a half-translated result. */
+/** Turn a check-reason into a concrete instruction for the corrective retry —
+ * "preserve the markup" wasn't stopping the model from splitting a paragraph
+ * (tag_p_25_vs_26, live 2026-07-12); naming the exact violation does better. */
+function retryDetail(reason: string): string {
+  const m = /^tag_(\/?)([a-z0-9]+)_(\d+)_vs_(\d+)$/.exec(reason);
+  if (m) {
+    return ` In your rejected attempt the input had exactly ${m[3]} <${m[1]}${m[2]}> tags but your output had ${m[4]} — ` +
+      'reproduce every tag exactly; never split, merge, add, or drop one.';
+  }
+  if (reason === 'img_src_changed' || reason === 'a_href_changed')
+    return ' Your rejected attempt rewrote an image src or link href — copy every URL byte-for-byte.';
+  if (reason === 'fullwidth_tag')
+    return ' Your rejected attempt wrote HTML tags with full-width ＜＞ brackets — use normal ASCII < > for every tag.';
+  return ''; // untranslated_block / meta_* — the generic note already covers it
+}
+
+/** Exact tag inventory of a chunk, told to the model UP FRONT — tag drift is
+ * probabilistic (the same chunk passes one run and fails the next), so
+ * pre-declaring the census cuts first-attempt failures instead of relying on
+ * retries to repair them. */
+function tagCountNote(html: string): string {
+  const counts = [...tagCensus(html)]
+    .filter(([k]) => !k.startsWith('/'))
+    .map(([k, n]) => `${n}×<${k}>`).join(', ');
+  return counts
+    ? `The HTML body contains exactly: ${counts}. Your output must contain exactly the same tags — never split, merge, add, or drop one.`
+    : '';
+}
+
+/* Last-resort inline-tag protection. The model sometimes refuses to keep an
+ * inline tag no matter how the prompt insists — <strong>matsuri (祭り)</strong>
+ * collapses to plain 祭り because the term "merges" into the Japanese sentence
+ * (live, 2026-07-12). Masking each inline tag as an opaque ⟦n⟧ placeholder
+ * turns "preserve semantic markup" (which it fails probabilistically) into
+ * "copy this token" (which it does), and restoring is exact — attributes ride
+ * along in the map. Dropped/duplicated placeholders surface as tag-count drift
+ * in the post-restore structure check. */
+const INLINE_TAG_RE = /<\/?(?:strong|b|em|i|s|strike|u|mark|sub|sup|small|code|kbd)(?:\s[^>]*)?>/gi;
+
+function maskInlineTags(html: string): { masked: string; tags: string[] } {
+  const tags: string[] = [];
+  const masked = html.replace(INLINE_TAG_RE, (t) => {
+    tags.push(t);
+    return `⟦${tags.length - 1}⟧`;
+  });
+  return { masked, tags };
+}
+
+function restoreInlineTags(html: string, tags: string[]): string {
+  return html.replace(/⟦(\d+)⟧/g, (_, i) => tags[Number(i)] ?? '');
+}
+
 async function translateChecked(
   apiKey: string,
   to: Locale,
   fields: TranslateFields,
   why: (r: TranslateFields) => string | null,
+  note?: string,
 ): Promise<TranslateFields> {
-  const first = await translateFields(apiKey, to, fields);
-  if (why(first) == null) return first;
-  const second = await translateFields(apiKey, to, fields, OUTPUT_RETRY_NOTE);
-  const reason = why(second);
-  if (reason != null) throw new Error(`openai_output_check_failed:${reason}`);
-  return second;
+  let extra = note;
+  let reason: string | null = null;
+  // First pass + two corrective retries — each retry names the exact violation.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await translateFields(apiKey, to, fields, extra);
+    reason = why(r);
+    if (reason == null) return r;
+    extra = (note ? `${note} ` : '') + OUTPUT_RETRY_NOTE + retryDetail(reason);
+  }
+  throw new Error(`openai_output_check_failed:${reason}`);
 }
 
 /** Run every job through `width` workers. Rejects like Promise.all, but never
@@ -292,17 +351,46 @@ export async function translatePost(
     });
   }
 
-  const chunks = fields.body?.trim() ? splitHtmlBlocks(fields.body) : [];
-  const bodyParts: string[] = new Array(chunks.length);
-  chunks.forEach((chunk, i) => {
-    jobs.push(async () => {
-      const r = await translateChecked(apiKey, to, { body: chunk }, (x) =>
+  /** One HTML piece through the checked pipeline. Tag drift is probabilistic —
+   * the more tags a piece carries, the likelier the model drops one — so when a
+   * multi-block chunk exhausts its retries, fall back to translating it one
+   * top-level block at a time (a paragraph with one <strong> is an easy task).
+   * Only a single block failing all its retries is a real failure. */
+  const translateBody = async (piece: string): Promise<string> => {
+    try {
+      const r = await translateChecked(apiKey, to, { body: piece }, (x) =>
         !x.body ? 'empty_body'
         : htmlHasUntranslatedBlock(x.body, to) ? 'untranslated_block'
         : hasFullWidthTagArtifact(x.body) ? 'fullwidth_tag'
-        : htmlStructureMismatch(chunk, x.body));
-      bodyParts[i] = r.body!;
-    });
+        : htmlStructureMismatch(piece, x.body), tagCountNote(piece));
+      return r.body!;
+    } catch (e) {
+      const blocks = splitHtmlBlocks(piece, 1);
+      if (blocks.length <= 1) {
+        // Single block already failed its retries: mask inline tags and try once more.
+        const { masked, tags } = maskInlineTags(piece);
+        if (tags.length === 0) throw e; // nothing to mask — the failure is real
+        const r = await translateChecked(apiKey, to, { body: masked }, (x) => {
+          if (!x.body) return 'empty_body';
+          const restored = restoreInlineTags(x.body, tags);
+          if (process.env.N101_TRANSLATE_DEBUG) console.error('MASKED_IN:', masked, '\nMASKED_OUT:', x.body);
+          return htmlHasUntranslatedBlock(restored, to) ? 'untranslated_block'
+            : hasFullWidthTagArtifact(restored) ? 'fullwidth_tag'
+            : htmlStructureMismatch(piece, restored);
+        }, 'Placeholders like ⟦3⟧ are protected markup: copy each one into your output exactly once, '
+          + 'unchanged, around the text it wrapped in the input. ' + tagCountNote(masked));
+        return restoreInlineTags(r.body!, tags);
+      }
+      const parts: string[] = [];
+      for (const b of blocks) parts.push(await translateBody(b)); // sequential: stays within this pool worker's slot
+      return parts.join('');
+    }
+  };
+
+  const chunks = fields.body?.trim() ? splitHtmlBlocks(fields.body) : [];
+  const bodyParts: string[] = new Array(chunks.length);
+  chunks.forEach((chunk, i) => {
+    jobs.push(async () => { bodyParts[i] = await translateBody(chunk); });
   });
 
   await runPool(jobs, opts.concurrency ?? 4);

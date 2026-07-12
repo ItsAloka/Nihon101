@@ -117,6 +117,12 @@ describe('htmlStructureMismatch (bold disappearing — live bug 2026-07-12)', ()
     expect(htmlStructureMismatch('<p class="x">a <em>b</em> <strong>c</strong></p>',
       '<p class="x"><strong>い</strong> <em>あ</em> う</p>')).toBeNull();
   });
+  it('treats <br/> as <br> — self-closing spelling is not drift (live bug: tag_br_3_vs_0, 2026-07-12)', () => {
+    expect(htmlStructureMismatch('<p>a<br>b<br>c<br>d</p>', '<p>あ<br/>い<br/>う<br/>え</p>')).toBeNull();
+    expect(htmlStructureMismatch('<p>a<br>b</p>', '<p>あ<br />い</p>')).toBeNull();
+    // A genuinely dropped <br> still trips.
+    expect(htmlStructureMismatch('<p>a<br>b<br>c</p>', '<p>あ<br/>いう</p>')).toBe('tag_br_2_vs_1');
+  });
 });
 
 describe('splitHtmlBlocks with maxLen=1 (the checker granularity)', () => {
