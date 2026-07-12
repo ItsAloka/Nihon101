@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { getDbCached } from '../db/client';
 import type { AppEnv } from '../types';
-import { listRecentPosts, publicPostCard, type PostCardRow } from '../db/queries/posts';
+import { listRecentPosts, publicPostCard } from '../db/queries/posts';
 import { listCategories, publicCategory } from '../db/queries/categories';
 import { listTopAuthors } from '../db/queries/users';
 import { listFeatured } from '../db/queries/admin';
@@ -10,6 +10,49 @@ import { getWeather, recomputeWeatherCache } from '../lib/weather';
 import { limits } from '../middleware/rateLimit';
 
 const app = new Hono<AppEnv>();
+
+/** Pure assembly of the home sections from newest-first cards (exported for
+ * tests). Curated slots win their section, recency tops everything up, and no
+ * post repeats across hero/feature/picks. The grid (`recent`) prefers posts not
+ * shown above — but on a young site those sections can swallow every post (they
+ * take the first 7), which used to leave "Recently published" empty until the
+ * 8th post existed. So when the leftovers can't fill the grid it is topped back
+ * up with the newest already-shown posts, in recency order: the section shows
+ * up to 8 cards while ANY post exists, and once the site has enough posts the
+ * dedupe fills all 8 on its own and nothing repeats. */
+export function assembleHomeSections<T extends { id: string }>(
+  recency: T[],
+  trendingHero: T[],
+  curatedFeature: T[],
+): { hero: T[]; feature: T | null; picks: T[]; recent: T[] } {
+  const used = new Set<string>();
+  // Curated cards first (marked used), then recency tops it up to `n`, skipping dupes.
+  const fill = (curated: T[], n: number) => {
+    const out = [...curated];
+    out.forEach((p) => used.add(p.id));
+    for (const p of recency) {
+      if (out.length >= n) break;
+      if (used.has(p.id)) continue;
+      used.add(p.id);
+      out.push(p);
+    }
+    return out;
+  };
+
+  // Hero = top-3 trending (recency tops up if trending is short on a cold/quiet day).
+  const hero = fill(trendingHero.slice(0, 3), 3);
+  const feature = fill(curatedFeature, 1)[0] ?? null;
+  const picks = fill([], 3);
+
+  let recent = recency.filter((p) => !used.has(p.id)).slice(0, 8);
+  if (recent.length < 8) {
+    const pick = new Set(recent.map((p) => p.id));
+    for (const p of recency) { if (pick.size >= 8) break; pick.add(p.id); }
+    recent = recency.filter((p) => pick.has(p.id)).slice(0, 8);
+  }
+
+  return { hero, feature, picks, recent };
+}
 
 // Public aggregate feed for the SSR home page — one request, one connection.
 //   hero    = 3  (the rotating carousel — top-3 TRENDING, NOT admin-curated)
@@ -33,28 +76,11 @@ app.get('/', limits.feed, async (c) => {
   // Cold KV (cron hasn't baked weather yet) → kick a background refresh.
   if (weather.length === 0) c.executionCtx.waitUntil(recomputeWeatherCache(c.env.TRENDING_KV));
 
-  const recency = postRows.map(publicPostCard);
-  const used = new Set<string>();
-  // Curated cards first (marked used), then recency tops it up to `n`, skipping dupes.
-  const fill = (curated: PostCardRow[], n: number) => {
-    const out = curated.map(publicPostCard);
-    out.forEach((p) => used.add(p.id));
-    for (const p of recency) {
-      if (out.length >= n) break;
-      if (used.has(p.id)) continue;
-      used.add(p.id);
-      out.push(p);
-    }
-    return out;
-  };
-
-  // Hero = top-3 trending (recency tops up if trending is short on a cold/quiet day).
-  const hero = heroTop.map(publicPostCard).slice(0, 3);
-  hero.forEach((p) => used.add(p.id));
-  for (const p of recency) { if (hero.length >= 3) break; if (used.has(p.id)) continue; used.add(p.id); hero.push(p); }
-  const feature = fill(featured.feature, 1)[0] ?? null;
-  const picks = fill([], 3);
-  const recent = recency.filter((p) => !used.has(p.id)).slice(0, 8);
+  const { hero, feature, picks, recent } = assembleHomeSections(
+    postRows.map(publicPostCard),
+    heroTop.map(publicPostCard),
+    featured.feature.map(publicPostCard),
+  );
 
   return c.json({
     hero,
