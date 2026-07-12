@@ -241,12 +241,13 @@ async function translateChecked(
   apiKey: string,
   to: Locale,
   fields: TranslateFields,
-  isBad: (r: TranslateFields) => boolean,
+  why: (r: TranslateFields) => string | null,
 ): Promise<TranslateFields> {
   const first = await translateFields(apiKey, to, fields);
-  if (!isBad(first)) return first;
+  if (why(first) == null) return first;
   const second = await translateFields(apiKey, to, fields, OUTPUT_RETRY_NOTE);
-  if (isBad(second)) throw new Error('openai_output_check_failed');
+  const reason = why(second);
+  if (reason != null) throw new Error(`openai_output_check_failed:${reason}`);
   return second;
 }
 
@@ -283,8 +284,9 @@ export async function translatePost(
   if (Object.keys(meta).length) {
     jobs.push(async () => {
       const r = await translateChecked(apiKey, to, meta, (x) =>
-        (meta.title != null && (!x.title || textLooksUntranslated(x.title, to, true))) ||
-        (meta.excerpt != null && x.excerpt != null && textLooksUntranslated(x.excerpt, to, true)));
+        meta.title != null && (!x.title || textLooksUntranslated(x.title, to, true)) ? 'meta_title'
+        : meta.excerpt != null && x.excerpt != null && textLooksUntranslated(x.excerpt, to, true) ? 'meta_excerpt'
+        : null);
       if (r.title != null) out.title = r.title;
       if (r.excerpt != null) out.excerpt = r.excerpt;
     });
@@ -295,8 +297,10 @@ export async function translatePost(
   chunks.forEach((chunk, i) => {
     jobs.push(async () => {
       const r = await translateChecked(apiKey, to, { body: chunk }, (x) =>
-        !x.body || htmlHasUntranslatedBlock(x.body, to) || hasFullWidthTagArtifact(x.body)
-        || htmlStructureMismatch(chunk, x.body) != null);
+        !x.body ? 'empty_body'
+        : htmlHasUntranslatedBlock(x.body, to) ? 'untranslated_block'
+        : hasFullWidthTagArtifact(x.body) ? 'fullwidth_tag'
+        : htmlStructureMismatch(chunk, x.body));
       bodyParts[i] = r.body!;
     });
   });
