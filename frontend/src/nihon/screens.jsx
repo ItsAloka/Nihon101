@@ -59,7 +59,7 @@ function CoverCredit({ p, lang, credit, date }) {
     : (lang==='jp' ? '撮影：編集部' : 'photograph by the editors');
   return (
     <div style={{
-      fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint,
+      fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta,
       letterSpacing:'0.04em', textAlign:'center', marginTop:14,
     }}>{text} · {date}</div>
   );
@@ -93,7 +93,7 @@ function RealByline({ p, lang, name, date, handle }) {
       {avatarCircle(p, name, 48)}
       <div>
         <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:18, color:p.ink}}>{name}</div>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, marginTop:2}}>{date}</div>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta, marginTop:2}}>{date}</div>
       </div>
     </div>
   );
@@ -107,7 +107,7 @@ function RealAuthorCard({ p, lang, name, handle }) {
     <div style={{display:'flex', gap:20, padding:24, background:p.surface, border:`1px solid ${p.line}`, borderRadius:18, alignItems:'center'}}>
       {avatarCircle(p, name, 80)}
       <div style={{flex:1}}>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4}}>
           {lang==='jp'?'書いた人':'written by'}
         </div>
         <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, color:p.ink}}>{name}</div>
@@ -181,7 +181,7 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
         <div style={{maxWidth:780, margin:'0 auto'}}>
           <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:18}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
-            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>
+            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase'}}>
               {kicker} · {post.readMins} min read
             </span>
           </div>
@@ -300,12 +300,12 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
               onMouseLeave={(e)=>e.currentTarget.style.transform='scale(1)'}>
                 <HeartIcon color={p.stamp} filled={clapped>0}/>
                 <span>{(post.likes + clapped).toLocaleString()}</span>
-                <span style={{color:p.inkFaint, fontSize:12, fontWeight:500}}>{lang==='jp'?'いいね':'likes'}</span>
+                <span style={{color:p.inkMeta, fontSize:12, fontWeight:500}}>{lang==='jp'?'いいね':'likes'}</span>
               </button>
               <a href="#comments" onClick={(e)=>{e.preventDefault(); const el=document.getElementById('comments'); if(el) window.scrollTo({top: el.getBoundingClientRect().top + window.scrollY - 80, behavior:'smooth'});}}
                 style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'12px 18px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:p.ink, display:'inline-flex', alignItems:'center', gap:8, textDecoration:'none'}}>
                 <CommentIcon color={p.ink}/> {(comments||[]).length}
-                <span style={{color:p.inkFaint, fontSize:12, fontWeight:500}}>{lang==='jp'?'コメント':'comments'}</span>
+                <span style={{color:p.inkMeta, fontSize:12, fontWeight:500}}>{lang==='jp'?'コメント':'comments'}</span>
               </a>
             </div>
             <div style={{display:'flex', gap:10}}>
@@ -415,7 +415,7 @@ function ArticleHtml({ p, html, density }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: css }} />
-      <div className="art-html" dangerouslySetInnerHTML={{ __html: html || `<p style="color:${p.inkFaint}">${''}</p>` }} />
+      <div className="art-html" dangerouslySetInnerHTML={{ __html: html || `<p style="color:${p.inkMeta}">${''}</p>` }} />
     </>
   );
 }
@@ -439,7 +439,7 @@ function ArticleLoader(props) {
   if (seed) return <ArticlePage {...props} post={seed}/>;
   if (real) return <RealArticle {...props} post={real}/>;
   if (missing) return <div style={{maxWidth:1320, margin:'0 auto', padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontDisplay)', fontSize:24, color:props.p.inkSoft}}>{props.lang==='jp'?'記事が見つかりません。':'Article not found.'}</div>;
-  return <div style={{padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontMono)', fontSize:13, color:props.p.inkFaint}}>…</div>;
+  return <div style={{padding:'120px 32px', textAlign:'center', fontFamily:'var(--fontMono)', fontSize:13, color:props.p.inkMeta}}>…</div>;
 }
 
 // Backend-wired engagement for a real post, adapted onto ArticlePage's existing
@@ -562,7 +562,7 @@ function AuthorCard({p, lang, slug}) {
         fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:30, flexShrink:0, border:`1px solid ${p.line}`,
       }}>{a.initials}</div>
       <div style={{flex:1}}>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:4}}>
           {lang==='jp'?'書いた人':'written by'}
         </div>
         <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, color:p.ink}}>
@@ -606,7 +606,7 @@ function CommentComposer({ p, lang, currentUser, onSubmit, onCancel, autoFocus, 
             fontFamily:'var(--fontBody)', fontSize:compact?14:15, color:p.ink, outline:'none', lineHeight:1.5,
           }}/>
         <div style={{display:'flex', alignItems:'center', justifyContent:'flex-end', gap:8, marginTop:10}}>
-          <span style={{marginRight:'auto', fontFamily:'var(--fontMono)', fontSize:12, color: near ? p.stamp : p.inkFaint}}>
+          <span style={{marginRight:'auto', fontFamily:'var(--fontMono)', fontSize:12, color: near ? p.stamp : p.inkMeta}}>
             {text.length}/{MAX_COMMENT}
           </span>
           {onCancel && <button onClick={onCancel} style={{appearance:'none', border:`1px solid ${p.line}`, background:p.surface, padding:'8px 16px', borderRadius:999, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:13, color:p.inkSoft}}>{lang==='jp'?'キャンセル':'Cancel'}</button>}
@@ -642,7 +642,7 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
       <div style={{flex:1, minWidth:0}}>
         <div style={{display:'flex', alignItems:'baseline', gap:10, marginBottom:4}}>
           {href ? <a href={href} style={{textDecoration:'none'}}>{nameEl}</a> : nameEl}
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{relTime(c.ts, lang)}</span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta}}>{relTime(c.ts, lang)}</span>
         </div>
         <p style={{fontFamily:'var(--fontBody)', fontSize:15, lineHeight:1.6, color:p.ink, marginBottom:8, textWrap:'pretty'}}><CommentText text={c.text} p={p}/></p>
         <div style={{display:'flex', alignItems:'center', gap:18}}>
@@ -652,19 +652,19 @@ function CommentItem({ p, lang, slug, c, isReply, currentUser, onLike, onReply, 
           </button>
           {!isReply && (
             <button onClick={()=> currentUser ? setReplying(v=>!v) : onRequireLogin()}
-              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0, fontWeight:600}}>
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:13, padding:0, fontWeight:600}}>
               {lang==='jp'?'返信':'Reply'}
             </button>
           )}
           {canReport && (
             <button onClick={()=> currentUser ? onReport(c.id) : onRequireLogin()}
-              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
               {lang==='jp'?'通報':'Report'}
             </button>
           )}
           {canDelete && (
             <button onClick={()=>setConfirmDel(true)}
-              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
+              style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:13, padding:0}}>
               {lang==='jp'?'削除':'Delete'}
             </button>
           )}
@@ -754,7 +754,7 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onRe
   const sortBtn = (key, label)=>(
     <button onClick={()=>setSort(key)} style={{
       appearance:'none', cursor:'pointer', border:'none', background: sort===key?p.surface:'transparent',
-      color: sort===key?p.ink:p.inkFaint, fontWeight: sort===key?600:500,
+      color: sort===key?p.ink:p.inkMeta, fontWeight: sort===key?600:500,
       fontFamily:'var(--fontBody)', fontSize:13, padding:'6px 14px', borderRadius:999,
       boxShadow: sort===key?`0 1px 2px color-mix(in oklab, ${p.ink} 12%, transparent)`:'none',
     }}>{label}</button>
@@ -798,7 +798,7 @@ function CommentSection({ p, lang, slug, comments, onAdd, onLike, onDelete, onRe
       {/* Threads */}
       <div style={{display:'flex', flexDirection:'column', gap:28}}>
         {topLevel.length===0 ? (
-          <div style={{textAlign:'center', padding:'40px 0', color:p.inkFaint, fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:18}}>
+          <div style={{textAlign:'center', padding:'40px 0', color:p.inkMeta, fontFamily:'var(--fontDisplay)', fontStyle:'italic', fontSize:18}}>
             {lang==='jp'?'最初のコメントを書いてみませんか？':'Be the first to comment.'}
           </div>
         ) : topLevel.map((c)=>{
@@ -947,7 +947,7 @@ function SearchPage({p, lang, initialQuery, t, savedSet, onSave}) {
   return (
     <div>
       <div style={{...maxWrap(), paddingTop:48}}>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
           <WaveMark color={p.stamp}/>
           {lang==='jp'?'探す':'Explore'}
         </div>
@@ -964,10 +964,10 @@ function SearchPage({p, lang, initialQuery, t, savedSet, onSave}) {
           <SearchIcon color={p.ink} size={18}/>
           <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder={lang==='jp'?'木漏れ日、喫茶店、雪国…':'kissaten, komorebi, snow…'}
             style={{flex:1, border:'none', outline:'none', background:'transparent', fontFamily:'var(--fontDisplay)', fontSize:22, color:p.ink}}/>
-          {q && <button onClick={()=>setQ('')} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:12}}>clear</button>}
+          {q && <button onClick={()=>setQ('')} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta, fontFamily:'var(--fontMono)', fontSize:12}}>clear</button>}
         </div>
         <CategoryStrip p={p} lang={lang} active={cat} onPick={setCat}/>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', margin:'24px 0 16px'}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase', margin:'24px 0 16px'}}>
           {String(results.length).padStart(2,'0')} {lang==='jp'?'件の記事':'results'} {q && `· “${q}”`}
         </div>
         {results.length===0 ? (
@@ -1065,7 +1065,7 @@ function AboutPage({p, lang}) {
     <div>
       <div style={{...maxWrap(), paddingTop:64, paddingBottom:32}}>
         <div style={{maxWidth:780, margin:'0 auto'}}>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
+          <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
             <WaveMark color={p.stamp}/>
             {lang==='jp'?'はじめに':'A short manifesto'}
           </div>
@@ -1152,7 +1152,7 @@ function SavedPage({p, lang, savedSet, t, onSave}) {
   const posts = useResolvedPosts(savedSet) || [];
   return (
     <div style={{...maxWrap(), paddingTop:48}}>
-      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14}}>
+      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14}}>
         {lang==='jp'?'保存した記事':'Saved'}
       </div>
       <h1 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(40px, 5vw, 72px)', letterSpacing:'-0.025em', color:p.ink, marginBottom:32, textWrap:'pretty'}}>
@@ -1179,7 +1179,7 @@ function PageHero({p, lang, kicker, en, jp, sub}) {
   return (
     <div style={{...maxWrap(), paddingTop:56}}>
       <div style={{maxWidth:780, margin:'0 auto'}}>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
           <WaveMark color={p.stamp}/> {kicker}
         </div>
         <h1 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(38px,5vw,68px)', letterSpacing:'-0.025em', lineHeight:1.04, color:p.ink, marginBottom:16, textWrap:'pretty'}}>
@@ -1213,7 +1213,7 @@ function PrivacyPage({p, lang}) {
         sub={lang==='jp'?'短く、正直に。私たちが集めるもの、集めないもの。':'Short and honest — what we collect, what we don’t, and why.'}/>
       <div style={{...maxWrap(), marginTop:40}}>
         <div style={{maxWidth:780, margin:'0 auto'}}>
-          <p style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.08em', marginBottom:32}}>
+          <p style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.08em', marginBottom:32}}>
             {lang==='jp'?'最終更新：2026年3月':'Last updated: March 2026'}
           </p>
           <LegalBlock p={p} lang={lang} num="一" en="What we collect" jp="集めるもの"
@@ -1333,7 +1333,7 @@ function ContactPage({p, lang}) {
 function Field({p, label, children}) {
   return (
     <div style={{marginBottom:14}}>
-      <label style={{display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:7}}>{label}</label>
+      <label style={{display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase', marginBottom:7}}>{label}</label>
       {children}
     </div>
   );

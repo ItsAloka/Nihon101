@@ -238,7 +238,10 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
       <>
         {isOwner ? ownerActions : (
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={onToggleSave} style={pill({ width: 40, height: 40, color: saved ? p.stamp : p.ink })}>
+            {/* Icon-only: without a label a screen reader announces "button". */}
+            <button onClick={onToggleSave} aria-pressed={saved}
+              aria-label={lang === "jp" ? (saved ? "保存済み" : "保存") : (saved ? "Saved" : "Save")}
+              style={pill({ width: 40, height: 40, color: saved ? p.stamp : p.ink })}>
               <BookmarkIcon filled={saved} color={saved ? p.stamp : p.ink} />
             </button>
             <button onClick={onShare} style={pill({ height: 40, padding: "0 14px", gap: 6, fontSize: 13 })}>
@@ -260,12 +263,12 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
             <button onClick={onToggleLike} style={{ appearance: "none", border: `1px solid ${liked ? p.stamp : p.line}`, background: liked ? `color-mix(in oklab, ${p.stamp} 12%, ${p.surface})` : p.surface, padding: "12px 18px", borderRadius: 999, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 10, fontFamily: "var(--fontBody)", fontSize: 14, fontWeight: 600, color: p.ink }}>
               <HeartIcon color={p.stamp} filled={liked} />
               <span>{likeCount.toLocaleString()}</span>
-              <span style={{ color: p.inkFaint, fontSize: 12, fontWeight: 500 }}>{lang === "jp" ? "いいね" : "likes"}</span>
+              <span style={{ color:p.inkMeta, fontSize: 12, fontWeight: 500 }}>{lang === "jp" ? "いいね" : "likes"}</span>
             </button>
             <a href="#comments" onClick={(e) => { e.preventDefault(); const el = document.getElementById("comments"); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 80, behavior: "smooth" }); }}
               style={pill({ padding: "12px 18px", gap: 8, fontSize: 14, fontWeight: 600, textDecoration: "none" })}>
               <CommentIcon color={p.ink} /> {Math.max(commentsTotal, comments.length)}
-              <span style={{ color: p.inkFaint, fontSize: 12, fontWeight: 500 }}>{lang === "jp" ? "コメント" : "comments"}</span>
+              <span style={{ color:p.inkMeta, fontSize: 12, fontWeight: 500 }}>{lang === "jp" ? "コメント" : "comments"}</span>
             </a>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -305,8 +308,12 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
           onClose={() => setReportTarget(null)} onSubmit={submitReport} />
       )}
 
+      {/* `inert` alongside aria-hidden: opacity 0 + pointer-events none hid the
+          floating bar from the mouse but left its four buttons in the tab order,
+          inside an aria-hidden container — a keyboard user tabbed into controls a
+          screen reader had been told don't exist (Lighthouse `aria-hidden-focus`). */}
       {!isOwner && (
-        <div aria-hidden={!floatOn} style={{ position: "fixed", left: "50%", bottom: 24, transform: `translateX(-50%) translateY(${floatOn ? "0" : "16px"})`, opacity: floatOn ? 1 : 0, pointerEvents: floatOn ? "auto" : "none", transition: "opacity .25s ease, transform .25s ease", zIndex: 45, display: "flex", alignItems: "center", gap: 2, background: p.surface, border: `1px solid ${p.line}`, borderRadius: 999, boxShadow: `0 20px 44px -18px color-mix(in oklab, ${p.ink} 40%, transparent)`, padding: "6px 8px" }}>
+        <div aria-hidden={!floatOn} inert={!floatOn} style={{ position: "fixed", left: "50%", bottom: 24, transform: `translateX(-50%) translateY(${floatOn ? "0" : "16px"})`, opacity: floatOn ? 1 : 0, pointerEvents: floatOn ? "auto" : "none", transition: "opacity .25s ease, transform .25s ease", zIndex: 45, display: "flex", alignItems: "center", gap: 2, background: p.surface, border: `1px solid ${p.line}`, borderRadius: 999, boxShadow: `0 20px 44px -18px color-mix(in oklab, ${p.ink} 40%, transparent)`, padding: "6px 8px" }}>
           <button onClick={onToggleLike} style={floatBtn(liked ? p.stamp : p.ink)}>
             <HeartIcon color={p.stamp} filled={liked} /> <span>{likeCount.toLocaleString()}</span>
           </button>

@@ -5,6 +5,7 @@
 // category page, authors to their profile. `hideAuthor` drops the byline (profile
 // page, where every card is the same author) and shows the date instead.
 import { makeHelpers, tagSlug, type CatLike } from "../lib/cards";
+import { coverSrc, coverSrcset, SIZES } from "../lib/img";
 
 interface Props {
   posts: any[];
@@ -23,7 +24,7 @@ const CHAT = "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 
   {posts.map((po: any) => (
     <article class="post-card">
       <a class="photo" style={`height:240px;${po.cover ? '' : `background:linear-gradient(135deg, ${h.grad(po.categoryId)[0]}, ${h.grad(po.categoryId)[1]});`}`} href={readHref(po)}>
-        {po.cover ? <img src={po.cover} alt={h.title(po)} loading="lazy" /> : <span class="glyph" style="font-size:84px;">{h.glyphFor(po.categoryId)}</span>}
+        {po.cover ? <img src={coverSrc(po.cover, 640)} srcset={coverSrcset(po.cover)} sizes={SIZES.card} alt={h.title(po)} loading="lazy" decoding="async" /> : <span class="glyph" style="font-size:84px;">{h.glyphFor(po.categoryId)}</span>}
         <span class="vignette"></span>
         {po.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {po.coverLabel}</span>}
       </a>

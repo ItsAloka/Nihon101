@@ -125,7 +125,7 @@ function HeroSplit({p, lang, post, t, saved, onSave}) {
         <div>
           <div style={{display:'flex', alignItems:'center', gap:14, marginBottom:24}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
-            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>
+            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase'}}>
               {lang==='jp'?'特集':'cover story'} · {post.readMins} min
             </span>
           </div>
@@ -181,7 +181,7 @@ function HeroStack({p, lang, post, t, saved, onSave}) {
         <div>
           <div style={{display:'flex', gap:14, marginBottom:18}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
-            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>
+            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase'}}>
               cover story · {post.readMins} min
             </span>
           </div>
@@ -221,7 +221,7 @@ function HeroMagazine({p, lang, post, t, saved, onSave}) {
         }}>
           <div style={{display:'flex', alignItems:'center', gap:14, marginBottom:14}}>
             <CategoryChip slug={post.category} p={p} lang={lang}/>
-            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>
+            <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase'}}>
               {post.readMins} min read
             </span>
           </div>
@@ -250,7 +250,7 @@ function SectionHeader({p, lang, en, jp, kicker_en, kicker_jp, right}) {
       marginTop:80, marginBottom:28, display:'flex', alignItems:'end', justifyContent:'space-between', gap:24,
     }}>
       <div>
-        <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.18em', textTransform:'uppercase', color:p.inkFaint, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
+        <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.18em', textTransform:'uppercase', color:p.inkMeta, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
           <WaveMark color={p.stamp}/>
           {lang==='jp'?kicker_jp:kicker_en}
         </div>
@@ -259,7 +259,7 @@ function SectionHeader({p, lang, en, jp, kicker_en, kicker_jp, right}) {
           color:p.ink, lineHeight:1.1, display:'inline-flex', alignItems:'baseline', gap:14,
         }}>
           {lang==='jp'?jp:en}
-          <span style={{fontFamily:'var(--fontDisplay)', fontSize:'0.45em', color:p.inkFaint, letterSpacing:'0.1em'}}>
+          <span style={{fontFamily:'var(--fontDisplay)', fontSize:'0.45em', color:p.inkMeta, letterSpacing:'0.1em'}}>
             {lang==='jp'?en:jp}
           </span>
         </h2>
@@ -291,7 +291,7 @@ function SecondaryFeature({p, lang, post, t}) {
       <div style={{display:'flex', flexDirection:'column', justifyContent:'center', gap:14}}>
         <div style={{display:'flex', alignItems:'center', gap:10}} onClick={(e)=>e.stopPropagation()}>
           <CategoryChip slug={post.category} p={p} lang={lang} size="sm"/>
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.08em', textTransform:'uppercase'}}>also featured</span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.08em', textTransform:'uppercase'}}>also featured</span>
         </div>
         <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:32, lineHeight:1.1, letterSpacing:'-0.02em', color:p.ink, textWrap:'pretty'}}>
           {title}
@@ -309,7 +309,7 @@ function CategoryRail({p, lang, categories}) {
     <aside style={{
       padding:24, background:p.surface, border:`1px solid ${p.line}`, borderRadius:18,
     }}>
-      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:18, display:'flex', alignItems:'center', gap:8}}>
+      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:18, display:'flex', alignItems:'center', gap:8}}>
         <WaveMark color={p.stamp}/>
         {lang==='jp'?'カテゴリー':'Topics'}
       </div>
@@ -326,7 +326,7 @@ function CategoryRail({p, lang, categories}) {
                 <span style={{color:p.stamp, fontSize:18}}>{c.kanji}</span>
                 <span>{lang==='jp'?c.jp:c.en}</span>
               </span>
-              <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>
+              <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.06em'}}>
                 {String(window.NIHON_DATA.POSTS.filter(po=>po.category===c.slug).length).padStart(2,'0')}
               </span>
             </a>
@@ -374,7 +374,7 @@ function EditorList({p, lang, posts, t}) {
               {String(i+1).padStart(2,'0')}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}}>
+              <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.inkMeta, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}}>
                 {window.NIHON_DATA.CATEGORIES.find(c=>c.slug===post.category)[lang==='jp'?'jp':'en']} · {post.readMins} min
               </div>
               <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:22, lineHeight:1.15, letterSpacing:'-0.015em', color:p.ink, marginBottom:8, textWrap:'pretty'}}>
@@ -426,12 +426,12 @@ function ArticleCard({p, lang, post, t, saved, onSave, compact=false, forYou=fal
       </a>
       <div style={{display:'flex', alignItems:'center', gap:10}}>
         <CategoryChip slug={post.category} p={p} lang={lang} size="sm"/>
-        <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>{post.readMins} min</span>
+        <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.06em'}}>{post.readMins} min</span>
         {forYou && post._id && (
           <button type="button" onClick={notInterested} title="Not interested — show less like this" aria-label="Not interested"
-            style={{marginLeft:'auto', display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, flexShrink:0, background:p.surface, border:`1px solid ${p.line}`, borderRadius:999, cursor:'pointer', color:p.inkFaint, transition:'color .2s ease, border-color .2s ease, background .2s ease'}}
+            style={{marginLeft:'auto', display:'inline-flex', alignItems:'center', justifyContent:'center', width:28, height:28, flexShrink:0, background:p.surface, border:`1px solid ${p.line}`, borderRadius:999, cursor:'pointer', color:p.inkMeta, transition:'color .2s ease, border-color .2s ease, background .2s ease'}}
             onMouseEnter={(e)=>{ e.currentTarget.style.color=p.stamp; e.currentTarget.style.borderColor=`color-mix(in oklab, ${p.stamp} 50%, ${p.line})`; e.currentTarget.style.background=p.tint; }}
-            onMouseLeave={(e)=>{ e.currentTarget.style.color=p.inkFaint; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.background=p.surface; }}>
+            onMouseLeave={(e)=>{ e.currentTarget.style.color=p.inkMeta; e.currentTarget.style.borderColor=p.line; e.currentTarget.style.background=p.surface; }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
             </svg>
@@ -499,7 +499,7 @@ function AuthorGrid({p, lang}) {
             <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:16, color:p.ink, lineHeight:1.2, marginBottom:2}}>
               {lang==='jp'?a.jp:a.en}
             </div>
-            <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint, letterSpacing:'0.08em', textTransform:'uppercase'}}>
+            <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta, letterSpacing:'0.08em', textTransform:'uppercase'}}>
               {a.role} · {a.city}
             </div>
           </div>
@@ -588,7 +588,7 @@ function NewsletterBlock({p, lang}) {
             <button disabled={busy} style={gradStyle(p)}>{busy ? '…' : (lang==='jp'?'登録する':'Subscribe')}</button>
           </form>
         )}
-        <div style={{marginTop:14, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em'}}>
+        <div style={{marginTop:14, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.06em'}}>
           {lang==='jp'?'近日公開・スパムは送りません。':'Coming soon · no spam, ever.'}
         </div>
       </div>

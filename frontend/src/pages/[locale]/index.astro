@@ -7,6 +7,8 @@
 import { HomeHeader, HomeFooter } from "../../nihon/home-chrome.jsx";
 import { ssrFetch, fwdIp } from "../../lib/ssr";
 import Toaster from "../../components/Toaster.astro";
+import Fonts from "../../components/Fonts.astro";
+import { coverSrc, coverSrcset, SIZES } from "../../lib/img";
 
 const { locale } = Astro.params as { locale: string };
 if (locale !== 'ja' && locale !== 'en') return new Response(null, { status: 404 });
@@ -100,6 +102,8 @@ const pageDesc = jp
     <link rel="canonical" href={`https://nihon101.com/${locale}/`} />
     <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
     <link rel="alternate" hreflang={locale} href={`https://nihon101.com/${locale}/`} />
+    {/* ja is the site default (/ 308s there) — see the note in Shell.astro. */}
+    <link rel="alternate" hreflang="x-default" href="https://nihon101.com/ja/" />
     {/* Open Graph + Twitter share cards (branded default image) */}
     <meta property="og:site_name" content="nihon101" />
     <meta property="og:type" content="website" />
@@ -124,12 +128,22 @@ const pageDesc = jp
         location.replace(art ? base + '/p/' + art[1] : base + '/app' + location.hash);
       }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <Fonts />
+    {/* The first hero cover IS the LCP element. Without this the browser only
+        discovers it after the document is parsed AND the stylesheet resolves —
+        measured 1.86 s of pure "load delay" on mobile. Preloading it moves the
+        fetch to the head, in parallel with everything else. Only slide 1: the
+        other two are display:none and lazy (see the carousel markup below). */}
+    {heroSlides[0]?.cover && (
+      <link
+        rel="preload"
+        as="image"
+        href={coverSrc(heroSlides[0].cover)}
+        imagesrcset={coverSrcset(heroSlides[0].cover)}
+        imagesizes={SIZES.hero}
+        fetchpriority="high"
+      />
+    )}
     <!-- Global block: these target the React header island's DOM (no astro scope) -->
     <style is:global>
       .nav-burger { display: none; }
@@ -174,9 +188,14 @@ const pageDesc = jp
       :root {
         --bg: #fbfaf7; --surface: #fff; --surface2: #f2f0eb;
         --ink: #1a1817; --inkSoft: #5c544c; --inkFaint: #a39f98;
+        /* --inkFaint stays exactly as designed for hairlines, icon strokes and
+           decorative glyphs. --inkMeta is its TEXT twin: same role in the design,
+           but #a39f98 on #fbfaf7 is 2.2:1 and every kicker/date/count set in it
+           failed WCAG AA (Lighthouse a11y 90, 2026-07-21). 5.2:1 here. */
+        --inkMeta: #6f6960;
         --line: #ece8e0; --accent: #f58fa3; --accentDeep: #e54e70;
         --stamp: #d63752; --tint: #fce5ea;
-        --fontDisplay: 'Shippori Mincho B1', 'Times New Roman', serif;
+        --fontDisplay: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
         --fontBody: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
         --fontMono: 'JetBrains Mono', monospace;
       }
@@ -186,7 +205,7 @@ const pageDesc = jp
         --bg: color-mix(in oklab, #f58fa3 7%, #15121a);
         --surface: color-mix(in oklab, #f58fa3 6%, #1e1b24);
         --surface2: color-mix(in oklab, #f58fa3 10%, #2a2632);
-        --ink: #f4efea; --inkSoft: #b9b0bc; --inkFaint: #7e7588;
+        --ink: #f4efea; --inkSoft: #b9b0bc; --inkFaint: #7e7588; --inkMeta: #9d94a8;
         --line: color-mix(in oklab, #f58fa3 12%, #342f3c);
         --tint: color-mix(in oklab, #f58fa3 20%, #1e1b24);
         color-scheme: dark;
@@ -207,7 +226,15 @@ const pageDesc = jp
       .ribbon .wrap { padding: 10px 32px; display: flex; justify-content: space-between; font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); letter-spacing: 0.1em; text-transform: uppercase; }
       .ribbon .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--stamp); display: inline-block; margin-right: 10px; }
       .ribbon-wx { display: inline-flex; align-items: center; }
-      .ribbon-wx .ribbon-wx-text { transition: opacity 0.22s ease; text-transform: none; }
+      /* The city swap fades via a keyframe rather than an inline opacity:0, so the
+         element's RESTING computed opacity is always 1. With the old
+         `style.opacity = '0'` an accessibility scan that happened to sample
+         mid-fade read the text as 1.33:1 contrast and failed the page — a real
+         audit failure that came and went with the 6-second timer. */
+      .ribbon-wx .ribbon-wx-text { text-transform: none; }
+      .ribbon-wx .ribbon-wx-text.swapping { animation: wxSwap 0.44s ease; }
+      @keyframes wxSwap { 0% { opacity: 1; } 45% { opacity: 0; } 100% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .ribbon-wx .ribbon-wx-text.swapping { animation: none; } }
 
       /* hero */
       .hero { padding-top: 48px; padding-bottom: 16px; position: relative; }
@@ -219,9 +246,13 @@ const pageDesc = jp
       .hero-meta { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
       .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid var(--line); background: var(--surface); }
       .chip .kanji { font-family: var(--fontDisplay); color: var(--stamp); text-transform: none; letter-spacing: 0; }
-      .hero-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; }
-      h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(44px, 5vw, 78px); line-height: 1.04; letter-spacing: -0.025em; margin-bottom: 24px; text-wrap: pretty; }
-      h1 .wash { background-image: linear-gradient(transparent 70%, var(--accent) 70%, var(--accent) 92%, transparent 92%); background-repeat: no-repeat; padding-right: 0.1em; }
+      .hero-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.1em; text-transform: uppercase; }
+      /* .hero-slide h2 = carousel slides 2–3. All three slides used to be <h1>, so
+         every crawler saw three competing top-level headings on the page (only one
+         is ever visible). Slide 1 keeps the h1; the rest are h2 and render
+         identically — same rule, same type. */
+      h1, .hero-slide h2 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(44px, 5vw, 78px); line-height: 1.04; letter-spacing: -0.025em; margin-bottom: 24px; text-wrap: pretty; }
+      h1 .wash, .hero-slide h2 .wash { background-image: linear-gradient(transparent 70%, var(--accent) 70%, var(--accent) 92%, transparent 92%); background-repeat: no-repeat; padding-right: 0.1em; }
       .hero-excerpt { font-size: 18px; line-height: 1.55; color: var(--inkSoft); margin-bottom: 32px; max-width: 560px; }
       .hero-cta { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
       .read-btn { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 14px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; box-shadow: 0 12px 24px -10px var(--accentDeep); transition: transform 0.15s ease; }
@@ -234,16 +265,22 @@ const pageDesc = jp
       .achip .ava { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 600; border: 1px solid var(--line); color: #3a2e28; overflow: hidden; flex-shrink: 0; }
       .achip .ava img { width: 100%; height: 100%; object-fit: cover; }
       .achip .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
-      .achip .dt { font-size: 11px; color: var(--inkFaint); }
+      .achip .dt { font-size: 11px; color: var(--inkMeta); }
       .hero-photo { position: relative; }
       .hero-photo .photo { border-radius: 24px; box-shadow: 0 40px 70px -50px color-mix(in oklab, var(--accentDeep) 60%, transparent); }
       .hero-photo .cover-hanko { border-radius: 16%; }
 
       /* hero carousel controls */
       .hero-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 32px; }
-      .hero-dots { display: flex; gap: 8px; }
-      .hero-dot { width: 9px; height: 9px; border-radius: 50%; border: none; padding: 0; cursor: pointer; background: var(--line); transition: background 0.2s, width 0.2s; }
-      .hero-dot.on { background: var(--accentDeep); width: 24px; border-radius: 5px; }
+      /* The painted dot is still 9px (24px pill when active) — it just moved to a
+         ::before so the BUTTON can be a full 24×24 tap target. A 9px button fails
+         WCAG 2.5.8 / Lighthouse `target-size`, and on a phone it genuinely is a
+         miss-and-swear-at-it control. Spacing comes from the box now, so the row
+         reads ~7px airier than before; nothing about the dots themselves changed. */
+      .hero-dots { display: flex; gap: 0; }
+      .hero-dot { width: 24px; height: 24px; border: none; padding: 0; cursor: pointer; background: none; display: grid; place-items: center; }
+      .hero-dot::before { content: ''; display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--line); transition: background 0.2s, width 0.2s; }
+      .hero-dot.on::before { background: var(--accentDeep); width: 24px; border-radius: 5px; }
       .hero-arrows { display: flex; gap: 10px; }
       .hero-prev, .hero-next { appearance: none; border: 1px solid var(--line); background: var(--surface); width: 46px; height: 46px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); transition: transform 0.15s ease; }
       .hero-prev:hover, .hero-next:hover { transform: translateY(-1px); }
@@ -265,14 +302,17 @@ const pageDesc = jp
       .feature-card:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .feature-card .body { display: flex; flex-direction: column; justify-content: center; gap: 14px; }
       .feature-card .cmeta { display: flex; align-items: center; gap: 10px; }
-      .feature-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; text-wrap: pretty; }
+      /* h2, not h3: this is the first section heading after the hero's h1, and an
+         h1 → h3 jump is what Lighthouse's `heading-order` was failing on. Same
+         type, same size — only the tag changed. */
+      .feature-card h2 { font-family: var(--fontDisplay); font-weight: 600; font-size: 32px; line-height: 1.1; letter-spacing: -0.02em; text-wrap: pretty; }
       .feature-card p { font-size: 15px; line-height: 1.55; color: var(--inkSoft); }
       .rail { padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
-      .rail-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+      .rail-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
       .rail ul { list-style: none; display: flex; flex-direction: column; gap: 2px; margin-bottom: 18px; }
       .rail a.cat { display: flex; align-items: baseline; justify-content: space-between; padding: 10px 4px; border-bottom: 1px solid var(--line); font-family: var(--fontDisplay); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
       .rail a.cat .kj { color: var(--stamp); font-size: 18px; margin-right: 10px; }
-      .rail a.cat .ct { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
+      .rail a.cat .ct { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.06em; }
       .make-topic { padding: 16px; background: var(--tint); border-radius: 12px; display: flex; align-items: center; gap: 12px; position: relative; }
       .hanko { position: absolute; top: 8px; left: 12px; width: 42px; height: 42px; border-radius: 14%; border: 2.5px solid var(--stamp); color: var(--stamp); display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 700; font-size: 19px; transform: rotate(-8deg); }
       .make-topic .tx { flex: 1; margin-left: 58px; }
@@ -281,9 +321,9 @@ const pageDesc = jp
 
       /* section headers */
       .sec-head { margin-top: 80px; margin-bottom: 28px; display: flex; align-items: end; justify-content: space-between; gap: 24px; }
-      .sec-kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--inkFaint); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+      .sec-kicker { font-family: var(--fontMono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--inkMeta); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
       h2.sec { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(28px, 2.8vw, 40px); letter-spacing: -0.02em; line-height: 1.1; display: inline-flex; align-items: baseline; gap: 14px; }
-      h2.sec .alt { font-size: 0.45em; color: var(--inkFaint); letter-spacing: 0.1em; }
+      h2.sec .alt { font-size: 0.45em; color: var(--inkMeta); letter-spacing: 0.1em; }
       .see-all { font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 
       /* editor list */
@@ -291,7 +331,7 @@ const pageDesc = jp
       .editor-list .num { font-family: var(--fontDisplay); font-size: 42px; font-weight: 600; color: var(--stamp); line-height: 0.9; min-width: 48px; letter-spacing: -0.04em; }
       .editor-list li { display: flex; gap: 16px; align-items: flex-start; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 22px; transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease; }
       .editor-list li:hover { transform: translateY(-4px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
-      .editor-list .cat { font-family: var(--fontMono); font-size: 10px; color: var(--inkFaint); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+      .editor-list .cat { font-family: var(--fontMono); font-size: 10px; color: var(--inkMeta); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
       .editor-list h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; }
       .editor-list .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); margin: 8px 0 10px; }
 
@@ -300,7 +340,7 @@ const pageDesc = jp
       .post-card { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 14px; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
       .post-card:hover { transform: translateY(-4px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .post-card .cmeta { display: flex; align-items: center; gap: 10px; }
-      .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
+      .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.06em; }
       .post-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; text-wrap: pretty; }
       .post-card .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); gap: 12px; }
@@ -319,7 +359,7 @@ const pageDesc = jp
       .author-card .ava { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 600; font-size: 24px; border: 1px solid var(--line); color: #3a2e28; overflow: hidden; }
       .author-card .ava img { width: 100%; height: 100%; object-fit: cover; }
       .author-card .nm { font-family: var(--fontDisplay); font-weight: 600; font-size: 16px; line-height: 1.2; margin-bottom: 2px; }
-      .author-card .rl { font-size: 11px; color: var(--inkFaint); letter-spacing: 0.08em; text-transform: uppercase; }
+      .author-card .rl { font-size: 11px; color: var(--inkMeta); letter-spacing: 0.08em; text-transform: uppercase; }
       .author-card .pc { font-family: var(--fontMono); font-size: 11px; color: var(--inkSoft); margin-top: 2px; }
 
       /* newsletter (capture now, sender later) */
@@ -334,7 +374,7 @@ const pageDesc = jp
       .nl-form .btn { background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 14px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; }
       .nl-form .btn:disabled { opacity: 0.6; cursor: default; }
       .nl-done { max-width: 520px; padding: 14px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); font-family: var(--fontBody); font-size: 15px; color: var(--ink); line-height: 1.5; }
-      .nl-note { margin-top: 14px; font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
+      .nl-note { margin-top: 14px; font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.06em; }
       .nl-hanko { position: absolute; top: 26px; right: 32px; width: 88px; height: 88px; border-radius: 14%; border: 2.5px solid var(--stamp); color: var(--stamp); display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 700; font-size: 40px; transform: rotate(-8deg); opacity: 0.85; }
 
       /* ---- responsive: tablet ---- */
@@ -371,7 +411,10 @@ const pageDesc = jp
     </style>
   </head>
   <body>
-    <HomeHeader client:load locale={locale} />
+    {/* Header hydrates at idle, not on load: it is server-rendered HTML already,
+        so it LOOKS finished immediately — only the menus/theme toggle wait, and
+        that wait is what keeps the hydration work out of the LCP window. */}
+    <HomeHeader client:idle locale={locale} />
 
     <div class="ribbon">
       <div class="wrap">
@@ -403,7 +446,9 @@ const pageDesc = jp
                   </a>
                   <span class="hero-kicker">{jp ? '特集' : 'cover story'} · {po.readMins} min</span>
                 </div>
-                <h1><span class="wash">{w.lead}</span>{w.rest ? ' ' + w.rest : ''}</h1>
+                {idx === 0
+                  ? <h1><span class="wash">{w.lead}</span>{w.rest ? ' ' + w.rest : ''}</h1>
+                  : <h2><span class="wash">{w.lead}</span>{w.rest ? ' ' + w.rest : ''}</h2>}
                 <p class="hero-excerpt">{excerpt(po)}</p>
                 <div class="hero-cta">
                   <a class="achip" href={`/${locale}/u/${po.authorHandle}`}>
@@ -421,7 +466,16 @@ const pageDesc = jp
               </div>
               <div class="hero-photo">
                 <a class="photo" style={`height:520px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={read(po.slug)}>
-                  {po.cover ? <img src={po.cover} alt={title(po)} fetchpriority="high" decoding="async" /> : <span class="glyph">{glyphFor(po.categoryId)}</span>}
+                  {/* Only the visible slide is the LCP candidate. Slides 2–3 are
+                      display:none, so `loading="lazy"` genuinely defers them (they
+                      used to be fetchpriority="high" too — 150 KB of offscreen
+                      image racing the LCP one on a throttled phone). The carousel
+                      script un-lazies them on window load, well before the 5 s tick. */}
+                  {po.cover
+                    ? (idx === 0
+                        ? <img src={coverSrc(po.cover)} srcset={coverSrcset(po.cover)} sizes={SIZES.hero} alt={title(po)} fetchpriority="high" decoding="async" />
+                        : <img src={coverSrc(po.cover)} srcset={coverSrcset(po.cover)} sizes={SIZES.hero} alt={title(po)} loading="lazy" decoding="async" />)
+                    : <span class="glyph">{glyphFor(po.categoryId)}</span>}
                   {!po.cover && <span class="blob"></span>}
                   <span class="vignette"></span>
                   <span class="cover-hanko">{catKanji(po.categoryId)}</span>
@@ -459,7 +513,7 @@ const pageDesc = jp
         {feature && (
           <div class="feature-card">
             <a class="photo" style={`height:340px;${feature.cover ? '' : `background:linear-gradient(135deg, ${grad(feature.categoryId)[0]}, ${grad(feature.categoryId)[1]});`}`} href={read(feature.slug)}>
-              {feature.cover ? <img src={feature.cover} alt={title(feature)} loading="lazy" /> : <span class="glyph">{glyphFor(feature.categoryId)}</span>}
+              {feature.cover ? <img src={coverSrc(feature.cover)} srcset={coverSrcset(feature.cover)} sizes={SIZES.feature} alt={title(feature)} loading="lazy" decoding="async" /> : <span class="glyph">{glyphFor(feature.categoryId)}</span>}
               {!feature.cover && <span class="blob"></span>}
               <span class="vignette"></span>
               {feature.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {feature.coverLabel}</span>}
@@ -472,7 +526,7 @@ const pageDesc = jp
                 </a>
                 <span class="hero-kicker">{jp ? 'もうひとつの特集' : 'also featured'}</span>
               </div>
-              <a href={read(feature.slug)}><h3>{title(feature)}</h3></a>
+              <a href={read(feature.slug)}><h2>{title(feature)}</h2></a>
               <p>{excerpt(feature)}</p>
               <a class="achip" href={`/${locale}/u/${feature.authorHandle}`}>
                 <span class="ava" style={`width:32px;height:32px;font-size:13px;background:linear-gradient(135deg, ${tintOf(feature.authorHandle)}, #f2f0eb);`}>{feature.authorAvatarUrl ? <img src={feature.authorAvatarUrl} alt="" loading="lazy" /> : initialsOf(feature.authorName || '?')}</span>
@@ -519,7 +573,7 @@ const pageDesc = jp
         {recent.map((po: any) => (
           <article class="post-card">
             <a class="photo" style={`height:240px;${po.cover ? '' : `background:linear-gradient(135deg, ${grad(po.categoryId)[0]}, ${grad(po.categoryId)[1]});`}`} href={read(po.slug)}>
-              {po.cover ? <img src={po.cover} alt={title(po)} loading="lazy" /> : <span class="glyph" style="font-size:84px;">{glyphFor(po.categoryId)}</span>}
+              {po.cover ? <img src={coverSrc(po.cover, 640)} srcset={coverSrcset(po.cover)} sizes={SIZES.card} alt={title(po)} loading="lazy" decoding="async" /> : <span class="glyph" style="font-size:84px;">{glyphFor(po.categoryId)}</span>}
               <span class="vignette"></span>
               {po.coverLabel && <span class="photo-tag"><span class="dot"></span> photo: {po.coverLabel}</span>}
             </a>
@@ -597,7 +651,9 @@ const pageDesc = jp
       </section>
     </div>
 
-    <HomeFooter client:load locale={locale} />
+    {/* client:idle — client:visible left the footer in the LIGHT palette for
+        dark-mode readers until they scrolled to it. See the note in Shell.astro. */}
+    <HomeFooter client:idle locale={locale} />
 
     <script>
       // Hero carousel — all slides are SSR'd; this only toggles which is visible.
@@ -622,6 +678,16 @@ const pageDesc = jp
         if (hero) { hero.addEventListener('mouseenter', stop); hero.addEventListener('mouseleave', start); }
         start();
 
+        // Slides 2–3 ship as loading="lazy" so they don't compete with the LCP
+        // image. They're display:none, so lazy would hold them forever — once the
+        // page has finished loading, flipping the attribute starts the fetch, and
+        // they're ready long before the first 5 s tick swaps them in.
+        addEventListener('load', () => {
+          for (const img of document.querySelectorAll<HTMLImageElement>('.hero-slide img[loading="lazy"]')) {
+            img.loading = 'eager';
+          }
+        }, { once: true });
+
         // Hero bookmark clicks + initial state are wired by the HomeHeader island
         // (home-chrome.jsx), which has the session + backend client so a save
         // persists to post_saves and shows up on the Saved page. (Plain localStorage
@@ -643,8 +709,12 @@ const pageDesc = jp
         let i = 0;
         setInterval(() => {
           i = (i + 1) % cities.length;
-          out.style.opacity = '0';
-          setTimeout(() => { out.textContent = fmt(cities[i]); out.style.opacity = ''; }, 220);
+          // Restart the fade animation (removing + reflowing + re-adding the class);
+          // the text swaps at the trough. Opacity is never left at 0 in the DOM.
+          out.classList.remove('swapping');
+          void out.offsetWidth;
+          out.classList.add('swapping');
+          setTimeout(() => { out.textContent = fmt(cities[i]); }, 200);
         }, 6000);
       })();
     </script>

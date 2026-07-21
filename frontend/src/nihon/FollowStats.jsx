@@ -42,7 +42,7 @@ function Row({ u, loc, viewerId, jp }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: "var(--fontDisplay)", fontWeight: 600, fontSize: 15, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-        <div style={{ fontFamily: "var(--fontMono)", fontSize: 11, color: "var(--inkFaint)" }}>@{u.handle}{u.role && u.role !== "user" ? ` · ${u.role}` : ""}</div>
+        <div style={{ fontFamily: "var(--fontMono)", fontSize: 11, color: "var(--inkMeta)" }}>@{u.handle}{u.role && u.role !== "user" ? ` · ${u.role}` : ""}</div>
       </div>
       {!isSelf && viewerId && (
         <button onClick={toggle} disabled={busy} style={{
@@ -98,7 +98,7 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
     <button onClick={() => onTab(id)} style={{
       appearance: "none", border: "none", background: "transparent", cursor: "pointer",
       padding: "14px 10px", fontFamily: "var(--fontDisplay)", fontWeight: 600, fontSize: 16,
-      color: tab === id ? "var(--ink)" : "var(--inkFaint)",
+      color: tab === id ? "var(--ink)" : "var(--inkMeta)",
       borderBottom: tab === id ? "2px solid var(--stamp)" : "2px solid transparent",
     }}>{jp ? ja : en}</button>
   );
@@ -122,7 +122,7 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
               {jp ? TAB_LABELS[tabs[0]].ja : TAB_LABELS[tabs[0]].en}
             </div>
           )}
-          <button onClick={onClose} aria-label="Close" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "var(--inkFaint)", padding: 8 }}>×</button>
+          <button onClick={onClose} aria-label="Close" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", fontSize: 22, lineHeight: 1, color: "var(--inkMeta)", padding: 8 }}>×</button>
         </div>
         <div style={{ padding: "12px 16px 8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: 999, padding: "8px 14px" }}>
@@ -137,13 +137,13 @@ export function FollowListModal({ handle, locale, tab, onTab, onClose, tabs = ["
                 fontFamily: "var(--fontBody)", fontSize: 13.5, color: "var(--ink)" }}
             />
             {q && (
-              <button onClick={() => setQ("")} aria-label="Clear" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", color: "var(--inkFaint)", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+              <button onClick={() => setQ("")} aria-label="Clear" style={{ appearance: "none", border: "none", background: "transparent", cursor: "pointer", color: "var(--inkMeta)", fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
             )}
           </div>
         </div>
         <div style={{ overflowY: "auto", padding: "4px 0 10px" }}>
           {rows === null ? (
-            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkFaint)" }}>{jp ? "読み込み中…" : "Loading…"}</div>
+            <div style={{ padding: "40px 0", textAlign: "center", fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkMeta)" }}>{jp ? "読み込み中…" : "Loading…"}</div>
           ) : err ? (
             <div style={{ padding: "40px 24px", textAlign: "center" }}>
               <div style={{ fontFamily: "var(--fontBody)", fontSize: 14, color: "var(--inkSoft)" }}>{jp ? "読み込めませんでした。" : "Couldn’t load this list."}</div>

@@ -1,0 +1,62 @@
+---
+/* Web fonts — ONE owner for every head on the site (Shell, SpaLayout, the home
+ * page). Before this existed the <link> was copy-pasted into three files and
+ * drifted; anything font-related now changes here only.
+ *
+ * WHY IT IS LOADED ASYNCHRONOUSLY
+ * Japanese families are not like Latin ones: Google splits Noto Sans JP and
+ * Shippori Mincho B1 into ~120 unicode-range @font-face blocks PER WEIGHT, so
+ * the stylesheet for our 9 JP weights is 268 KB — and as a plain <link
+ * rel="stylesheet"> it BLOCKED FIRST PAINT for 1.44 s on mobile (measured with
+ * Lighthouse against prod, 2026-07-21: FCP 3.5 s, LCP 7.6 s, perf 56). The
+ * blocked paint also delayed the LCP cover image by 1.86 s, because the browser
+ * cannot start it until the render-blocking CSS resolves.
+ *
+ * The `media="print"` swap makes the browser fetch the sheet at LOW priority and
+ * apply it the instant it lands. Fonts already carry `display=swap`, so text was
+ * ALWAYS going to paint in the fallback first — this just stops us from paying
+ * for a blocked paint on top of the swap. No visual change to the finished page.
+ * (A `rel=preload as=style` alongside it is tempting and WRONG: it puts the same
+ * quarter-megabyte back at VeryHigh priority, where on a throttled phone it
+ * starves the LCP image of the very bandwidth we were trying to free. Measured:
+ * with the preload, FCP went UP.)
+ *
+ * WHY THIS EXACT FAMILY LIST
+ * Every weight of a Japanese family costs ~116 KB of CSS, so the request is
+ * pruned to what the pages actually compute (verified against the live DOM, not
+ * guessed):
+ *  • Inter / Noto Sans JP / JetBrains Mono are requested as VARIABLE ranges
+ *    (`wght@400..800`) — one @font-face set covering every weight instead of one
+ *    per weight. Noto Sans JP alone: 456 KB → 114 KB, and one woff2 per subset
+ *    instead of four. Identical rendering; it's a real weight axis, not synthesis.
+ *  • Shippori Mincho B1 has no variable version on Google Fonts, so it stays
+ *    static — but only 400/600/700 are ever computed on any page (500 and 800
+ *    were being downloaded for nobody): 581 KB → 348 KB.
+ * Sheet total: 1,052 KB → 468 KB. Re-measure before changing a weight here.
+ */
+interface Props {
+  /** The SPA shell additionally uses Newsreader / Zen Old Mincho / Zen Kaku Gothic New. */
+  spa?: boolean;
+}
+const { spa = false } = Astro.props as Props;
+
+const CORE =
+  'family=Shippori+Mincho+B1:wght@400;600;700' +
+  '&family=Inter:wght@400..800' +
+  '&family=Noto+Sans+JP:wght@400..800' +
+  '&family=JetBrains+Mono:wght@400..500';
+// The SPA's optional font pairings (a reader preference, not the default look).
+// Zen Old Mincho + Zen Kaku Gothic New have no variable build and add ~780 KB of
+// CSS for a preset most readers never pick — worth loading on demand from the
+// pairing switcher one day; harmless for now because this sheet never blocks.
+const SPA_EXTRA =
+  '&family=Newsreader:ital,wght@0,400..600;1,400' +
+  '&family=Zen+Old+Mincho:wght@400;500;600;700' +
+  '&family=Zen+Kaku+Gothic+New:wght@400;500;700';
+
+const href = `https://fonts.googleapis.com/css2?${CORE}${spa ? SPA_EXTRA : ''}&display=swap`;
+---
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href={href} media="print" onload="this.media='all'" />
+<noscript><link rel="stylesheet" href={href} /></noscript>

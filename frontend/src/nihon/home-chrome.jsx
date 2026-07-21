@@ -7,7 +7,18 @@ import React from "react";
 import "./api.jsx";     // window.N101_API
 import "./content.jsx"; // window.N101_CONTENT (notifApi, …)
 import { Nav, Footer, PALETTES, deriveDark } from "./ui.jsx";
-import { LoginModal } from "./social.jsx"; // also chains ui/home/screens globals
+import { ErrorBoundary } from "./ErrorBoundary.jsx";
+
+/* LoginModal lives in social.jsx — a 50 KB chunk of which ~45 KB is never touched
+ * on a reading page (Lighthouse: "unused JavaScript"). Nobody can see the modal
+ * before they click Sign in, so it loads on demand instead of riding along with
+ * every visit. Warmed on the first pointer/key event (see below), so by the time
+ * anyone reaches the button the chunk is already in cache — off the critical
+ * path, but never a visible wait. home-chrome itself needs nothing else from
+ * social.jsx: its window globals (ComposerPage, FeedPage, …) belong to the SPA,
+ * which imports the module directly. */
+const LoginModal = React.lazy(() => import("./social.jsx").then((m) => ({ default: m.LoginModal })));
+const warmLoginModal = () => import("./social.jsx");
 
 // Home-page hash routing: there's no SPA mounted here, so every Nav/Footer/avatar
 // action hard-navigates into the app shell at /<locale>/app#<hash> (home → /<locale>/).
@@ -79,6 +90,21 @@ export function HomeHeader({ locale, active = "home" }) {
   const [savedCount, setSavedCount] = React.useState(0);
   const [loginOpen, setLoginOpen] = React.useState(false);
   const p = paletteFor(mode);
+
+  // Prefetch the sign-in chunk the first time the reader touches the page — long
+  // after first paint, long before they could have clicked Sign in.
+  React.useEffect(() => {
+    const warm = () => { warmLoginModal(); off(); };
+    const off = () => {
+      removeEventListener('pointerdown', warm);
+      removeEventListener('keydown', warm);
+      removeEventListener('touchstart', warm);
+    };
+    addEventListener('pointerdown', warm, { passive: true });
+    addEventListener('keydown', warm);
+    addEventListener('touchstart', warm, { passive: true });
+    return off;
+  }, []);
 
   // Notifications are owned entirely by Nav/NotifPanel now: Nav polls the cheap
   // unread COUNT for the badge, the panel lazy-loads the list when opened. This
@@ -239,12 +265,22 @@ export function HomeHeader({ locale, active = "home" }) {
         onLogin={() => setLoginOpen(true)}
         onLogout={() => { window.N101_API.logout(); setCurrentUser(null); }}
       />
+      {/* The boundary is not optional now that the modal is a lazy chunk: an
+          import() that rejects (flaky network, or a deploy that rotated the hashed
+          filename while this page was open) throws during render, and an unguarded
+          throw unmounts THIS WHOLE ISLAND — logo, nav, search, account, gone. With
+          it, a failed chunk degrades to the small "couldn't load · reload" card and
+          the header survives. home-chrome is the only island without withBoundary. */}
       {loginOpen && (
-        <LoginModal
-          p={p} lang={lang}
-          onLogin={(user) => { setCurrentUser(user); setLoginOpen(false); }}
-          onClose={() => setLoginOpen(false)}
-        />
+        <ErrorBoundary name="login-modal" locale={locale}>
+          <React.Suspense fallback={null}>
+            <LoginModal
+              p={p} lang={lang}
+              onLogin={(user) => { setCurrentUser(user); setLoginOpen(false); }}
+              onClose={() => setLoginOpen(false)}
+            />
+          </React.Suspense>
+        </ErrorBoundary>
       )}
     </>
   );

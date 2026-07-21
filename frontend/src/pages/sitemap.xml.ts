@@ -42,30 +42,53 @@ export const GET: APIRoute = async ({ site }) => {
 
   // Published posts (page-paginated cards; hard page cap so a huge DB can't hang
   // the request — 50 pages × 60 = 3,000 newest posts, refreshed on every fetch).
+  // Fetched in parallel batches: 50 sequential 8s-timeout calls could add up to
+  // 400 s on a bad day, and a sitemap that times out is a sitemap Google drops.
+  const BATCH = 5;
+  const authorHandles = new Set<string>();
   try {
-    for (let page = 0; page < 50; page++) {
-      const res = await ssrFetch(`${API_URL}/posts?status=published&limit=60&page=${page}`, {}, 8000);
-      if (!res.ok) break;
-      const data = await res.json();
-      for (const post of data.posts ?? []) {
-        if (!post.slug) continue;
-        entries.push({
-          path: (loc) => `/${loc}/p/${post.slug}`,
-          lastmod: post.updatedAt ? new Date(post.updatedAt).toISOString() : undefined,
-          changefreq: 'weekly',
-          priority: '0.8',
-        });
+    let page = 0;
+    outer: while (page < 50) {
+      const batch = await Promise.all(
+        Array.from({ length: Math.min(BATCH, 50 - page) }, (_, i) =>
+          ssrFetch(`${API_URL}/posts?status=published&limit=60&page=${page + i}`, {}, 8000)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)),
+      );
+      for (const data of batch) {
+        if (!data) break outer;
+        for (const post of data.posts ?? []) {
+          if (!post.slug) continue;
+          if (post.authorHandle) authorHandles.add(post.authorHandle);
+          entries.push({
+            path: (loc) => `/${loc}/p/${post.slug}`,
+            lastmod: post.updatedAt ? new Date(post.updatedAt).toISOString() : undefined,
+            changefreq: 'weekly',
+            priority: '0.8',
+          });
+        }
+        if (!data.hasMore) break outer;
       }
-      if (!data.hasMore) break;
+      page += BATCH;
     }
   } catch { /* API down — omit posts */ }
 
-  // One <url> per locale per entry, each carrying hreflang links to BOTH locales.
+  // Author profiles — real, crawlable landing pages on a multi-author platform,
+  // and the only route by which an author's whole body of work is discoverable.
+  for (const handle of authorHandles) {
+    entries.push({ path: (loc) => `/${loc}/u/${handle}`, changefreq: 'weekly', priority: '0.5' });
+  }
+
+  // One <url> per locale per entry, each carrying hreflang links to BOTH locales
+  // plus x-default. Google reads the set as incomplete without x-default, and on a
+  // site where every URL exists twice that's the difference between "two locales of
+  // one page" and "two pages competing with each other". ja is the site default.
   const urls: string[] = [];
   for (const e of entries) {
-    const alt = LOCALES
-      .map((loc) => `    <xhtml:link rel="alternate" hreflang="${loc}" href="${xmlEscape(origin + e.path(loc))}"/>`)
-      .join('\n');
+    const alt = [
+      ...LOCALES.map((loc) => `    <xhtml:link rel="alternate" hreflang="${loc}" href="${xmlEscape(origin + e.path(loc))}"/>`),
+      `    <xhtml:link rel="alternate" hreflang="x-default" href="${xmlEscape(origin + e.path('ja'))}"/>`,
+    ].join('\n');
     for (const loc of LOCALES) {
       urls.push(
         `  <url>\n    <loc>${xmlEscape(origin + e.path(loc))}</loc>\n${alt}\n` +

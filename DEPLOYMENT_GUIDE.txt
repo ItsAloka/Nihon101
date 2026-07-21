@@ -163,6 +163,43 @@ curl -s -o /dev/null -w '%{http_code}\n' https://www.nihon101.com/ja/   # www �
 # Then open nihon101.com in the browser and click around once
 # (home, an article, like something, a comment).
 
+# Responsive covers (added 2026-07-21): the pages now request ?w=320..1280 from
+# /media. Confirm the resize is actually happening — a resized WebP should be a
+# fraction of the original, NOT the same number of bytes:
+curl -s -o /dev/null -w 'full:%{size_download}\n'  https://api.nihon101.com/media/<key>.webp
+curl -s -o /dev/null -w 'w640:%{size_download}\n'  'https://api.nihon101.com/media/<key>.webp?w=640'
+# Same size both times = the IMAGES binding isn't transforming (fail-open path);
+# check the binding in wrangler.toml and the Worker logs for "[media] resize failed".
+
+# Session-hint cookie (added 2026-07-21): logged-out visitors must NOT fire
+# /auth/refresh. Open the site signed out with devtools → Network: there should be
+# no /auth/refresh call and no 401 in the console. Then sign in (BOTH password and
+# Google), navigate to another page, and confirm you're still signed in — that is
+# the flow the n101_sess cookie is carrying.
+
+
+============================================================
+6b. CLOUDFLARE DASHBOARD: TURN OFF THE MANAGED robots.txt
+============================================================
+
+# Cloudflare prepends its own "Managed Content" block to /robots.txt at the edge,
+# and that block contains a line Google's parser rejects:
+#     Content-Signal: search=yes,ai-train=no,use=reference
+# Lighthouse scores it as "robots.txt is not valid" — the ONLY thing keeping the
+# SEO category off 100 in production (verified 2026-07-21; our own robots.txt is
+# clean, and the same page scores SEO 100 when served without the managed block).
+#
+# Dashboard → the nihon101.com zone → AI Crawl Control (formerly AI Audit) →
+# robots.txt / Content Signals → turn the managed robots.txt injection OFF.
+#
+# The AI-crawler blocks are NOT lost: frontend/src/pages/robots.txt.ts now serves
+# that same list itself (GPTBot, ClaudeBot, CCBot, Google-Extended, Bytespider…).
+# What IS given up is the Content-Signal line, the machine-readable "you may index
+# this, you may not train on it" reservation under EU DSM Art. 4. That is a
+# judgement call, not a bug: keep the managed block and live with SEO 92, or turn
+# it off for SEO 100 and rely on the User-agent blocks. Re-check afterwards:
+curl -s https://nihon101.com/robots.txt | head -20   # expect OUR file, from line 1
+
 
 ============================================================
 7. MOVE THE RELEASE TAG (after a good deploy)

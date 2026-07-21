@@ -608,7 +608,7 @@ function EditorStyles({ p, density }) {
   /* Image caption — editable line under the photo, placeholder when empty. */
   .nihon-editor .ri-cap { font-family:var(--fontBody); font-size:13.5px; color:${p.inkSoft}; text-align:center;
     margin-top:8px; line-height:1.5; font-style:italic; outline:none; min-height:1.2em; }
-  .nihon-editor .ri-cap[data-empty]:empty::before { content:attr(data-placeholder); color:${p.inkFaint}; opacity:.7; font-style:italic; }
+  .nihon-editor .ri-cap[data-empty]:empty::before { content:attr(data-placeholder); color:${p.inkMeta}; opacity:.7; font-style:italic; }
   .nihon-editor .ri-handle { position:absolute; right:-5px; top:50%; width:12px; height:40px; transform:translateY(-50%);
     background:${p.stamp}; border-radius:6px; cursor:ew-resize; }
   .nihon-editor .ri-bar { position:absolute; top:-40px; left:50%; transform:translateX(-50%); display:flex; gap:4px; align-items:center;
@@ -623,7 +623,7 @@ function EditorStyles({ p, density }) {
     padding-top:18vh; background:rgba(0,0,0,.32); }
   .ed-insert { width:280px; max-width:88vw; background:${p.surface}; border:1px solid ${p.line}; border-radius:14px;
     box-shadow:0 24px 60px -20px rgba(0,0,0,.5); padding:8px; }
-  .ed-insert-h { font-family:var(--fontMono); font-size:11px; letter-spacing:.1em; color:${p.inkFaint}; padding:4px 8px 8px; }
+  .ed-insert-h { font-family:var(--fontMono); font-size:11px; letter-spacing:.1em; color:${p.inkMeta}; padding:4px 8px 8px; }
   .ed-insert button { display:flex; align-items:center; gap:12px; width:100%; appearance:none; border:none; background:transparent;
     color:${p.ink}; cursor:pointer; padding:9px 10px; border-radius:9px; font-family:var(--fontBody); font-size:14.5px; text-align:left; }
   .ed-insert button:hover { background:${p.bg}; }

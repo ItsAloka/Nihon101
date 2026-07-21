@@ -64,7 +64,7 @@ const pageLocale = () => (typeof location !== 'undefined' && location.pathname.s
 
 async function register(email, password, displayName) {
   const d = await req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, displayName, locale: pageLocale() }) });
-  accessToken = d.access;
+  accessToken = d.access; setSessionHint();
   return d.user;
 }
 // Confirm an email-verification token (from the emailed link). Public — no session.
@@ -80,33 +80,90 @@ function resendVerification() {
 async function login(email, password) {
   const d = await req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, locale: pageLocale() }) });
   if (d.otpRequired) return { otpRequired: true, pending: d.pending };
-  accessToken = d.access;
+  accessToken = d.access; setSessionHint();
   return { user: d.user };
 }
 // Finish the OTP step. `remember` trusts this device for 30 days (skips OTP next time).
 async function verifyOtp(pending, code, remember) {
   const d = await req('/auth/login/verify-otp', { method: 'POST', body: JSON.stringify({ pending, code, remember: !!remember }) });
-  accessToken = d.access;
+  accessToken = d.access; setSessionHint();
   return d.user;
 }
 // Mail a fresh code for the same pending login.
 function resendOtp(pending) {
   return req('/auth/login/resend-otp', { method: 'POST', body: JSON.stringify({ pending, locale: pageLocale() }) });
 }
+// "Is anyone logged in?" — a non-secret flag the backend sets alongside the
+// HttpOnly refresh cookie (see backend/src/lib/cookies.ts). The refresh cookie
+// itself is invisible to JS, so without this every anonymous page view fired a
+// POST /auth/refresh that came back 401: a wasted round trip during first paint
+// and a console error on every visit. Absence means "definitely no session";
+// presence means "probably", and a stale flag just costs the one 401 that clears
+// it. Never trusted for anything beyond skipping that call.
+const SESSION_HINT = 'n101_sess';
+const HINT_MAX_AGE = 30 * 24 * 60 * 60; // matches REFRESH_TTL_MS on the server
+const hintCookie = () =>
+  typeof document !== 'undefined' && document.cookie.split('; ').some((p) => p.startsWith(SESSION_HINT + '='));
+// `?signedin=1` is the Google callback's redirect marker: the session exists but
+// its hint cookie rode in on a cross-site redirect, so don't bet the whole sign-in
+// on that cookie having landed.
+const justSignedIn = () =>
+  typeof location !== 'undefined' && /[?&]signedin=1(&|$)/.test(location.search);
+const hasSessionHint = () => hintCookie() || justSignedIn();
+
+// Written by the server next to the refresh cookie; re-written here after every
+// successful refresh so the flag can't quietly expire out from under a live
+// session (and so a sign-in still survives a reload if the server's Set-Cookie
+// was dropped for any reason).
+const setSessionHint = () => {
+  if (typeof document === 'undefined') return;
+  const base = `${SESSION_HINT}=1; Max-Age=${HINT_MAX_AGE}; Path=/; SameSite=Lax`;
+  document.cookie = location.protocol === 'https:' ? `${base}; Secure` : base;
+};
+const clearSessionHint = () => {
+  if (typeof document === 'undefined') return;
+  const base = `${SESSION_HINT}=; Max-Age=0; Path=/; SameSite=Lax`;
+  document.cookie = base;
+  if (location.hostname.endsWith('nihon101.com')) document.cookie = `${base}; Domain=nihon101.com; Secure`;
+};
+
 // Single-flight: concurrent callers (app boot + a data fetch's 401 retry) must
 // share ONE /auth/refresh, or the second one replays a rotated token and the
 // reuse-detection revokes the whole family. Coalesce into one in-flight promise.
 let refreshing = null;
 function refresh() {
   if (refreshing) return refreshing;
+  // No hint → no session. Reject in the same shape a 401 would, without the call.
+  if (!hasSessionHint()) {
+    accessToken = null;
+    return Promise.reject(Object.assign(new Error('no_session'), { status: 401, code: 'no_session' }));
+  }
   refreshing = req('/auth/refresh', { method: 'POST' })
-    .then((d) => { accessToken = d.access; return d.user; })
+    .then((d) => {
+      accessToken = d.access;
+      setSessionHint();
+      // Drop ?signedin=1 from the address bar once it has done its job, so a
+      // bookmark or a share never carries it.
+      if (justSignedIn() && typeof history !== 'undefined' && history.replaceState) {
+        const u = new URL(location.href);
+        u.searchParams.delete('signedin');
+        history.replaceState(null, '', u.pathname + u.search + u.hash);
+      }
+      return d.user;
+    })
+    .catch((e) => {
+      // The flag outlived the session (expired/revoked). Drop it so the next page
+      // load doesn't repeat the 401.
+      if (e && e.status === 401) clearSessionHint();
+      throw e;
+    })
     .finally(() => { refreshing = null; });
   return refreshing;
 }
 async function logout() {
   try { await req('/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
   accessToken = null;
+  clearSessionHint(); // belt: the logout response clears it too, but not if the call failed
 }
 const googleStartUrl = (lang) => `${API_BASE}/auth/google/start?locale=${loc(lang)}`;
 

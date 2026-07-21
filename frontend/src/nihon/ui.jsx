@@ -162,6 +162,16 @@ function getAllPosts() {
 function getPost(slug) {
   return getAllPosts().find(p => p.slug === slug);
 }
+/* inkMeta — the TEXT twin of inkFaint, in every palette.
+ * inkFaint is a beautiful hairline/icon tone and a failing text colour: #A39F98
+ * on #FBFAF7 is 2.2:1, and every 11px kicker, @handle, date and count drawn in it
+ * failed WCAG AA (Lighthouse accessibility 90, 2026-07-21). Mixing it 55% toward
+ * the palette's own ink keeps each theme's hue identity — this is not one grey
+ * bolted onto five palettes — while clearing 4.5:1. Faint stays exactly as
+ * designed for anything without words in it. Mirrors --inkMeta in Shell.astro. */
+const withInkMeta = (p) => ({ ...p, inkMeta: `color-mix(in oklab, ${p.inkFaint} 55%, ${p.ink})` });
+for (const key of Object.keys(PALETTES)) PALETTES[key] = withInkMeta(PALETTES[key]);
+
 // Derive a warm dark palette from a light one, keeping the accent identity.
 function deriveDark(p) {
   return {
@@ -172,6 +182,8 @@ function deriveDark(p) {
     ink:      '#F4EFEA',
     inkSoft:  '#B9B0BC',
     inkFaint: '#7E7588',
+    // Recomputed against the dark ink — the spread above carried the light one.
+    inkMeta:  'color-mix(in oklab, #7E7588 55%, #F4EFEA)',
     line:     `color-mix(in oklab, ${p.accent} 12%, #342F3C)`,
     tint:     `color-mix(in oklab, ${p.accent} 20%, #1E1B24)`,
     isDark: true,
@@ -217,12 +229,21 @@ function Logo({ p, jp, size = 28 }) {
   return (
     <a href="#/" onClick={(e)=>{e.preventDefault(); window.__nihon_go({name:'home'});}}
        style={{display:'inline-flex', alignItems:'center', gap:10, textDecoration:'none', color:p.ink, flexShrink:0}}>
-      <span style={{
+      {/* role=img + a label: this is a wordmark drawn out of text, not prose. It
+          makes a screen reader announce "nihon101" instead of spelling out
+          日本1●1, and it stops contrast checkers from grading the brand red as body
+          text — WCAG 1.4.3 exempts logotypes, but an automated scan can't tell
+          which spans are a logo unless we say so. */}
+      <span role="img" aria-label="nihon101" style={{
         fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize: fs, letterSpacing:'-0.01em',
         lineHeight:1, display:'inline-flex', alignItems:'center', whiteSpace:'nowrap',
       }}>
-        <span style={{color:p.ink, whiteSpace:'nowrap'}}>{jp ? '日本' : 'nihon'}</span>
-        <span style={{color:p.stamp, display:'inline-flex', alignItems:'center', letterSpacing:0, marginLeft: jp ? Math.round(fs*0.06) : 0}}>
+        {/* aria-hidden on the glyph spans: the wordmark's meaning is on the
+            role="img" wrapper above. It also keeps automated contrast checkers
+            from grading the brand red as prose — they only skip the subtree if
+            it's explicitly hidden. */}
+        <span aria-hidden="true" style={{color:p.ink, whiteSpace:'nowrap'}}>{jp ? '日本' : 'nihon'}</span>
+        <span aria-hidden="true" style={{color:p.stamp, display:'inline-flex', alignItems:'center', letterSpacing:0, marginLeft: jp ? Math.round(fs*0.06) : 0}}>
           1
           <span aria-hidden="true" title="101" style={{
             display:'inline-block', width:disc, height:disc, borderRadius:'50%',
@@ -414,7 +435,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
               <Avatar user={currentUser} p={p} size={40}/>
               <div style={{minWidth:0, display:'flex', flexDirection:'column', lineHeight:1.25}}>
                 <strong style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{lang==='jp'?currentUser.jp:currentUser.en}</strong>
-                <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint}}>@{currentUser.slug}</span>
+                <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta}}>@{currentUser.slug}</span>
               </div>
             </div>
           )}
@@ -423,7 +444,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
             <SearchBar p={p} onSearch={onSearch} lang={lang} inline />
           </div>
 
-          <div style={{position:'relative', padding:'10px 22px 6px', fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.18em', textTransform:'uppercase', color:p.inkFaint}}>
+          <div style={{position:'relative', padding:'10px 22px 6px', fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.18em', textTransform:'uppercase', color:p.inkMeta}}>
             {lang==='jp'?'ナビゲーション':'Navigate'}
           </div>
           <nav style={{position:'relative', display:'flex', flexDirection:'column', padding:'2px 12px', gap:2}}>
@@ -475,7 +496,7 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
                 <span aria-hidden="true" style={{display:'inline-flex', width:18, justifyContent:'center'}}>⏻</span> {lang==='jp'?'ログアウト':'Log out'}
               </button>
             )}
-            <div style={{textAlign:'center', fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', color:p.inkFaint, paddingTop:4}}>
+            <div style={{textAlign:'center', fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.1em', color:p.inkMeta, paddingTop:4}}>
               {lang==='jp'?'日本101 · 日本の物語':'nihon101 · stories from japan'}
             </div>
           </div>
@@ -621,12 +642,12 @@ function NotifPanel({ p, lang, onClose, onUnread }) {
             ))
           ) : failed ? (
             // A failed fetch must never look like an empty inbox.
-            <div style={{padding:'32px 20px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:14}}>
+            <div style={{padding:'32px 20px', textAlign:'center', color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:14}}>
               <div style={{marginBottom:10}}>{jp?'お知らせを読み込めませんでした。':'Could not load notifications.'}</div>
               {actionBtn(jp?'再試行':'Retry', load)}
             </div>
           ) : items.length===0 ? (
-            <div style={{padding:'40px 20px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:14}}>
+            <div style={{padding:'40px 20px', textAlign:'center', color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:14}}>
               {jp?'まだお知らせはありません。':'Nothing yet — go write something!'}
             </div>
           ) : (
@@ -651,7 +672,7 @@ function NotifPanel({ p, lang, onClose, onUnread }) {
                       <span style={{display:'block', fontSize:14, color:p.ink, lineHeight:1.4}}>
                         <strong style={{fontWeight:600}}>{jp?(n.who_jp||n.who):n.who}</strong> {jp?n.text_jp:n.text_en}
                       </span>
-                      <span style={{display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, marginTop:3}}>
+                      <span style={{display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, marginTop:3}}>
                         {window.N101_CONTENT.relTime(n.createdAt)}
                       </span>
                     </span>
@@ -659,7 +680,7 @@ function NotifPanel({ p, lang, onClose, onUnread }) {
                   <button aria-label={jp?'この通知を削除':'Delete this notification'}
                     onClick={(e)=>removeOne(e, n)}
                     style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer',
-                      flexShrink:0, padding:'0 14px 0 6px', color:p.inkFaint, fontSize:16, lineHeight:1}}>×</button>
+                      flexShrink:0, padding:'0 14px 0 6px', color:p.inkMeta, fontSize:16, lineHeight:1}}>×</button>
                 </div>
               ))}
               {nextBefore && (
@@ -711,7 +732,7 @@ function AvatarMenu({ p, lang, user, onClose, onLogout }) {
             <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:15, color:p.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
               {lang==='jp'?user.jp:user.en}
             </div>
-            <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>@{user.slug}</div>
+            <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta}}>@{user.slug}</div>
           </div>
         </div>
         <div style={{paddingTop:6}}>
@@ -815,7 +836,7 @@ function SearchBar({p, onSearch, lang, inline=false}) {
   };
 
   const groupHead = (txt) => (
-    <div style={{fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkFaint, padding:'8px 12px 4px'}}>{txt}</div>
+    <div style={{fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkMeta, padding:'8px 12px 4px'}}>{txt}</div>
   );
   const rowStyle = (idx) => ({
     display:'flex', alignItems:'center', gap:10, width:'100%', textAlign:'left',
@@ -876,10 +897,10 @@ function SearchBar({p, onSearch, lang, inline=false}) {
         {v ? (
           <button type="button" aria-label="Clear"
             onMouseDown={(e)=>{e.preventDefault(); setV(''); inputRef.current?.focus();}}
-            style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:11, padding:0}}>✕</button>
+            style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta, fontFamily:'var(--fontMono)', fontSize:11, padding:0}}>✕</button>
         ) : !inline ? (
           <span className="nihon-search-kbd" style={{
-            fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint,
+            fontFamily:'var(--fontMono)', fontSize:10, color:p.inkMeta,
             border:`1px solid ${p.line}`, padding:'1px 5px', borderRadius:4,
           }}>⌘ K</span>
         ) : null}
@@ -892,7 +913,7 @@ function SearchBar({p, onSearch, lang, inline=false}) {
           boxShadow: inline ? 'none' : `0 24px 48px -24px color-mix(in oklab, ${p.ink} 40%, transparent)`,
           zIndex:80, overflow:'hidden', padding:'18px 16px',
         }}>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkFaint, marginBottom:8}}>{lang==='jp'?'検索':'Search'}</div>
+          <div style={{fontFamily:'var(--fontMono)', fontSize:9, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkMeta, marginBottom:8}}>{lang==='jp'?'検索':'Search'}</div>
           <div style={{fontFamily:'var(--fontBody)', fontSize:13.5, color:p.inkSoft, lineHeight:1.5}}>
             {lang==='jp'?'記事・カテゴリー・タグ・書き手を検索できます。':'Search posts, categories, tags, and writers.'}
           </div>
@@ -910,7 +931,7 @@ function SearchBar({p, onSearch, lang, inline=false}) {
             <div style={{maxHeight:'62vh', overflowY:'auto', padding:6}}>
               {renderGroup('post', lang==='jp'?'記事':'Posts', (r)=>(
                 <>
-                  <span style={{color:p.inkFaint, flex:'none', fontSize:12}}>✎</span>
+                  <span style={{color:p.inkMeta, flex:'none', fontSize:12}}>✎</span>
                   <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.label}</span>
                 </>
               ))}
@@ -924,7 +945,7 @@ function SearchBar({p, onSearch, lang, inline=false}) {
                 <>
                   <span style={{color:p.accent, fontWeight:800, width:16, textAlign:'center', flex:'none'}}>#</span>
                   <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.label}</span>
-                  <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, flex:'none'}}>{r.count}</span>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, flex:'none'}}>{r.count}</span>
                 </>
               ))}
               {renderGroup('author', lang==='jp'?'書き手':'Authors', (r)=>(
@@ -933,13 +954,13 @@ function SearchBar({p, onSearch, lang, inline=false}) {
                     {r.img ? <img src={r.img} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/> : initialsOf(r.label)}
                   </span>
                   <span style={{flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
-                    <b>{r.label}</b> <span style={{color:p.inkFaint}}>@{r.handle}</span>
+                    <b>{r.label}</b> <span style={{color:p.inkMeta}}>@{r.handle}</span>
                   </span>
                 </>
               ))}
             </div>
           ) : (
-            <div style={{padding:'22px 16px', textAlign:'center', color:p.inkFaint, fontFamily:'var(--fontBody)', fontSize:13}}>
+            <div style={{padding:'22px 16px', textAlign:'center', color:p.inkMeta, fontFamily:'var(--fontBody)', fontSize:13}}>
               {lang==='jp'?`「${v.trim()}」に一致なし`:`No matches for “${v.trim()}”`}
             </div>
           )}
@@ -1130,7 +1151,7 @@ function AuthorChip({ slug, name, nameJp, handle, city, avatarUrl, p, lang, size
         <span style={{fontFamily:'var(--fontBody)', fontSize: size==='lg'?14:13, color:p.ink, fontWeight:600}}>
           {lang==='jp' ? dispJp : dispEn}
         </span>
-        {date ? <span style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint}}>{date}{place ? ` · ${place}` : ''}</span> : null}
+        {date ? <span style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta}}>{date}{place ? ` · ${place}` : ''}</span> : null}
       </div>
     </a>
   );
@@ -1243,7 +1264,7 @@ function Footer({p, lang}) {
             {label:'Submit', route:{name:'compose'}},
           ]} lang={lang} />
         <div>
-          <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:14}}>
+          <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:14}}>
             {lang==='jp'?'おたより':'Newsletter'}
           </div>
           <NewsletterMini p={p} lang={lang}/>
@@ -1253,11 +1274,16 @@ function Footer({p, lang}) {
         fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft,
       }}>
         <span>© 2026 nihon101</span>
+        {/* The 0.85 opacity used to wash the stamp red down to 3.77:1 on 11.5px
+            text (an actual WCAG AA failure, not a technicality). The badge keeps
+            its muted look by baking the fade into the two colours instead, so the
+            red is graded at full strength. */}
         <span title="Nihon101 build version" style={{
           marginLeft:10, padding:'2px 9px', borderRadius:999, fontSize:11.5, fontWeight:700,
-          letterSpacing:'0.03em', color:p.inkSoft, border:`1px solid ${p.line}`, opacity:0.85, whiteSpace:'nowrap',
+          letterSpacing:'0.03em', color:`color-mix(in oklab, ${p.inkSoft} 88%, ${p.bg})`,
+          border:`1px solid ${p.line}`, whiteSpace:'nowrap',
         }}>
-          v0.1<span style={{color:p.stamp}}>N101</span>
+          v0.1<span style={{color:`color-mix(in oklab, ${p.stamp} 82%, ${p.ink})`}}>N101</span>
         </span>
       </div>
     </footer>
@@ -1266,7 +1292,7 @@ function Footer({p, lang}) {
 function FooterCol({p, title, items, lang}) {
   return (
     <div>
-      <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:14}}>{title}</div>
+      <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:14}}>{title}</div>
       <ul style={{listStyle:'none', display:'flex', flexDirection:'column', gap:8}}>
         {items.map((it,i)=>(
           <li key={i}>

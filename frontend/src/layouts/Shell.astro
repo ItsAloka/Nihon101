@@ -6,6 +6,7 @@
 // Keeps the prototype design; pages only swap in real data.
 import { HomeHeader, HomeFooter } from "../nihon/home-chrome.jsx";
 import Toaster from "../components/Toaster.astro";
+import Fonts from "../components/Fonts.astro";
 
 interface Props {
   locale: string;
@@ -21,10 +22,14 @@ interface Props {
   article?: { publishedTime?: string | null; modifiedTime?: string | null; author?: string | null; tags?: string[] } | null;
   /** Structured data object → emitted as an escaped <script type="application/ld+json">. */
   jsonLd?: Record<string, unknown> | null;
+  /** The page's LCP image (e.g. the article cover) — preloaded from the head so the
+   *  browser starts it immediately instead of after the document parses. Must match
+   *  the rendered <img> src/srcset/sizes exactly, or the browser downloads twice. */
+  preload?: { href: string; srcset?: string; sizes?: string } | null;
 }
 const {
   locale, title, description, canonicalPath, active = "search",
-  image = null, type = 'website', article = null, jsonLd = null,
+  image = null, type = 'website', article = null, jsonLd = null, preload = null,
 } = Astro.props as Props;
 const jp = locale === 'ja';
 const otherLocaleHref = `/${jp ? 'en' : 'ja'}${canonicalPath.replace(/^\/(en|ja)/, '')}`;
@@ -52,6 +57,10 @@ const ogImage = new URL(image || '/og-default.png', base).href;
     <link rel="canonical" href={canonicalAbs} />
     <link rel="alternate" hreflang={jp ? 'en' : 'ja'} href={`https://nihon101.com${otherLocaleHref}`} />
     <link rel="alternate" hreflang={locale} href={canonicalAbs} />
+    {/* x-default = what a crawler should show a reader we have no locale for.
+        Google treats a bilingual set without it as incomplete, and ja is the
+        site's default (/ redirects there). */}
+    <link rel="alternate" hreflang="x-default" href={`https://nihon101.com${jp ? canonicalPath : otherLocaleHref}`} />
 
     {/* Open Graph + Twitter share cards */}
     <meta property="og:site_name" content="nihon101" />
@@ -76,19 +85,27 @@ const ogImage = new URL(image || '/og-default.png', base).href;
     <script is:inline>
       try { var __m = localStorage.getItem('nihon.mode') || 'light'; document.documentElement.dataset.mode = __m; document.documentElement.style.colorScheme = __m === 'dark' ? 'dark' : 'light'; } catch (e) {}
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <Fonts />
+    {preload && (
+      <link
+        rel="preload"
+        as="image"
+        href={preload.href}
+        imagesrcset={preload.srcset}
+        imagesizes={preload.sizes}
+        fetchpriority="high"
+      />
+    )}
     <style is:global>
       :root {
         --bg: #fbfaf7; --surface: #fff; --surface2: #f2f0eb;
         --ink: #1a1817; --inkSoft: #5c544c; --inkFaint: #a39f98;
+        /* Text twin of --inkFaint — see the note in [locale]/index.astro. Faint
+           stays for hairlines/icon strokes; anything with words in it uses this. */
+        --inkMeta: #6f6960;
         --line: #ece8e0; --accent: #f58fa3; --accentDeep: #e54e70;
         --stamp: #d63752; --tint: #fce5ea;
-        --fontDisplay: 'Shippori Mincho B1', 'Times New Roman', serif;
+        --fontDisplay: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
         --fontBody: 'Inter', 'Noto Sans JP', system-ui, sans-serif;
         --fontMono: 'JetBrains Mono', monospace;
       }
@@ -96,7 +113,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
         --bg: color-mix(in oklab, #f58fa3 7%, #15121a);
         --surface: color-mix(in oklab, #f58fa3 6%, #1e1b24);
         --surface2: color-mix(in oklab, #f58fa3 10%, #2a2632);
-        --ink: #f4efea; --inkSoft: #b9b0bc; --inkFaint: #7e7588;
+        --ink: #f4efea; --inkSoft: #b9b0bc; --inkFaint: #7e7588; --inkMeta: #9d94a8;
         --line: color-mix(in oklab, #f58fa3 12%, #342f3c);
         --tint: color-mix(in oklab, #f58fa3 20%, #1e1b24);
         color-scheme: dark;
@@ -112,7 +129,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .wrap { max-width: 1320px; margin: 0 auto; padding: 0 32px; }
 
       /* explore / banner hero */
-      .ex-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+      .ex-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
       .ex-kicker .wave { display: inline-block; width: 28px; height: 8px; }
       h1.ex { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5vw, 72px); letter-spacing: -0.025em; line-height: 1.05; color: var(--ink); margin-bottom: 8px; text-wrap: pretty; }
       .ex-sub { font-family: var(--fontDisplay); font-style: italic; font-size: 20px; color: var(--inkSoft); margin-bottom: 32px; }
@@ -122,7 +139,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .ex-search:focus-within { border-color: var(--accent); }
       .ex-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: var(--fontDisplay); font-size: 22px; color: var(--ink); }
       .ex-search svg { flex: none; stroke: var(--ink); fill: none; stroke-width: 2; }
-      .ex-search button { appearance: none; border: none; background: transparent; cursor: pointer; color: var(--inkFaint); font-family: var(--fontMono); font-size: 12px; }
+      .ex-search button { appearance: none; border: none; background: transparent; cursor: pointer; color: var(--inkMeta); font-family: var(--fontMono); font-size: 12px; }
 
       /* category filter strip */
       .cat-strip { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -131,7 +148,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .cat-pill.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
       .cat-pill.on .kj { color: var(--accent); }
 
-      .results-count { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; margin: 24px 0 16px; }
+      .results-count { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.1em; text-transform: uppercase; margin: 24px 0 16px; }
 
       /* sort toggle + count row */
       .list-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 24px 0 18px; }
@@ -150,7 +167,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .pager a { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; font-weight: 600; color: var(--ink); }
       .pager a:hover { border-color: var(--accent); }
       .pager .pg-num.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-      .pager .pg-gap { color: var(--inkFaint); padding: 0 4px; }
+      .pager .pg-gap { color: var(--inkMeta); padding: 0 4px; }
 
       /* author results (text search) */
       .author-results { margin-top: 28px; }
@@ -161,14 +178,14 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .author-chip .ava img { width: 100%; height: 100%; object-fit: cover; }
       .author-chip .who { display: flex; flex-direction: column; line-height: 1.2; }
       .author-chip .who b { font-family: var(--fontBody); font-size: 14px; font-weight: 600; color: var(--ink); }
-      .author-chip .who .at { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); }
+      .author-chip .who .at { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); }
 
       /* category banner */
       .banner { border-bottom: 1px solid var(--line); }
       .banner .wrap { padding: 64px 32px 48px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; }
       .banner .hanko { width: 96px; height: 96px; border-radius: 16%; border: 3px solid var(--stamp); color: var(--stamp); display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 700; font-size: 46px; transform: rotate(-6deg); flex: none; }
       .banner h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 5vw, 72px); letter-spacing: -0.025em; line-height: 1; color: var(--ink); }
-      .banner h1 .alt { color: var(--inkFaint); font-size: 0.4em; margin-left: 14px; letter-spacing: 0.05em; }
+      .banner h1 .alt { color: var(--inkMeta); font-size: 0.4em; margin-left: 14px; letter-spacing: 0.05em; }
       .banner .blurb { font-family: var(--fontDisplay); font-style: italic; font-size: 20px; color: var(--inkSoft); margin-top: 12px; max-width: 640px; }
 
       /* shared card grid (mirrors index.astro) */
@@ -176,14 +193,14 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .post-card { display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 14px; transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; }
       .post-card:hover { transform: translateY(-4px); border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 18px 30px -22px color-mix(in oklab, var(--accentDeep) 45%, transparent); }
       .post-card .cmeta { display: flex; align-items: center; gap: 10px; }
-      .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.06em; }
+      .post-card .mins { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.06em; }
       .post-card h3 { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; line-height: 1.15; letter-spacing: -0.015em; text-wrap: pretty; }
       .post-card .ex { font-size: 14px; line-height: 1.55; color: var(--inkSoft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
       .card-tags .tag { display: inline-flex; align-items: center; gap: 1px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 11px; font-weight: 500; color: var(--inkSoft); }
       .card-tags .tag .h { color: var(--accent); font-weight: 800; }
       .post-card .foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); gap: 12px; }
-      .post-card .foot .dt { font-size: 12px; color: var(--inkFaint); }
+      .post-card .foot .dt { font-size: 12px; color: var(--inkMeta); }
       .post-card .stats { display: flex; align-items: center; gap: 14px; flex: none; }
       .post-card .stat { display: inline-flex; align-items: center; gap: 5px; font-family: var(--fontMono); font-size: 12.5px; font-weight: 600; color: var(--inkSoft); }
       .post-card .stat svg { width: 15px; height: 15px; }
@@ -199,7 +216,7 @@ const ogImage = new URL(image || '/og-default.png', base).href;
       .achip .ava { border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 600; border: 1px solid var(--line); color: #3a2e28; overflow: hidden; flex-shrink: 0; }
       .achip .ava img { width: 100%; height: 100%; object-fit: cover; }
       .achip .nm { font-size: 13px; font-weight: 600; color: var(--ink); }
-      .achip .dt { font-size: 11px; color: var(--inkFaint); }
+      .achip .dt { font-size: 11px; color: var(--inkMeta); }
       .photo { position: relative; width: 100%; border-radius: 14px; overflow: hidden; display: block; }
       .photo .glyph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(90px, 22%, 240px); color: rgba(255, 255, 255, 0.6); line-height: 1; user-select: none; pointer-events: none; letter-spacing: -0.04em; }
       .photo img { width: 100%; height: 100%; object-fit: cover; display: block; position: absolute; inset: 0; }
@@ -294,9 +311,18 @@ const ogImage = new URL(image || '/og-default.png', base).href;
     </style>
   </head>
   <body>
-    <HomeHeader client:load locale={locale} active={active} />
+    {/* Idle hydration — see the note in [locale]/index.astro. */}
+    <HomeHeader client:idle locale={locale} active={active} />
     <slot />
-    <HomeFooter client:load locale={locale} />
+    {/* client:idle, NOT client:visible. The footer's inner text colours come from
+        the JS palette object, and the SSR pass always renders the light one (see
+        HomeFooter — it starts 'light' to match SSR, then corrects on mount). Under
+        client:visible that correction waits for the reader to scroll the footer
+        into view, so a dark-mode visitor scrolls down into #1A1817 text on a dark
+        background — 1.19:1, unreadable — which then flips to dark as they watch.
+        client:idle keeps the hydration off the critical path but fixes the theme
+        moments after load, long before anyone reaches the bottom of the page. */}
+    <HomeFooter client:idle locale={locale} />
     <Toaster />
   </body>
 </html>

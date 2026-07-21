@@ -163,7 +163,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
                 {busy ? T(lang,'Verifying…','確認中…') : T(lang,'Verify & sign in','確認してログイン')}
               </button>
             </form>
-            <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+            <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkMeta, textAlign:'center', marginTop:18}}>
               {T(lang,"Didn't get it? ",'届きませんか？ ')}
               <button onClick={resend} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer',
                 fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0}}>{T(lang,'Resend code','コードを再送')}</button>
@@ -191,7 +191,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
                   style={{...gradStyle(p), width:'100%', justifyContent:'center', marginTop:20, opacity:busy?0.6:1}}>
                   {busy ? T(lang,'Please wait…','少々お待ちください…') : T(lang,'Send reset link','再設定リンクを送る')}
                 </button>
-                <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+                <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkMeta, textAlign:'center', marginTop:18}}>
                   <button type="button" onClick={()=>{ setForgotStep(false); setErr(''); }} style={{
                     appearance:'none', border:'none', background:'transparent', cursor:'pointer',
                     fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.accentDeep, padding:0}}>
@@ -209,7 +209,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
               <button key={m} onClick={()=>{ setMode(m); setErr(''); }} style={{
                 appearance:'none', border:'none', background:'transparent', cursor:'pointer', padding:'0 0 8px',
                 fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, position:'relative',
-                color: mode===m ? p.ink : p.inkFaint,
+                color: mode===m ? p.ink : p.inkMeta,
               }}>
                 {m==='login' ? T(lang,'Sign in','ログイン') : T(lang,'Create account','新規登録')}
                 {mode===m && <span style={{position:'absolute', left:0, right:0, bottom:0, height:3, borderRadius:3, background:p.accentDeep}}/>}
@@ -228,7 +228,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             <GoogleMark/>{T(lang,'Continue with Google','Googleで続ける')}
           </button>
 
-          <div style={{display:'flex', alignItems:'center', gap:12, color:p.inkFaint, fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.08em', textTransform:'uppercase', margin:'16px 0'}}>
+          <div style={{display:'flex', alignItems:'center', gap:12, color:p.inkMeta, fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.08em', textTransform:'uppercase', margin:'16px 0'}}>
             <span style={{height:1, flex:1, background:p.line}}/>{T(lang,'or','または')}<span style={{height:1, flex:1, background:p.line}}/>
           </div>
 
@@ -250,7 +250,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
                 style={{...fieldInput(p), paddingRight:44}}/>
               <button type="button" onClick={()=>setShowPw(s=>!s)} aria-label={showPw?'Hide password':'Show password'}
                 style={{position:'absolute', right:6, width:34, height:34, display:'grid', placeItems:'center',
-                  appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint, borderRadius:9}}>
+                  appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta, borderRadius:9}}>
                 <EyeIcon off={showPw}/>
               </button>
             </div>
@@ -259,7 +259,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
               <p style={{textAlign:'right', marginTop:8, marginBottom:0}}>
                 <button type="button" onClick={()=>{ setForgotStep(true); setErr(''); }} style={{
                   appearance:'none', border:'none', background:'transparent', cursor:'pointer',
-                  fontFamily:'var(--fontBody)', fontSize:12.5, fontWeight:600, color:p.inkFaint, padding:0}}>
+                  fontFamily:'var(--fontBody)', fontSize:12.5, fontWeight:600, color:p.inkMeta, padding:0}}>
                   {T(lang,'Forgot password?','パスワードをお忘れですか？')}
                 </button>
               </p>
@@ -273,7 +273,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
             </button>
           </form>
 
-          <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkFaint, textAlign:'center', marginTop:18}}>
+          <p style={{fontFamily:'var(--fontBody)', fontSize:13, color:p.inkMeta, textAlign:'center', marginTop:18}}>
             {isReg ? T(lang,'Already have an account? ','すでにアカウントをお持ちですか？ ') : T(lang,'New to nihon101? ','nihon101は初めてですか？ ')}
             <button onClick={()=>{ setMode(isReg?'login':'register'); setErr(''); }} style={{
               appearance:'none', border:'none', background:'transparent', cursor:'pointer',
@@ -286,7 +286,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
     </div>
   );
 }
-function fieldLabel(p){ return {display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}; }
+function fieldLabel(p){ return {display:'block', fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}; }
 function fieldInput(p){ return {width:'100%', border:`1px solid ${p.line}`, borderRadius:12, padding:'12px 14px', background:p.bg, fontFamily:'var(--fontBody)', fontSize:15, color:p.ink, outline:'none'}; }
 function GoogleMark(){ return (
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
@@ -326,7 +326,7 @@ const countImages = (html) => (html.match(/<img\b/gi) || []).length;
 // Small mono "n/max" counter; turns to the red stamp accent past 90%.
 function CharCount({ p, n, max, suffix }){
   return (
-    <div style={{fontFamily:'var(--fontMono)', fontSize:11, color: n > max*0.9 ? p.stamp : p.inkFaint, marginBottom:8}}>
+    <div style={{fontFamily:'var(--fontMono)', fontSize:11, color: n > max*0.9 ? p.stamp : p.inkMeta, marginBottom:8}}>
       {n}/{max}{suffix ? ` · ${suffix}` : ''}
     </div>
   );
@@ -585,7 +585,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       {/* top bar */}
       <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:18}}>
         <button onClick={()=>window.__nihon_go({name:'home'})} style={ghostBtn(p)}><ArrowLeft color={p.inkSoft}/> {lang==='jp'?'破棄':'Discard'}</button>
-        <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, marginLeft:6}}>
+        <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta, marginLeft:6}}>
           {words} {lang==='jp'?'語':'words'} · {readMins} min
           {status && (status.startsWith('⚠')
             ? <span style={{color:'#c0392b', fontWeight:700}}> · {status}</span>
@@ -607,7 +607,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
           <span style={{display:'inline-flex', alignItems:'center', gap:8, padding:'7px 14px', borderRadius:999, background:p.surface, border:`1px solid ${p.line}`, fontFamily:'var(--fontBody)', fontSize:13, fontWeight:600, color:p.ink}}>
             <span style={{color:p.stamp}}>✎</span>
             {ja ? '日本語で執筆中' : 'Writing in English'}
-            <span style={{color:p.inkFaint, fontWeight:400}}>· {ja ? '英語版は公開時に自動生成' : 'auto-translated on publish'}</span>
+            <span style={{color:p.inkMeta, fontWeight:400}}>· {ja ? '英語版は公開時に自動生成' : 'auto-translated on publish'}</span>
           </span>
         </div>
 
@@ -617,7 +617,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
           border:`1px dashed ${p.line}`, background:p.surface, display:'flex', alignItems:'center', justifyContent:'center'}}>
           <input ref={coverFileRef} type="file" accept="image/*" hidden onChange={onCoverFile}/>
           {cover ? <img src={cover} alt="cover" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
-            : <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint, letterSpacing:'0.1em'}}>{lang==='jp'?'表紙画像を選ぶ — 21:9 推奨':'DROP COVER ART — 21:9 RECOMMENDED'}</span>}
+            : <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta, letterSpacing:'0.1em'}}>{lang==='jp'?'表紙画像を選ぶ — 21:9 推奨':'DROP COVER ART — 21:9 RECOMMENDED'}</span>}
         </div>
 
         {/* cover caption — the PHOTO tag shown on the image + the credit line under it */}
@@ -647,7 +647,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
                 <span style={{color: cat===c.id?p.surface:p.stamp, fontFamily:'var(--fontDisplay)'}}>{c.kanji}</span>
                 {lang==='jp'?c.labelJa:c.labelEn}
                 <span style={{fontFamily:'var(--fontMono)', fontSize:11, fontWeight:500,
-                  color: cat===c.id?p.surface:p.inkFaint, opacity:0.8}}>{c.postCount ?? 0}</span>
+                  color: cat===c.id?p.surface:p.inkMeta, opacity:0.8}}>{c.postCount ?? 0}</span>
               </button>
             ))}
             {q && !exactMatch && (
@@ -659,7 +659,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
               </button>
             )}
             {!q && shownCats.length===0 && (
-              <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint}}>{lang==='jp'?'読み込み中…':'Loading…'}</span>
+              <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta}}>{lang==='jp'?'読み込み中…':'Loading…'}</span>
             )}
           </div>
         </div>
@@ -693,12 +693,12 @@ function ComposerPage({ p, lang, currentUser, editId }) {
 
         {/* tags */}
         <div style={{marginTop:24}}>
-          <label style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.1em', textTransform:'uppercase'}}>{lang==='jp'?'タグ':'Tags'}</label>
+          <label style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.1em', textTransform:'uppercase'}}>{lang==='jp'?'タグ':'Tags'}</label>
           <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8}}>
             {tags.map(tg=>(
               <span key={tg} style={{display:'inline-flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:999, background:p.surface, border:`1px solid ${p.line}`, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink}}>
                 #{tg}
-                <button onClick={()=>setTags(tags.filter(x=>x!==tg))} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkFaint}}>✕</button>
+                <button onClick={()=>setTags(tags.filter(x=>x!==tg))} style={{appearance:'none', border:'none', background:'transparent', cursor:'pointer', color:p.inkMeta}}>✕</button>
               </span>
             ))}
             <input value={tagInput} onChange={(e)=>setTagInput(e.target.value)} onKeyDown={addTag}
@@ -802,7 +802,7 @@ function MyPostCard({ p, lang, post, onChanged }) {
             {kanji && <span style={{fontFamily:'var(--fontDisplay)', color:p.stamp, textTransform:'none', letterSpacing:0}}>{kanji}</span>}
             {cat ? cat.label : post.categoryId}
           </span>
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{post.readMins || 1} min</span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta}}>{post.readMins || 1} min</span>
         </div>
         <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:21, lineHeight:1.18, letterSpacing:'-0.015em', color:p.ink, textWrap:'pretty'}}>{title}</h3>
         {excerpt && <p style={{fontFamily:'var(--fontBody)', fontSize:14, color:p.inkSoft, lineHeight:1.55, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden'}}>{excerpt}</p>}
@@ -822,7 +822,7 @@ function MyPostCard({ p, lang, post, onChanged }) {
             </span>
             <span style={{minWidth:0}}>
               <span style={{display:'block', fontFamily:'var(--fontBody)', fontSize:12.5, fontWeight:600, color:p.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{lang==='jp'?me.jp:me.en}</span>
-              <span style={{display:'block', fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint}}>{dateStr}</span>
+              <span style={{display:'block', fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta}}>{dateStr}</span>
             </span>
           </div>
           <div style={{display:'flex', alignItems:'center', gap:14, flexShrink:0}}>
@@ -1008,18 +1008,18 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
             {editing && (
               <div style={{marginTop:12, display:'flex', gap:10, flexWrap:'wrap', maxWidth:600}}>
                 <label style={{flex:'1 1 100%'}}>
-                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'名前（日本語）':'Name (Japanese)'}</span>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkMeta}}>{lang==='jp'?'名前（日本語）':'Name (Japanese)'}</span>
                   <input value={nameJa} onChange={(e)=>setNameJa(e.target.value)} placeholder={lang==='jp'?'例: 田中 美緒（空欄なら英語名を表示）':'e.g. 田中 美緒 (blank = English name everywhere)'} style={{display:'block', width:'100%', boxSizing:'border-box', background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'8px 10px', marginTop:4, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink, outline:'none'}}/>
                 </label>
                 <label style={{flex:1, minWidth:200}}>
-                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'ハンドル':'Handle'}</span>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkMeta}}>{lang==='jp'?'ハンドル':'Handle'}</span>
                   <div style={{display:'flex', alignItems:'center', gap:4, background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'7px 10px', marginTop:4}}>
-                    <span style={{fontFamily:'var(--fontMono)', fontSize:13, color:p.inkFaint}}>@</span>
+                    <span style={{fontFamily:'var(--fontMono)', fontSize:13, color:p.inkMeta}}>@</span>
                     <input value={handle} onChange={(e)=>setHandle(e.target.value)} style={{flex:1, minWidth:0, border:'none', outline:'none', background:'transparent', fontFamily:'var(--fontMono)', fontSize:13, color:p.ink}}/>
                   </div>
                 </label>
                 <label style={{flex:1, minWidth:200}}>
-                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkFaint}}>{lang==='jp'?'場所':'Location'}</span>
+                  <span style={{fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.12em', textTransform:'uppercase', color:p.inkMeta}}>{lang==='jp'?'場所':'Location'}</span>
                   <input value={city} onChange={(e)=>setCity(e.target.value)} placeholder={lang==='jp'?'例: Tokyo':'e.g. Tokyo'} style={{display:'block', width:'100%', boxSizing:'border-box', background:p.surface, border:`1px solid ${p.line}`, borderRadius:10, padding:'8px 10px', marginTop:4, fontFamily:'var(--fontBody)', fontSize:13, color:p.ink, outline:'none'}}/>
                 </label>
               </div>
@@ -1062,10 +1062,10 @@ function ProfilePage({ p, lang, user, t, savedSet, onSave, onUpdateUser, claps, 
             <button key={k} onClick={()=>setTab(k)} style={{
               appearance:'none', border:'none', background:'transparent', cursor:'pointer',
               padding:'12px 6px', marginRight:18, fontFamily:'var(--fontBody)', fontSize:15, fontWeight:600,
-              color: tab===k?p.ink:p.inkFaint, borderBottom: tab===k?`2px solid ${p.stamp}`:'2px solid transparent',
+              color: tab===k?p.ink:p.inkMeta, borderBottom: tab===k?`2px solid ${p.stamp}`:'2px solid transparent',
               marginBottom:-1,
             }}>
-              {label} <span style={{color:p.inkFaint, fontWeight:500}}>{n}</span>
+              {label} <span style={{color:p.inkMeta, fontWeight:500}}>{n}</span>
             </button>
           ))}
         </div>
@@ -1193,7 +1193,7 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
 
   return (
     <div style={{...wrap(), paddingTop:48}}>
-      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
+      <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14, display:'flex', alignItems:'center', gap:8}}>
         <TrendIcon color={p.stamp}/> {lang==='jp'?'人気':'Trending now'}
       </div>
       <h1 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(40px,5vw,72px)', letterSpacing:'-0.025em', lineHeight:1.05, color:p.ink, marginBottom:8, textWrap:'pretty'}}>
@@ -1224,11 +1224,11 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
           {top.map((po,i)=>(
             <div key={po.slug} onClick={()=>window.__nihon_go({name:'article', slug:po.slug})}
               style={{display:'flex', gap:22, padding:'22px 0', borderBottom:`1px solid ${p.line}`, cursor:'pointer', alignItems:'flex-start'}}>
-              <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:44, lineHeight:0.9, color: i===0?p.stamp:p.inkFaint, minWidth:56, letterSpacing:'-0.04em'}}>
+              <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:44, lineHeight:0.9, color: i===0?p.stamp:p.inkMeta, minWidth:56, letterSpacing:'-0.04em'}}>
                 {String(i+1).padStart(2,'0')}
               </div>
               <div style={{flex:1}}>
-                <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.inkFaint, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}}>
+                <div style={{fontFamily:'var(--fontMono)', fontSize:10, color:p.inkMeta, letterSpacing:'0.12em', textTransform:'uppercase', marginBottom:6}}>
                   {cats.find(c=>c.slug===po.category)[lang==='jp'?'jp':'en']} · {po.readMins} min
                 </div>
                 <h3 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:24, lineHeight:1.12, letterSpacing:'-0.015em', color:p.ink, marginBottom:8, textWrap:'pretty'}}>
@@ -1253,18 +1253,18 @@ function TrendingPage({ p, lang, t, savedSet, onSave, claps, comments }) {
 
         {/* rising */}
         <aside style={{padding:24, background:p.surface, border:`1px solid ${p.line}`, borderRadius:18}}>
-          <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.16em', textTransform:'uppercase', marginBottom:18}}>
+          <div style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.16em', textTransform:'uppercase', marginBottom:18}}>
             {lang==='jp'?'伸びている記事':'Also rising'}
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:18}}>
             {rest.map((po,i)=>(
               <div key={po.slug} onClick={()=>window.__nihon_go({name:'article', slug:po.slug})} style={{display:'flex', gap:12, cursor:'pointer', alignItems:'baseline'}}>
-                <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkFaint}}>{String(i+6).padStart(2,'0')}</span>
+                <span style={{fontFamily:'var(--fontMono)', fontSize:12, color:p.inkMeta}}>{String(i+6).padStart(2,'0')}</span>
                 <div>
                   <h4 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:16, lineHeight:1.2, color:p.ink, marginBottom:3, textWrap:'pretty'}}>
                     {lang==='jp'?po.title_jp:po.title_en}
                   </h4>
-                  <span style={{fontFamily:'var(--fontBody)', fontSize:12, color:p.inkFaint}}>
+                  <span style={{fontFamily:'var(--fontBody)', fontSize:12, color:p.inkMeta}}>
                     {window.getAuthor(po.author)?.[lang==='jp'?'jp':'en']} · <HeartIcon color={p.inkFaint} size={11}/> {((po.likes||0)+(claps[po.slug]||0)).toLocaleString()}
                   </span>
                 </div>
@@ -1523,7 +1523,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
     const r = feedReason(po, follows, lang);
     return (
       <div>
-        <div style={{display:'inline-flex', alignItems:'center', gap:6, marginBottom:10, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:p.inkFaint}}>
+        <div style={{display:'inline-flex', alignItems:'center', gap:6, marginBottom:10, fontFamily:'var(--fontMono)', fontSize:10, letterSpacing:'0.08em', textTransform:'uppercase', color:p.inkMeta}}>
           {r.icon==='follow' ? <span style={{color:p.accentDeep, fontWeight:700}}>+</span> : r.icon==='like' ? <HeartIcon color={p.stamp} filled size={11}/> : <TrendIcon color={p.stamp} size={11}/>}
           {r.text}
         </div>
@@ -1535,7 +1535,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
   return (
     <div style={{...wrap(), paddingTop:48}}>
       {/* header */}
-      <div style={{display:'flex', alignItems:'center', gap:8, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14}}>
+      <div style={{display:'flex', alignItems:'center', gap:8, fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta, letterSpacing:'0.18em', textTransform:'uppercase', marginBottom:14}}>
         <span style={{width:6, height:6, borderRadius:3, background:p.stamp, display:'inline-block'}}></span>
         {lang==='jp'?'あなたのフィード':'Your feed'}
       </div>
@@ -1559,7 +1559,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
           </svg>
           {lang==='jp'?'フォロー中の書き手':'Writers you follow'}
-          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkFaint}}>{follows.size}</span>
+          <span style={{fontFamily:'var(--fontMono)', fontSize:11, color:p.inkMeta}}>{follows.size}</span>
         </button>
       )}
       {followOpen && currentUser && (
@@ -1599,7 +1599,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
                   <Avatar user={a} p={p} size={60}/>
                   <div>
                     <div style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:16, color:p.ink}}>{lang==='jp'?a.jp:a.en}</div>
-                    <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkFaint, letterSpacing:'0.06em', textTransform:'uppercase', marginTop:2}}>{a.role}</div>
+                    <div style={{fontFamily:'var(--fontBody)', fontSize:11, color:p.inkMeta, letterSpacing:'0.06em', textTransform:'uppercase', marginTop:2}}>{a.role}</div>
                   </div>
                 </div>
                 <button onClick={()=>onToggleFollow(a.slug)} style={{...window.gradStyle(p), padding:'8px 20px', fontSize:13}}>{lang==='jp'?'フォロー':'Follow'}</button>
@@ -1675,7 +1675,7 @@ function FeedPage({ p, lang, t, savedSet, onSave, claps, follows, onToggleFollow
 function FeedHeading({p, lang, en, jp, kicker_en, kicker_jp}) {
   return (
     <div style={{marginBottom:24}}>
-      <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkFaint, marginBottom:8}}>{lang==='jp'?kicker_jp:kicker_en}</div>
+      <div style={{fontFamily:'var(--fontMono)', fontSize:11, letterSpacing:'0.16em', textTransform:'uppercase', color:p.inkMeta, marginBottom:8}}>{lang==='jp'?kicker_jp:kicker_en}</div>
       <h2 style={{fontFamily:'var(--fontDisplay)', fontWeight:600, fontSize:'clamp(24px,2.4vw,32px)', letterSpacing:'-0.02em', color:p.ink, lineHeight:1.1}}>{lang==='jp'?jp:en}</h2>
     </div>
   );

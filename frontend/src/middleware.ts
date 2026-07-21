@@ -51,6 +51,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.redirect(to.href, 301);
   }
 
+  // Root → default locale. Handled here rather than in a page component so the
+  // hop costs one edge response instead of booting Astro's renderer for a body
+  // nobody reads — this redirect is on the critical path of every visitor who
+  // types the bare domain (and of every PageSpeed/Search Console run).
+  if (context.url.pathname === '/') {
+    // Carry the query through: campaign traffic lands on the bare domain, and
+    // dropping ?utm_* here would silently zero out the attribution for every ad,
+    // newsletter and shared link that doesn't spell out the locale.
+    return new Response(null, {
+      status: 308,
+      headers: { location: `/ja/${context.url.search}`, 'cache-control': 'public, max-age=3600' },
+    });
+  }
+
   const res = await next();
   if (!res.headers.get('content-type')?.includes('text/html')) return res;
 

@@ -47,7 +47,12 @@ google.get('/callback', limits.oauth, async (c) => {
   const state = c.req.query('state') ?? '';
   const [nonce, localeRaw] = state.split('.');
   const locale = localeRaw === 'en' ? 'en' : 'ja';
-  const home = `${c.env.FRONTEND_ORIGIN}/${locale}/`;
+  // ?signedin=1 tells the frontend "a session was just minted, go refresh into
+  // it". The frontend otherwise skips its boot /auth/refresh unless it can see the
+  // session-hint cookie (see lib/cookies.ts) — and on this one path the hint is
+  // set by a cross-site redirect response, the least reliable place to depend on a
+  // cookie landing. Belt to that braces; the frontend strips the param on arrival.
+  const home = `${c.env.FRONTEND_ORIGIN}/${locale}/?signedin=1`;
 
   const saved = getCookie(c, STATE_COOKIE);
   deleteCookie(c, STATE_COOKIE, { path: '/auth/google' });

@@ -10,6 +10,7 @@ import Shell from "../../../layouts/Shell.astro";
 import ReaderIsland from "../../../nihon/ReaderIsland.jsx";
 import { makeHelpers, tagSlug, TINT_GRAD, TINT_HEX } from "../../../lib/cards";
 import { ssrFetch, fwdIp } from "../../../lib/ssr";
+import { coverSrc, coverSrcset, SIZES } from "../../../lib/img";
 
 const { locale, slug } = Astro.params as { locale: string; slug: string };
 if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
@@ -43,6 +44,8 @@ const grad = TINT_GRAD[tint] || TINT_GRAD.rose;
 const avatarHex = TINT_HEX[tint] || "#FBC5CC";
 const authorInitials = h.initialsOf(authorName);
 const profileHref = post.authorHandle ? `/${locale}/u/${post.authorHandle}` : null;
+// Absolute-URL covers only (a relative/garbage value renders the gradient instead).
+const hasCover: boolean = !!post.cover && /^https?:\/\//.test(post.cover);
 
 // Author bio/role/location aren't on the post payload — fetch the public profile
 // so the "written by" card shows the writer's real bio (not a placeholder).
@@ -105,7 +108,8 @@ const jsonLd = {
 };
 ---
 <Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={canonical} active=""
-  image={post.cover || null} type="article" article={articleMeta} jsonLd={jsonLd}>
+  image={post.cover || null} type="article" article={articleMeta} jsonLd={jsonLd}
+  preload={hasCover ? { href: coverSrc(post.cover), srcset: coverSrcset(post.cover), sizes: SIZES.article } : null}>
   <article class="rd">
     <div class="wrap">
       {/* True Back: step back in history when the reader came from within the site
@@ -152,10 +156,11 @@ const jsonLd = {
       </header>
     </div>
 
-    {post.cover && /^https?:\/\//.test(post.cover) && (
+    {hasCover && (
       <div class="wrap">
         <div class="rd-cover">
-          <img src={post.cover} alt="" />
+          {/* The article's LCP element — preloaded in the head (see the Shell props). */}
+          <img src={coverSrc(post.cover)} srcset={coverSrcset(post.cover)} sizes={SIZES.article} alt="" fetchpriority="high" decoding="async" />
           {post.coverLabel && <span class="rd-cover-tag"><span class="dot"></span> photo: {post.coverLabel}</span>}
         </div>
         {(post.coverCredit && post.coverCredit.trim()) && (
@@ -216,7 +221,7 @@ const jsonLd = {
     .rd-back:hover { border-color: var(--accent); background: var(--tint); }
     .rd-head { max-width: 780px; margin: 0 auto; }
     .rd-meta { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .rd-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; }
+    .rd-kicker { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.1em; text-transform: uppercase; }
     .rd-head h1 { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(40px, 4.5vw, 64px); line-height: 1.05; letter-spacing: -0.025em; color: var(--ink); margin-bottom: 18px; text-wrap: pretty; }
     .rd-excerpt { font-family: var(--fontDisplay); font-style: italic; font-size: 22px; line-height: 1.4; color: var(--inkSoft); margin-bottom: 32px; text-wrap: pretty; }
     .rd-byline { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; margin-bottom: 48px; gap: 16px; }
@@ -225,7 +230,7 @@ const jsonLd = {
     .rd-ava.lg { width: 80px; height: 80px; font-size: 32px; }
     .rd-ava img { width: 100%; height: 100%; object-fit: cover; }
     .rd-name { font-family: var(--fontDisplay); font-weight: 600; font-size: 18px; color: var(--ink); }
-    .rd-date { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); }
+    .rd-date { font-family: var(--fontMono); font-size: 12px; color: var(--inkMeta); }
 
     .rd-cover { max-width: 1080px; margin: 0 auto 0; position: relative; border-radius: 20px; overflow: hidden; }
     .rd-cover img { width: 100%; height: 520px; object-fit: cover; display: block; }
@@ -233,7 +238,7 @@ const jsonLd = {
     .rd-cover-glyph { font-family: var(--fontDisplay); font-weight: 600; font-size: 120px; color: rgba(255,255,255,0.6); }
     .rd-cover-tag { position: absolute; left: 14px; bottom: 12px; display: inline-flex; align-items: center; gap: 8px; background: color-mix(in oklab, var(--surface) 92%, transparent); backdrop-filter: blur(6px); padding: 5px 10px; border-radius: 999px; font-family: var(--fontMono); font-size: 10px; letter-spacing: 0.08em; color: var(--inkSoft); text-transform: uppercase; }
     .rd-cover-tag .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--stamp); display: inline-block; }
-    .rd-credit { font-family: var(--fontMono); font-size: 12px; color: var(--inkFaint); letter-spacing: 0.04em; text-align: center; margin-top: 14px; max-width: 1080px; margin-left: auto; margin-right: auto; }
+    .rd-credit { font-family: var(--fontMono); font-size: 12px; color: var(--inkMeta); letter-spacing: 0.04em; text-align: center; margin-top: 14px; max-width: 1080px; margin-left: auto; margin-right: auto; }
     .rd > .wrap:has(.rd-cover) { margin-bottom: 48px; }
 
     .rd-langnote { max-width: 680px; margin: 0 auto 22px; padding: 12px 16px; border: 1px solid var(--line);
@@ -283,9 +288,9 @@ const jsonLd = {
     .rd-engage { max-width: 780px; margin: 0 auto; }
     .rd-authorcard { max-width: 780px; margin: 44px auto; display: flex; gap: 20px; padding: 26px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; align-items: center; }
     .rd-authorcard-body { flex: 1; min-width: 0; }
-    .rd-authorcard-kick { font-family: var(--fontMono); font-size: 11px; color: var(--inkFaint); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .rd-authorcard-kick { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
     .rd-authorcard-name { font-family: var(--fontDisplay); font-weight: 600; font-size: 22px; color: var(--ink); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-    .rd-authorcard-handle { font-family: var(--fontMono); font-size: 13px; font-weight: 400; color: var(--inkFaint); letter-spacing: 0.02em; }
+    .rd-authorcard-handle { font-family: var(--fontMono); font-size: 13px; font-weight: 400; color: var(--inkMeta); letter-spacing: 0.02em; }
     .rd-authorcard-bio { font-family: var(--fontBody); font-size: 14px; color: var(--inkSoft); margin-top: 6px; line-height: 1.5; }
     .rd-authorcard-link { flex-shrink: 0; font-family: var(--fontBody); font-size: 13px; font-weight: 600; color: var(--ink); border: 1.5px solid var(--line); border-radius: 999px; padding: 9px 18px; transition: border-color 0.18s ease, background 0.18s ease; }
     .rd-authorcard-link:hover { border-color: var(--accent); background: var(--tint); }
