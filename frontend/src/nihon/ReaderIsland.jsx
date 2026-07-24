@@ -81,7 +81,7 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
     let live = true;
     setCommentsErr(false);
     window.N101_CONTENT.postApi.listComments(postId, { sort: commentsSort === "top" ? "top" : "new" })
-      .then((r) => { if (live) { setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextOffset ?? null); } })
+      .then((r) => { if (live) { setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextCursor ?? null); } })
       .catch(() => { if (live) setCommentsErr(true); });
     return () => { live = false; };
   }, [postId, commentsReload, sessionReady, commentsSort]);
@@ -91,13 +91,13 @@ function ReaderIsland({ slot, postId, slug, locale, authorId, likes = 0 }) {
     if (commentsNext == null || commentsBusy) return;
     setCommentsBusy(true);
     try {
-      const r = await window.N101_CONTENT.postApi.listComments(postId, { sort: commentsSort === "top" ? "top" : "new", offset: commentsNext });
+      const r = await window.N101_CONTENT.postApi.listComments(postId, { sort: commentsSort === "top" ? "top" : "new", cursor: commentsNext });
       setComments((prev) => {
         const seen = new Set(prev.map((c) => c.id));
         return [...prev, ...r.comments.map(toCommentView).filter((c) => !seen.has(c.id))];
       });
       setCommentsTotal((t) => r.total ?? t);
-      setCommentsNext(r.nextOffset ?? null);
+      setCommentsNext(r.nextCursor ?? null);
     } catch { /* keep the button; the reader can retry */ }
     finally { setCommentsBusy(false); }
   }, [postId, commentsNext, commentsBusy, commentsSort]);

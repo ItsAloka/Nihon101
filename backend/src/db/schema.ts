@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, boolean, real, jsonb, index, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, bigint, boolean, real, jsonb, index, uniqueIndex, primaryKey, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // Postgres-native schema. IDs are text `<prefix>_<nanoid21>`. Timestamps are
@@ -159,6 +159,13 @@ export const posts = pgTable('posts', {
   excerptJa: text('excerpt_ja').notNull().default(''),
   bodyEn: text('body_en').notNull().default(''),   // sanitized HTML
   bodyJa: text('body_ja').notNull().default(''),   // sanitized HTML
+  // Combined body length, maintained BY POSTGRES (stored generated column) so no
+  // write path — editor save, translation cron, anything future — can forget it.
+  // Card surfaces derive readMins from this column; computing char_length() over
+  // the bodies at query time forced Postgres to fetch + decompress both TOASTed
+  // values per row (48 TOAST reads per 24-card page, and again in the per-minute
+  // trending KV bake) just to produce one small integer.
+  bodyChars: integer('body_chars').generatedAlwaysAs(sql`char_length(body_en) + char_length(body_ja)`).notNull(),
   cover: text('cover'),                            // R2 url, null = none
   coverLabel: text('cover_label').notNull().default(''),   // PHOTO tag on the cover
   coverCredit: text('cover_credit').notNull().default(''), // credit line under it
@@ -195,7 +202,20 @@ export const posts = pgTable('posts', {
   uniqueIndex('posts_slug_idx').on(t.slug),
   index('posts_author_idx').on(t.authorId),
   index('posts_category_idx').on(t.categoryId),
-  index('posts_status_idx').on(t.status),
+  // Listing indexes. Equality columns first (scope, then status/is_hidden), then
+  // the sort columns in the exact ORDER BY of the list queries — so a numbered
+  // page is one ordered index walk (no sort), shallow or deep. The plain status
+  // index is gone: posts_feed_idx's leading column covers any status-only filter.
+  index('posts_feed_idx').on(t.status, t.isHidden, t.publishedAt.desc(), t.id.desc()),
+  index('posts_cat_feed_idx').on(t.categoryId, t.status, t.isHidden, t.publishedAt.desc(), t.id.desc()),
+  index('posts_author_feed_idx').on(t.authorId, t.status, t.isHidden, t.publishedAt.desc(), t.id.desc()),
+  // For You taste retrieval sorts by raw engagement (TASTE_ORDER in for-you.ts).
+  // Expression index — must stay TOKEN-IDENTICAL to TASTE_ORDER or the planner
+  // won't match it — so that ORDER BY is served from the index instead of sorting
+  // the whole matched set to return 80 candidates.
+  index('posts_engagement_idx')
+    .on(sql`(likes + 2 * comments + 0.5 * saves) DESC`, t.publishedAt.desc())
+    .where(sql`status = 'published' AND is_hidden = false`),
   index('posts_trend_idx').on(t.trendScore),
   // The per-minute translation sweep scans for queued work; partial index keeps
   // that scan O(queue length), not O(all posts) — the queue is almost always empty.
@@ -232,6 +252,15 @@ export const postComments = pgTable('post_comments', {
   index('post_comments_user_idx').on(t.userId),
   index('post_comments_parent_idx').on(t.parentId),
   index('post_comments_created_idx').on(t.createdAt), // trending recompute window scan
+  // Keyset pagination of the TOP-LEVEL thread (listComments). Partial (parent_id
+  // IS NULL) so replies don't bloat it, post_id leading for the equality filter,
+  // then the two sort orders' keys in DESC NULLS LAST (the ORDER BY uses
+  // descNullsLast to match — see the desc-nulls-last gotcha). A deep page is one
+  // index range scan, not an OFFSET walk. 'new' = created_at; 'top' = likes first.
+  index('post_comments_new_idx')
+    .on(t.postId, t.createdAt.desc(), t.id.desc()).where(sql`parent_id IS NULL`),
+  index('post_comments_top_idx')
+    .on(t.postId, t.likes.desc(), t.createdAt.desc(), t.id.desc()).where(sql`parent_id IS NULL`),
 ]);
 
 export const commentLikes = pgTable('comment_likes', {
@@ -255,6 +284,29 @@ export const postSaves = pgTable('post_saves', {
   uniqueIndex('post_saves_post_user_idx').on(t.postId, t.userId),
   index('post_saves_user_idx').on(t.userId, t.createdAt),
   index('post_saves_created_idx').on(t.createdAt), // trending recompute window scan
+]);
+
+// Append-only buffer for the posts.likes/saves/comments counters. A like/save/
+// comment used to `UPDATE posts SET likes = likes + 1` in place — on a viral post
+// hundreds of concurrent writers serialize on that ONE row's lock and it piles up
+// dead tuples (MVCC writes a new row version per bump). Instead each event INSERTs
+// a small delta row here (appends never contend on a shared row), and the
+// per-minute cron folds them into posts in one batched statement, then deletes
+// them (flushPostCountEvents). The acting user's own response and the single-post
+// read merge the still-pending delta in ONE statement so their count is exact;
+// card listings read posts.* and may lag by up to one flush (~60s) on a hot post.
+// Derived + self-healing: safe to truncate (counts then rebuild from the source
+// like/save/comment tables would need a manual reconcile, but no data is lost).
+export const postCountEvents = pgTable('post_count_events', {
+  id: text('id').primaryKey(),
+  postId: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(), // 'like' | 'save' | 'comment'
+  delta: integer('delta').notNull(), // +1 / -1 (comment delete can be -N)
+  createdAt: ms('created_at').notNull(),
+}, (t) => [
+  // The merged-count read probes by (post_id, kind); the flush scans the whole
+  // (tiny, ~1 flush interval) table. Both served by this.
+  index('post_count_events_post_idx').on(t.postId, t.kind),
 ]);
 
 // ---- Social graph: follows, reads, affinity, notifications (Phase 4) ----
@@ -282,6 +334,24 @@ export const postReads = pgTable('post_reads', {
   uniqueIndex('post_reads_post_user_idx').on(t.postId, t.userId),
   index('post_reads_user_idx').on(t.userId, t.createdAt),
   index('post_reads_created_idx').on(t.createdAt), // trending recompute window scan
+]);
+
+// Hourly rollup of engagement events, one row per (post, hour-since-epoch). The
+// trending cron used to re-aggregate 72h of RAW post_reads/saves/likes/comments
+// every 60 seconds — the same arithmetic over the same rows ~4,300 times before an
+// event aged out, so cost scaled with TRAFFIC, not with corpus size. Now each hour
+// is summed once and the per-minute pass reads ~72 small rows per post instead.
+// Derived data: safe to truncate and rebuild from the raw tables at any time.
+export const postEventHours = pgTable('post_event_hours', {
+  postId: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  hour: integer('hour').notNull(), // floor(created_at / 3_600_000)
+  reads: integer('reads').notNull().default(0),
+  saves: integer('saves').notNull().default(0),
+  likes: integer('likes').notNull().default(0),
+  comments: integer('comments').notNull().default(0),
+}, (t) => [
+  primaryKey({ columns: [t.postId, t.hour] }),
+  index('post_event_hours_hour_idx').on(t.hour), // window scan + retention sweep
 ]);
 
 // Cached per-user taste snapshot (normalized 0–1 within each dimension),

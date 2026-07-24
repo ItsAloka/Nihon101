@@ -480,7 +480,7 @@ function RealArticle(props) {
   React.useEffect(()=>{
     let live = true;
     window.N101_CONTENT.postApi.listComments(id, { sort: commentsSort==='top'?'top':'new' })
-      .then(r=>{ if(live){ setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextOffset ?? null); } })
+      .then(r=>{ if(live){ setComments(r.comments.map(toCommentView)); setCommentsTotal(r.total ?? r.comments.length); setCommentsNext(r.nextCursor ?? null); } })
       .catch(()=>{});
     return ()=>{ live=false; };
   }, [id, commentsSort, currentUser?.id]);
@@ -489,13 +489,13 @@ function RealArticle(props) {
     if (commentsNext == null || commentsBusy) return;
     setCommentsBusy(true);
     try {
-      const r = await window.N101_CONTENT.postApi.listComments(id, { sort: commentsSort==='top'?'top':'new', offset: commentsNext });
+      const r = await window.N101_CONTENT.postApi.listComments(id, { sort: commentsSort==='top'?'top':'new', cursor: commentsNext });
       setComments(prev=>{
         const seen = new Set(prev.map(c=>c.id));
         return [...prev, ...r.comments.map(toCommentView).filter(c=>!seen.has(c.id))];
       });
       setCommentsTotal(t=> r.total ?? t);
-      setCommentsNext(r.nextOffset ?? null);
+      setCommentsNext(r.nextCursor ?? null);
     } catch { /* keep the button; the reader can retry */ }
     finally { setCommentsBusy(false); }
   }, [id, commentsNext, commentsBusy, commentsSort]);

@@ -127,13 +127,14 @@ const postApi = {
   // viewer's taste and drops the post from their For You feed. → {ok}
   notInterested: (id) => req(`/posts/${id}/not-interested`, { method: 'POST', auth: true }),
   listSaved: () => req('/posts/saved', { auth: true }).then((r) => r.posts), // viewer's saved cards, newest first
-  // Paginated: opts = { sort: 'top'|'new', offset, limit }. Returns the full
-  // payload { comments, total, nextOffset } — total is the true count, nextOffset
-  // feeds "Load more" (null = last page).
+  // Paginated: opts = { sort: 'top'|'new', cursor, limit }. Returns the full
+  // payload { comments, total, nextCursor } — total is the true count, nextCursor
+  // is an opaque keyset token that feeds "Load more" (null = last page). Always
+  // pair a cursor with the sort it came from (re-fetch from scratch on sort change).
   listComments: (id, opts = {}) => {
     const q = new URLSearchParams();
     if (opts.sort) q.set('sort', opts.sort);
-    if (opts.offset) q.set('offset', String(opts.offset));
+    if (opts.cursor) q.set('cursor', String(opts.cursor));
     if (opts.limit) q.set('limit', String(opts.limit));
     const qs = q.toString();
     return req(`/posts/${id}/comments${qs ? `?${qs}` : ''}`);

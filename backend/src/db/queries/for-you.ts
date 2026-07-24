@@ -37,7 +37,7 @@ import { eq, and, or, gt, lt, desc, sql, inArray, type SQL } from 'drizzle-orm';
 import type { DB } from '../client';
 import { posts, users, follows, postLikes, postReads, postSaves, postComments, tags, userAffinity, userSignals } from '../schema';
 import { id as newId } from '../../lib/ids';
-import { cardCols, publicPostCard, notHidden, type PostCardRow } from './posts';
+import { cardCols, publicPostCard, notHidden, descNullsLast, type PostCardRow } from './posts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -227,7 +227,9 @@ const trendSignal = (p: FeedCard): number => p.trendScore ?? p.trend;
 
 /** Stable feed ordering key: newest-first, with id as a unique tiebreak so keyset
  *  pagination has a deterministic seam (publishedAt alone can tie to the ms). */
-const FEED_ORDER = [desc(posts.publishedAt), desc(posts.id)] as const;
+// descNullsLast to match posts_feed_idx — plain desc (= NULLS FIRST) doesn't
+// pathkey-match the index and forces a full sort of the published set per load.
+const FEED_ORDER = [descNullsLast(posts.publishedAt), descNullsLast(posts.id)] as const;
 
 /** Run a candidate query with the live trend score, card shape (no bodies). `order`
  *  defaults to newest-first; taste retrieval passes a popularity order instead. */
@@ -256,9 +258,12 @@ function topKeys(m: Map<string, number>, n: number): string[] {
 /** Age-agnostic popularity order: retrieval should surface the most-loved on-taste
  *  post regardless of age — the ranker re-applies recency afterward. Sorting by the
  *  recency-decayed trend_score here would re-bury the very gems we're trying to find. */
+// Kept TOKEN-IDENTICAL to posts_engagement_idx (schema.ts) — expression AND null
+// ordering — so the planner serves this ORDER BY straight from the index instead
+// of sorting the whole matched set (verified with EXPLAIN at 200k rows).
 const TASTE_ORDER = [
   sql`(${posts.likes} + 2 * ${posts.comments} + 0.5 * ${posts.saves}) DESC`,
-  desc(posts.publishedAt),
+  descNullsLast(posts.publishedAt),
 ] as const;
 
 /** TASTE-TARGETED retrieval (the real lever): the most-loved posts of ANY age that

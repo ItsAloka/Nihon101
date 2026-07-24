@@ -4,7 +4,11 @@
  * The old trending was lifetime-engagement ÷ age: a post with big all-time totals
  * trended forever and a post spiking *right now* could never break in. This scores
  * by MOMENTUM — recent engagement velocity — which we can compute because
- * post_reads/saves/likes/comments each carry a created_at.
+ * post_reads/saves/likes/comments each carry a created_at. The per-minute pass
+ * reads them via the post_event_hours HOURLY ROLLUP (each hour summed once by
+ * refreshEventBuckets), not the raw tables — re-aggregating 72h of raw events
+ * every 60s re-did the same arithmetic ~4,300 times per event, so cron cost
+ * scaled with traffic instead of staying flat.
  *
  * Scoring, in one line:
  *   velocity(post) = Σ events in last WINDOW: read1 + save2 + like3 + comment4,
@@ -60,28 +64,29 @@ const FRESH = 14 * 24 * HOUR;  // age-decay only reorders posts younger than thi
  *  applied to the rest via a LEFT JOIN with a 0 momentum term. */
 export async function recomputeTrendScores(db: DB): Promise<void> {
   const now = Date.now();
-  const since = now - WINDOW;
-  const recentSince = now - RECENT;
   const freshSince = now - FRESH;
-  const decay = sql.raw(`power(0.5, GREATEST(0, ${now}::bigint - created_at)::float / ${HALF_LIFE}.0)`);
+  const nowHour = Math.floor(now / HOUR);
+  const sinceHour = Math.floor((now - WINDOW) / HOUR);
+  const recentHour = Math.floor((now - RECENT) / HOUR);
+  // Bucket decay (per-hour, replaces per-event decay — same shape, <3% intra-hour
+  // difference). The divisor is a numeric literal, not a bind parameter: `${x}.0`
+  // inside sql`` would render as `$n.0`, which is a syntax error (the pre-existing
+  // age term below uses sql.raw for the same reason).
+  const halfLifeHours = sql.raw(`${HALF_LIFE / HOUR}.0`);
   await db.execute(sql`
     WITH ev AS (
-      SELECT post_id, created_at, base, base * (${decay}) AS w FROM (
-        SELECT post_id, created_at, 1.0 AS base FROM post_reads    WHERE created_at > ${since}
-        UNION ALL
-        SELECT post_id, created_at, 2.0 AS base FROM post_saves    WHERE created_at > ${since}
-        UNION ALL
-        SELECT post_id, created_at, 3.0 AS base FROM post_likes    WHERE created_at > ${since}
-        UNION ALL
-        SELECT post_id, created_at, 4.0 AS base FROM post_comments WHERE created_at > ${since}
-      ) s
+      SELECT post_id, hour, reads, saves, likes, comments,
+        (reads + 2.0 * saves + 3.0 * likes + 4.0 * comments)
+          * power(0.5, (${nowHour} - hour)::float / ${halfLifeHours}) AS w
+      FROM post_event_hours
+      WHERE hour > ${sinceHour}
     ),
     vel AS (
       SELECT post_id,
         SUM(w) AS v,
-        SUM(w) FILTER (WHERE created_at > ${recentSince}) AS recent_v,
-        COUNT(*) FILTER (WHERE base = 1.0) AS reads,
-        COUNT(*) AS n
+        SUM(w) FILTER (WHERE hour > ${recentHour}) AS recent_v,
+        SUM(reads) AS reads,
+        SUM(reads + saves + likes + comments) AS n
       FROM ev GROUP BY post_id
     )
     UPDATE posts SET trend_score =
@@ -107,6 +112,55 @@ export async function recomputeTrendScores(db: DB): Promise<void> {
     WHERE posts.id = pub.id
   `);
 }
+
+/** Roll raw engagement events into the hourly buckets recomputeTrendScores reads.
+ *  Idempotent: each (post, hour) is fully recomputed from the raw tables, so
+ *  re-running over the same span is a no-op and a missed run self-heals.
+ *
+ *  The per-minute pass only needs the last couple of hours (older buckets are
+ *  already final). It runs wider once an hour because post_reads is deduped per
+ *  (post,user) — a repeat read MOVES an existing row's created_at into a newer
+ *  bucket, which would otherwise leave a stale count behind in the bucket it
+ *  left. Rewriting the full window hourly bounds that drift to an hour. */
+export async function refreshEventBuckets(db: DB, sinceMs: number): Promise<void> {
+  // Snap to the START of the hour containing sinceMs. A bucket is rewritten with
+  // whatever this query counts, so a mid-hour boundary would rebuild the oldest
+  // bucket from only part of its hour and silently erase the rest of it.
+  const from = Math.floor(sinceMs / HOUR) * HOUR;
+  const hourExpr = sql.raw(`(created_at / ${HOUR})::int`); // literal, not a bind param
+  await db.execute(sql`
+    INSERT INTO post_event_hours (post_id, hour, reads, saves, likes, comments)
+    SELECT post_id, ${hourExpr} AS hour,
+      COUNT(*) FILTER (WHERE k = 'r')::int,
+      COUNT(*) FILTER (WHERE k = 's')::int,
+      COUNT(*) FILTER (WHERE k = 'l')::int,
+      COUNT(*) FILTER (WHERE k = 'c')::int
+    FROM (
+      SELECT post_id, created_at, 'r' AS k FROM post_reads    WHERE created_at >= ${from}
+      UNION ALL
+      SELECT post_id, created_at, 's' AS k FROM post_saves    WHERE created_at >= ${from}
+      UNION ALL
+      SELECT post_id, created_at, 'l' AS k FROM post_likes    WHERE created_at >= ${from}
+      UNION ALL
+      SELECT post_id, created_at, 'c' AS k FROM post_comments WHERE created_at >= ${from}
+    ) e
+    GROUP BY post_id, ${hourExpr}
+    ON CONFLICT (post_id, hour) DO UPDATE SET
+      reads = EXCLUDED.reads, saves = EXCLUDED.saves,
+      likes = EXCLUDED.likes, comments = EXCLUDED.comments
+  `);
+}
+
+/** Drop buckets that have aged out of WINDOW — they can no longer affect any
+ *  score. Keeps the rollup table proportional to active posts, not all history. */
+export async function pruneEventBuckets(db: DB): Promise<number> {
+  const cutoff = Math.floor((Date.now() - WINDOW) / HOUR);
+  const res = await db.execute(sql`DELETE FROM post_event_hours WHERE hour <= ${cutoff} RETURNING post_id`);
+  return res.rows.length;
+}
+
+/** Full window span, for the hourly wide refresh + first-run backfill. */
+export const BUCKET_WINDOW = WINDOW;
 
 /** Top trending published posts (card shape, no bodies), highest score first.
  *  Reads the precomputed momentum column — used for the paginated SSR page. An

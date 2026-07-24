@@ -1,6 +1,6 @@
 import { eq, and, desc, sql, inArray, getTableColumns } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, users } from '../schema';
+import { posts, users, postCountEvents } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { slugify } from './categories';
 
@@ -12,6 +12,14 @@ export type PostDensity = 'compact' | 'normal' | 'relaxed';
  *  public list surface (home, trending, search, feed, profile) so a hidden post
  *  disappears everywhere at once. Owner/admin paths opt out explicitly. */
 export const notHidden = eq(posts.isHidden, false);
+
+/** ORDER BY key that the listing indexes can actually serve. The indexes are
+ *  `DESC NULLS LAST` (drizzle's .desc() emits that), but a plain `ORDER BY x DESC`
+ *  means DESC NULLS FIRST to Postgres — the pathkeys don't match, the planner
+ *  ignores the index and does a full sort (verified with EXPLAIN at 200k rows).
+ *  Every query that wants posts_feed_idx/posts_cat_feed_idx/posts_author_feed_idx/
+ *  posts_engagement_idx must spell the sort with this helper. */
+export const descNullsLast = (col: unknown) => sql`${col} desc nulls last`;
 
 export interface NewPostInput {
   authorId: string;
@@ -50,7 +58,9 @@ async function uniqueSlug(db: DB, titleEn: string, titleJa: string, idTail: stri
 export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> {
   const id = newId('post');
   const now = Date.now();
-  const row: PostRow = {
+  // body_chars is a stored generated column — Postgres computes it, so it must
+  // not appear in the INSERT. The returned row carries the same arithmetic.
+  const row: Omit<PostRow, 'bodyChars'> = {
     id,
     authorId: input.authorId,
     categoryId: input.categoryId,
@@ -83,7 +93,7 @@ export async function createPost(db: DB, input: NewPostInput): Promise<PostRow> 
     updatedAt: now,
   };
   await db.insert(posts).values(row);
-  return row;
+  return { ...row, bodyChars: input.bodyEn.length + input.bodyJa.length };
 }
 
 export async function getPostById(db: DB, id: string): Promise<PostRow | undefined> {
@@ -130,33 +140,44 @@ export async function getPostWithAuthorBySlug(db: DB, slug: string): Promise<Pos
 
 /** Live engagement counters for one post — merged over a getDbCached shell on the
  * reading path, so a like/comment made this minute is never masked by the 60s
- * query cache. Undefined when the row is gone (deleted; only the cache survived). */
+ * query cache. Each count folds in the still-unflushed post_count_events deltas
+ * (the counters are buffered now — see engagement.ts) in the SAME statement, so a
+ * like made this minute shows immediately even though posts.likes only moves on
+ * the cron flush. Undefined when the row is gone (deleted; only the cache survived). */
 export async function getPostCounts(db: DB, id: string): Promise<{ likes: number; saves: number; comments: number } | undefined> {
+  const pending = (kind: 'like' | 'save' | 'comment') =>
+    sql<number>`COALESCE((SELECT SUM(${postCountEvents.delta}) FROM ${postCountEvents} WHERE ${postCountEvents.postId} = ${posts.id} AND ${postCountEvents.kind} = ${kind}), 0)`;
   const [row] = await db
-    .select({ likes: posts.likes, saves: posts.saves, comments: posts.comments })
+    .select({
+      likes: sql<number>`GREATEST(${posts.likes} + ${pending('like')}, 0)`,
+      saves: sql<number>`GREATEST(${posts.saves} + ${pending('save')}, 0)`,
+      comments: sql<number>`GREATEST(${posts.comments} + ${pending('comment')}, 0)`,
+    })
     .from(posts)
     .where(eq(posts.id, id));
-  return row;
+  return row ? { likes: Number(row.likes), saves: Number(row.saves), comments: Number(row.comments) } : undefined;
 }
 
-/** Card column set for list surfaces (home feed): everything except the bodies
- * plus a server-side character count so readMins never ships body bytes. */
+/** Card column set for list surfaces (home feed): everything except the bodies.
+ * readMins comes from the stored `body_chars` generated column — computing
+ * char_length() here forced Postgres to detoast both ~20KB bodies per row on
+ * every card query just to produce one small integer. */
 const { bodyEn: _cardBodyEn, bodyJa: _cardBodyJa, ...postCardCols } = getTableColumns(posts);
 export const cardCols = {
   ...postCardCols,
   ...authorCols,
-  bodyChars: sql<number>`char_length(coalesce(${posts.bodyEn}, '')) + char_length(coalesce(${posts.bodyJa}, ''))`,
 };
-export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa'> & { bodyChars: number };
+export type PostCardRow = Omit<PostWithAuthor, 'bodyEn' | 'bodyJa'>;
 
-/** Newest published posts, card shape (no bodies selected at all). */
+/** Newest published posts, card shape (no bodies selected at all). Sort matches
+ * posts_feed_idx exactly (published_at DESC, id DESC) so it's one index walk. */
 export function listRecentPosts(db: DB, limit: number): Promise<PostCardRow[]> {
   return db
     .select(cardCols)
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(and(eq(posts.status, 'published'), notHidden))
-    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+    .orderBy(descNullsLast(posts.publishedAt), descNullsLast(posts.id))
     .limit(limit) as Promise<PostCardRow[]>;
 }
 
@@ -182,9 +203,9 @@ export interface ListPostsFilter {
   offset?: number;         // simple page offset (owner "my posts" / drafts)
 }
 
-// Owner/admin "my posts" + drafts. A single author's own corpus, so it carries
-// full bodies (the editor list reads them) but is still BOUNDED — never load an
-// author's entire history into memory at 50k-user scale.
+// Owner/admin "my posts" + drafts. Bounded, and CARD shape — the list never ships
+// bodies (two ~20KB bilingual bodies × 200 rows was a multi-megabyte response for
+// one dashboard load). The editor fetches the single post by id when opening.
 const OWNER_LIST_CAP = 200;
 
 function listWhere(f: ListPostsFilter) {
@@ -196,16 +217,18 @@ function listWhere(f: ListPostsFilter) {
   ].filter(Boolean);
 }
 
-export function listPosts(db: DB, f: ListPostsFilter): Promise<PostWithAuthor[]> {
+export function listPosts(db: DB, f: ListPostsFilter): Promise<PostCardRow[]> {
   const where = listWhere(f);
+  // createdAt (not id) tiebreak on purpose: drafts all have published_at NULL, so
+  // the second key is their entire order — it must stay newest-first, not random.
   return db
-    .select({ ...getTableColumns(posts), ...authorCols })
+    .select(cardCols)
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(where.length ? and(...where) : undefined)
     .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
     .limit(Math.min(f.limit ?? OWNER_LIST_CAP, OWNER_LIST_CAP))
-    .offset(f.offset ?? 0) as Promise<PostWithAuthor[]>;
+    .offset(f.offset ?? 0) as Promise<PostCardRow[]>;
 }
 
 // Public list surface (the default /posts read). CARD shape — bodies are never
@@ -227,7 +250,10 @@ export async function listPostCards(
     .from(posts)
     .leftJoin(users, eq(posts.authorId, users.id))
     .where(where.length ? and(...where) : undefined)
-    .orderBy(desc(posts.publishedAt), desc(posts.createdAt))
+    // Matches posts_feed_idx / posts_cat_feed_idx / posts_author_feed_idx exactly
+    // (including NULLS LAST — see descNullsLast), so every numbered page (the
+    // Pager UI) is an ordered index walk — no sort, shallow or deep.
+    .orderBy(descNullsLast(posts.publishedAt), descNullsLast(posts.id))
     .limit(capped + 1)
     .offset(Math.max(0, offset))) as PostCardRow[];
   const hasMore = rows.length > capped;

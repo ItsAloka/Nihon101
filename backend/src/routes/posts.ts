@@ -187,8 +187,10 @@ app.get('/', limits.publicRead, async (c) => {
   if (statusParam === 'draft') {
     const uid = await currentUserId(c);
     if (!uid || (authorId && authorId !== uid)) return c.json({ error: 'unauthorized' }, 401);
+    // Card shape: the drafts list never ships bodies — the editor fetches the
+    // single post by id when opening one (GET /posts/:id).
     const rows = await listPosts(db(c), { categoryId, authorId: uid, status: 'draft', includeHidden: true });
-    return c.json({ posts: rows.map(publicPost) });
+    return c.json({ posts: rows.map(publicPostCard) });
   }
 
   // 'mine' → all of the requester's posts (drafts + published + hidden), owner-only.
@@ -196,7 +198,7 @@ app.get('/', limits.publicRead, async (c) => {
     const uid = await currentUserId(c);
     if (!uid) return c.json({ error: 'unauthorized' }, 401);
     const rows = await listPosts(db(c), { categoryId, authorId: uid, includeHidden: true });
-    return c.json({ posts: rows.map(publicPost) });
+    return c.json({ posts: rows.map(publicPostCard) });
   }
 
   // Default and 'published' → public. CARD shape (no bodies) + paginated, so a
@@ -500,14 +502,14 @@ app.get('/:id/comments', limits.publicRead, async (c) => {
   const privileged = viewerCanSeePrivate(post, viewer);
   if (post.status === 'draft' && !privileged) return c.json({ error: 'not_found' }, 404);
   if (post.isHidden && !privileged) return c.json({ error: 'hidden' }, 451);
-  // Paginated: top-level comments page via ?offset (?sort=top|new); each parent's
-  // replies ride along. Stays on the live handle — the page carries the viewer's
-  // per-comment liked state.
+  // Paginated: top-level comments via a keyset ?cursor (?sort=top|new); each
+  // parent's replies ride along. Stays on the live handle — the page carries the
+  // viewer's per-comment liked state. nextCursor is opaque; null = last page.
   const sort = c.req.query('sort') === 'top' ? 'top' as const : 'new' as const;
-  const offset = Number(c.req.query('offset')) || 0;
+  const cursor = c.req.query('cursor') || undefined;
   const limit = Number(c.req.query('limit')) || undefined;
-  const page = await listComments(d, post.id, viewer?.id ?? null, { sort, offset, limit });
-  return c.json({ comments: page.items.map(publicComment), total: page.total, nextOffset: page.nextOffset });
+  const page = await listComments(d, post.id, viewer?.id ?? null, { sort, cursor, limit });
+  return c.json({ comments: page.items.map(publicComment), total: page.total, nextCursor: page.nextCursor });
 });
 
 // Add a comment.

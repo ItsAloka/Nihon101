@@ -1,6 +1,7 @@
 import { eq, and, asc, desc, isNull, sql, inArray } from 'drizzle-orm';
 import type { DB } from '../client';
-import { posts, postLikes, postComments, commentLikes, postSaves, userSignals, users } from '../schema';
+import { posts, postLikes, postComments, commentLikes, postSaves, postCountEvents, userSignals, users } from '../schema';
+import { descNullsLast } from './posts';
 import { id as newId } from '../../lib/ids';
 import { maskProfanity } from '../../lib/profanity';
 
@@ -9,6 +10,62 @@ import { maskProfanity } from '../../lib/profanity';
  *  You profile. Fire-and-forget weight; mirrors the +base values in computeAffinity. */
 function recordNegative(db: DB, postId: string, userId: string, base: number) {
   return db.insert(userSignals).values({ id: newId('neg'), postId, userId, base, createdAt: Date.now() });
+}
+
+// ---- Denormalized post counters (buffered — see schema `postCountEvents`) ------
+// Likes/saves/comments on the posts row are no longer bumped in place (one hot row,
+// serialized locks + dead-tuple churn on a viral post). Each event appends a delta;
+// the per-minute cron folds deltas into posts (flushPostCountEvents). The acting
+// user's own response and the single-post read merge the still-pending delta so
+// their number is exact; card listings read posts.* and may lag one flush (~60s).
+
+const COUNT_COL = { like: posts.likes, save: posts.saves, comment: posts.comments } as const;
+export type CountKind = keyof typeof COUNT_COL;
+
+/** Append a counter delta instead of UPDATEing the hot posts row. */
+function bumpPostCount(db: DB, postId: string, kind: CountKind, delta: number) {
+  return db.insert(postCountEvents).values({ id: newId('cnt'), postId, kind, delta, createdAt: Date.now() });
+}
+
+/** A post's live count for one kind: the flushed base (posts.<col>) PLUS the
+ *  still-unflushed deltas, read in ONE statement so it stays exact even if the
+ *  cron flush lands mid-read — base and pending always partition the true total,
+ *  so a single snapshot sees one or the other, never a double-count or a gap.
+ *  GREATEST clamps the belt-and-suspenders case (the invariant never goes negative:
+ *  a delta is only appended when the source like/save/comment row truly changed). */
+async function mergedPostCount(db: DB, postId: string, kind: CountKind): Promise<number> {
+  const col = COUNT_COL[kind];
+  const [row] = await db
+    .select({ n: sql<number>`GREATEST(${col} + COALESCE((SELECT SUM(${postCountEvents.delta}) FROM ${postCountEvents} WHERE ${postCountEvents.postId} = ${postId} AND ${postCountEvents.kind} = ${kind}), 0), 0)` })
+    .from(posts)
+    .where(eq(posts.id, postId));
+  return Number(row?.n ?? 0);
+}
+
+/** Fold all pending counter deltas into posts, then delete them — one atomic
+ *  statement (data-modifying CTE: the DELETE and UPDATE share a snapshot, so an
+ *  event INSERTed mid-flush is simply not in the DELETE's snapshot and survives
+ *  for the next run — no lost updates, no double counts). Called each minute by
+ *  the cron. Returns how many post rows moved (for the log line). */
+export async function flushPostCountEvents(db: DB): Promise<number> {
+  const res = await db.execute(sql`
+    WITH flushed AS (
+      DELETE FROM post_count_events RETURNING post_id, kind, delta
+    ), agg AS (
+      SELECT post_id,
+        COALESCE(SUM(delta) FILTER (WHERE kind = 'like'), 0)    AS dlike,
+        COALESCE(SUM(delta) FILTER (WHERE kind = 'save'), 0)    AS dsave,
+        COALESCE(SUM(delta) FILTER (WHERE kind = 'comment'), 0) AS dcomment
+      FROM flushed GROUP BY post_id
+    )
+    UPDATE posts SET
+      likes    = GREATEST(posts.likes    + agg.dlike, 0),
+      saves    = GREATEST(posts.saves    + agg.dsave, 0),
+      comments = GREATEST(posts.comments + agg.dcomment, 0)
+    FROM agg WHERE posts.id = agg.post_id
+    RETURNING posts.id
+  `);
+  return res.rows.length;
 }
 
 // ---- Post likes (toggle) -------------------------------------------------
@@ -30,7 +87,7 @@ export async function togglePostLike(db: DB, postId: string, userId: string) {
     const del = await db.delete(postLikes).where(eq(postLikes.id, existing.id)).returning({ id: postLikes.id });
     if (del.length) {
       await recordNegative(db, postId, userId, -3); // unlike → strong negative taste signal
-      await db.update(posts).set({ likes: sql`GREATEST(${posts.likes} - 1, 0)` }).where(eq(posts.id, postId));
+      await bumpPostCount(db, postId, 'like', -1);
     }
     liked = false;
   } else {
@@ -38,12 +95,11 @@ export async function togglePostLike(db: DB, postId: string, userId: string) {
       .values({ id: newId('plike'), postId, userId, createdAt: Date.now() })
       .onConflictDoNothing()
       .returning({ id: postLikes.id });
-    if (ins.length) await db.update(posts).set({ likes: sql`${posts.likes} + 1` }).where(eq(posts.id, postId));
+    if (ins.length) await bumpPostCount(db, postId, 'like', 1);
     liked = true;
   }
 
-  const [row] = await db.select({ likes: posts.likes }).from(posts).where(eq(posts.id, postId));
-  return { liked, likes: row?.likes ?? 0 };
+  return { liked, likes: await mergedPostCount(db, postId, 'like') };
 }
 
 /** Whether a user has liked a post (null user → false). */
@@ -84,7 +140,7 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
     const del = await db.delete(postSaves).where(eq(postSaves.id, existing.id)).returning({ id: postSaves.id });
     if (del.length) {
       await recordNegative(db, postId, userId, -2); // unsave → moderate negative taste signal
-      await db.update(posts).set({ saves: sql`GREATEST(${posts.saves} - 1, 0)` }).where(eq(posts.id, postId));
+      await bumpPostCount(db, postId, 'save', -1);
     }
     saved = false;
   } else {
@@ -92,12 +148,11 @@ export async function togglePostSave(db: DB, postId: string, userId: string) {
       .values({ id: newId('psave'), postId, userId, createdAt: Date.now() })
       .onConflictDoNothing()
       .returning({ id: postSaves.id });
-    if (ins.length) await db.update(posts).set({ saves: sql`${posts.saves} + 1` }).where(eq(posts.id, postId));
+    if (ins.length) await bumpPostCount(db, postId, 'save', 1);
     saved = true;
   }
 
-  const [row] = await db.select({ saves: posts.saves }).from(posts).where(eq(posts.id, postId));
-  return { saved, saves: row?.saves ?? 0 };
+  return { saved, saves: await mergedPostCount(db, postId, 'save') };
 }
 
 // Hard cap on the Saved tab. Same reasoning as OWNER_LIST_CAP/MAX_COMMENTS_PAGE: the
@@ -146,40 +201,76 @@ const commentCols = {
 export interface CommentPage {
   items: (CommentRow & { liked: boolean })[];
   total: number;            // post's full comment count (top-level + replies)
-  nextOffset: number | null;
+  nextCursor: string | null;
 }
 
 const COMMENTS_PAGE = 50;
 const MAX_COMMENTS_PAGE = 100;
+
+/** Opaque keyset cursor over the TOP-LEVEL thread. Carries the last row's sort
+ * key so the next page is an index range scan, not an OFFSET walk: 'new' keys on
+ * (createdAt, id); 'top' keys on (likes, createdAt, id). base64url of a compact
+ * JSON tuple. The cursor is always paired with the sort it was minted under (the
+ * client re-fetches from scratch when the sort changes), so it need not self-describe. */
+type NewCur = { c: number; i: string };
+type TopCur = { l: number; c: number; i: string };
+function encodeCommentCursor(sort: 'top' | 'new', r: { likes: number; createdAt: number; id: string }): string {
+  const payload = sort === 'top' ? { l: r.likes, c: r.createdAt, i: r.id } : { c: r.createdAt, i: r.id };
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+function decodeCommentCursor(sort: 'top' | 'new', cur: string): NewCur | TopCur | null {
+  try {
+    const o = JSON.parse(Buffer.from(cur, 'base64url').toString('utf8'));
+    if (sort === 'top') {
+      if (typeof o?.l === 'number' && typeof o?.c === 'number' && typeof o?.i === 'string') return o as TopCur;
+    } else if (typeof o?.c === 'number' && typeof o?.i === 'string') {
+      return o as NewCur;
+    }
+  } catch { /* malformed cursor → treat as first page */ }
+  return null;
+}
 
 /** A page of a post's comments. Only the TOP-LEVEL comments are paginated — a
  * brigaded thread must never load in one unbounded query — and each returned
  * parent's one level of replies rides along, so a thread is never split across
  * a page boundary. Ordering ('top' = most-liked, 'new' = newest) is done in SQL
  * so "Top" is a real global ranking, not a re-sort of whatever happened to load.
- * When a viewer is known, their per-comment liked state comes in one extra query
- * scoped to just this page's rows. */
+ * Pagination is KEYSET (opts.cursor), not offset — a deep page costs the same as
+ * the first (served by post_comments_new_idx / post_comments_top_idx). When a
+ * viewer is known, their per-comment liked state comes in one extra query scoped
+ * to just this page's rows. */
 export async function listComments(
   db: DB,
   postId: string,
   viewerId: string | null,
-  opts: { sort?: 'top' | 'new'; offset?: number; limit?: number } = {},
+  opts: { sort?: 'top' | 'new'; cursor?: string; limit?: number } = {},
 ): Promise<CommentPage> {
+  const sort = opts.sort === 'top' ? 'top' : 'new';
   const limit = Math.min(MAX_COMMENTS_PAGE, Math.max(1, Math.trunc(opts.limit ?? COMMENTS_PAGE)));
-  const offset = Math.max(0, Math.trunc(opts.offset ?? 0));
-  const order = opts.sort === 'top'
-    ? [desc(postComments.likes), desc(postComments.createdAt), desc(postComments.id)]
-    : [desc(postComments.createdAt), desc(postComments.id)];
+  const cur = opts.cursor ? decodeCommentCursor(sort, opts.cursor) : null;
+
+  // descNullsLast to match the partial keyset indexes (the columns are NOT NULL,
+  // but the planner still pathkey-matches on null ordering — see the gotcha).
+  const order = sort === 'top'
+    ? [descNullsLast(postComments.likes), descNullsLast(postComments.createdAt), descNullsLast(postComments.id)]
+    : [descNullsLast(postComments.createdAt), descNullsLast(postComments.id)];
+
+  // Keyset predicate: a ROW(...) comparison (an index start condition, unlike the
+  // equivalent OR form) that resumes strictly after the cursor's row.
+  const keyset = cur
+    ? (sort === 'top'
+        ? sql`(${postComments.likes}, ${postComments.createdAt}, ${postComments.id}) < (${(cur as TopCur).l}, ${(cur as TopCur).c}, ${cur.i})`
+        : sql`(${postComments.createdAt}, ${postComments.id}) < (${(cur as NewCur).c}, ${cur.i})`)
+    : undefined;
 
   // limit+1 to detect a next page without a second count query.
   const topRows = await db
     .select(commentCols)
     .from(postComments)
     .leftJoin(users, eq(postComments.userId, users.id))
-    .where(and(eq(postComments.postId, postId), isNull(postComments.parentId)))
+    .where(and(eq(postComments.postId, postId), isNull(postComments.parentId), keyset))
     .orderBy(...order)
-    .limit(limit + 1)
-    .offset(offset);
+    .limit(limit + 1);
 
   const hasMore = topRows.length > limit;
   const top = hasMore ? topRows.slice(0, limit) : topRows;
@@ -198,14 +289,16 @@ export async function listComments(
 
   const rows = [...top, ...replies];
 
-  // Header shows the true total (from the post's denormalized counter), not just
-  // what's loaded on this page.
-  const [countRow] = await db.select({ total: posts.comments }).from(posts).where(eq(posts.id, postId));
-  const total = countRow?.total ?? rows.length;
-  const nextOffset = hasMore ? offset + limit : null;
+  // Header shows the true total (top-level + replies) from the post's denormalized
+  // counter, merged with the still-unflushed comment deltas (buffered counters —
+  // see the top of this file) so a comment added this minute is counted.
+  const total = await mergedPostCount(db, postId, 'comment');
+  // Cursor off the LAST top-level parent of this page (replies never advance it).
+  const lastTop = top[top.length - 1];
+  const nextCursor = hasMore && lastTop ? encodeCommentCursor(sort, lastTop) : null;
 
   if (!viewerId || rows.length === 0) {
-    return { items: rows.map((r) => ({ ...r, liked: false })), total, nextOffset };
+    return { items: rows.map((r) => ({ ...r, liked: false })), total, nextCursor };
   }
 
   // Scope to the comments we're actually returning — not every like this viewer has
@@ -215,7 +308,7 @@ export async function listComments(
     .from(commentLikes)
     .where(and(eq(commentLikes.userId, viewerId), inArray(commentLikes.commentId, rows.map((r) => r.id))));
   const likedSet = new Set(liked.map((l) => l.commentId));
-  return { items: rows.map((r) => ({ ...r, liked: likedSet.has(r.id) })), total, nextOffset };
+  return { items: rows.map((r) => ({ ...r, liked: likedSet.has(r.id) })), total, nextCursor };
 }
 
 /** Create a comment and bump the post's denormalized comment count.
@@ -227,7 +320,7 @@ export async function createComment(db: DB, postId: string, userId: string, body
     id: newId('cmt'), postId, userId, parentId, body, likes: 0, isHidden: false, createdAt: now, updatedAt: now,
   };
   await db.insert(postComments).values(row);
-  await db.update(posts).set({ comments: sql`${posts.comments} + 1` }).where(eq(posts.id, postId));
+  await bumpPostCount(db, postId, 'comment', 1);
   return row;
 }
 
@@ -249,9 +342,7 @@ export async function deleteComment(db: DB, comment: typeof postComments.$inferS
     await db.delete(commentLikes).where(eq(commentLikes.commentId, cid));
     await db.delete(postComments).where(eq(postComments.id, cid));
   }
-  await db.update(posts)
-    .set({ comments: sql`GREATEST(${posts.comments} - ${ids.length}, 0)` })
-    .where(eq(posts.id, comment.postId));
+  await bumpPostCount(db, comment.postId, 'comment', -ids.length);
 }
 
 /** Toggle a user's like on a comment. Returns new state + count. */

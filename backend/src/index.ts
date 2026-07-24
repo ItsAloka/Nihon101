@@ -19,7 +19,8 @@ import admin from './routes/admin';
 import reports from './routes/reports';
 import newsletter from './routes/newsletter';
 import { standaloneDb } from './db/client';
-import { recomputeTrendingCache } from './db/queries/trending';
+import { recomputeTrendingCache, refreshEventBuckets, pruneEventBuckets, BUCKET_WINDOW } from './db/queries/trending';
+import { flushPostCountEvents } from './db/queries/engagement';
 import { pruneReadNotifications } from './db/queries/notifications';
 import { pruneOldSignals, prunePostReads } from './db/queries/for-you';
 import { getSettings, dismissStaleWatchingReports } from './db/queries/admin';
@@ -168,9 +169,21 @@ export default {
         console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
         return;
       }
-      // Every minute: rescore the active set's momentum, then bake the top-20 cards
-      // to KV for the zero-Postgres hot path. Weather is a throttled external fetch
-      // baked to the same KV; its failures are swallowed.
+      // Every minute: fold the buffered like/save/comment deltas into the posts
+      // counters (queries/engagement.ts) FIRST, so the counts are current before
+      // trending's floor term reads them and the top-20 cards are baked. This is
+      // where the hot-row counter writes get their one batched UPDATE per post.
+      const flushed = await flushPostCountEvents(db).catch((e) => {
+        console.error(JSON.stringify({ level: 'error', msg: 'count_flush_crashed', err: e instanceof Error ? e.message : String(e) }));
+        return 0;
+      });
+      if (flushed) console.log(`[counts] postsFlushed=${flushed}`);
+      // Then roll the last couple of hours of raw engagement into hourly buckets
+      // (older buckets are already final — see queries/trending.ts), rescore the
+      // active set's momentum from the buckets and bake the top-20 cards to KV for
+      // the zero-Postgres hot path. Weather is a throttled external fetch baked to
+      // the same KV; its failures are swallowed.
+      await refreshEventBuckets(db, Date.now() - 2 * 60 * 60 * 1000);
       await Promise.all([
         recomputeTrendingCache(db, env.TRENDING_KV),
         recomputeWeatherCache(env.TRENDING_KV),
@@ -181,7 +194,11 @@ export default {
       // in 7 days) that would otherwise pile up in "watching" forever. All bounded
       // indexed work; each failure is swallowed so one can't skip the others.
       if (new Date().getUTCMinutes() === 0) {
-        const [n, s, r, rt, au, pr, ns] = await Promise.all([
+        // Wide bucket re-roll first: repairs any bucket whose source rows moved
+        // since the narrow pass (post_reads dedup rewrites created_at on a
+        // repeat read, moving the event into a newer bucket).
+        await refreshEventBuckets(db, Date.now() - BUCKET_WINDOW).catch(() => { /* next hour */ });
+        const [n, s, r, rt, au, pr, ns, eb] = await Promise.all([
           pruneReadNotifications(db, 30 * 24 * 60 * 60 * 1000).catch(() => 0),
           pruneOldSignals(db).catch(() => 0),
           getSettings(db)
@@ -192,8 +209,9 @@ export default {
           pruneExpiredAuthArtifacts(db).catch(() => 0),
           prunePostReads(db).catch(() => 0),
           pruneUnconfirmedSubscribers(db).catch(() => 0),
+          pruneEventBuckets(db).catch(() => 0),
         ]);
-        if (n || s || r || rt || au || pr || ns) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr} newsletter=${ns}`);
+        if (n || s || r || rt || au || pr || ns || eb) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr} newsletter=${ns} buckets=${eb}`);
       }
       // LAST, because it can hold the tick for minutes on long posts (scheduled()
       // has a 15-min wall budget where waitUntil had ~30s, which is the whole
