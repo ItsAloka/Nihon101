@@ -35,8 +35,9 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   // static.cloudflareinsights.com = Cloudflare Web Analytics beacon (auto-injected
   // when Web Analytics is enabled on the zone; harmless otherwise).
-  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
-  "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
+  // challenges.cloudflare.com = Turnstile bot gate on the signup form (script + iframe).
+  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://challenges.cloudflare.com",
+  "frame-src https://www.youtube-nocookie.com https://www.youtube.com https://challenges.cloudflare.com",
   // cloudflareinsights.com = where the Web Analytics beacon POSTs its data.
   `connect-src 'self' ${API_ORIGIN} https://cloudflareinsights.com ws: wss:`,
   "form-action 'self'",

@@ -145,6 +145,12 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
   // empty page), and say so via langFallback — mirrors the SSR reader.
   const realBody = real ? ((lang==='jp' ? post._bodyJa : post._bodyEn) || post._bodyEn || post._bodyJa || '') : '';
   const langFallback = real && !(lang==='jp' ? post._bodyJa : post._bodyEn) && !!realBody;
+  // Viewing the TRANSLATED side (this locale has content but isn't the post's
+  // original language) → disclose it + link the original locale's SSR page.
+  // Mirrors the SSR reader; 'done' = pipeline-generated ("auto"), else softer.
+  const viewLoc = lang==='jp' ? 'ja' : 'en';
+  const isTranslatedSide = real && !langFallback && post._lang && post._lang !== viewLoc;
+  const translationNoteAuto = post.translationStatus === 'done';
   const related = real ? [] : window.getAllPosts().filter(x=>x.category===post.category && x.slug!==post.slug).slice(0,3);
   const [confirmDel, setConfirmDel] = React.useState(false);
   const [delBusy, setDelBusy] = React.useState(false);
@@ -238,6 +244,16 @@ function ArticlePage({ p, lang, post, t, savedSet, claps, onClap, onSave, commen
               {lang==='jp'
                 ? 'この記事はまだ日本語に翻訳されていません — 英語の原文を表示しています。'
                 : 'This story hasn’t been translated into English yet — showing the Japanese original.'}
+            </div>
+          )}
+          {isTranslatedSide && (
+            <div style={{maxWidth:680, margin:'0 auto 22px', padding:'12px 16px', border:`1px solid ${p.line}`, borderLeft:`3px solid ${p.stamp}`, borderRadius:10, background:p.surface, fontFamily:'var(--fontBody)', fontSize:13.5, color:p.inkSoft}}>
+              {lang==='jp'
+                ? (translationNoteAuto ? 'この記事は英語から自動翻訳されました。表現に不自然な箇所がある場合があります。' : 'この記事は英語から翻訳されました。')
+                : (translationNoteAuto ? 'This story was automatically translated from Japanese. Some phrasing may be imperfect. ' : 'This story was translated from Japanese. ')}
+              <a href={`/${post._lang}/p/${post.slug}`} style={{color:p.stamp, fontWeight:600, textDecoration:'none', whiteSpace:'nowrap'}}>
+                {lang==='jp' ? '原文（英語）を読む ↗' : 'Read the original in Japanese ↗'}
+              </a>
             </div>
           )}
           {real && <ArticleHtml p={p} html={realBody} density={post._density}/>}

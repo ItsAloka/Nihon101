@@ -26,7 +26,7 @@ async function req(path, { method = 'GET', body, auth = false, _retry = false } 
   }
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { status: res.status, code: data.error });
+  if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { status: res.status, code: data.error, link: data.link });
   return data;
 }
 
@@ -72,8 +72,29 @@ async function rawUpload(file, _retry = false) {
     try { await window.N101_API.refresh(); return rawUpload(file, true); } catch (e) {}
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), { status: res.status, code: data.error });
+  if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), {
+    status: res.status, code: data.error,
+    // 429 = the upload rate limit, NOT a size problem. Retry-After (exposed via
+    // CORS) lets the toast say how long to wait instead of "try a smaller file".
+    retryAfterSec: Number(res.headers.get('Retry-After')) || undefined,
+  });
   return data.url;
+}
+
+// Honest upload errors (NB 07-25 lesson): a 429 is the hourly/daily upload limit,
+// a 413 is size — the old catch-all "smaller file" toast sent people resizing for
+// nothing. Bilingual; jp = true for Japanese copy.
+function uploadErrText(e, jp) {
+  if (e && e.status === 429) {
+    const min = e.retryAfterSec ? Math.max(1, Math.ceil(e.retryAfterSec / 60)) : null;
+    return jp
+      ? `アップロード上限に達しました（70枚/時）— ${min ? `約${min}分後に` : 'しばらくして'}もう一度どうぞ。本文は消えていません。`
+      : `Upload limit reached (70 images/hour) — try again ${min ? `in ~${min} min` : 'soon'}. Your text is safe.`;
+  }
+  if (e && (e.status === 413 || e.code === 'too_large')) {
+    return jp ? '画像が大きすぎます — 小さいファイルでお試しください。' : 'That image is too large — try a smaller file.';
+  }
+  return jp ? '画像をアップロードできませんでした — 通信を確認してもう一度どうぞ。' : 'Image upload failed — check your connection and try again.';
 }
 
 const categoryApi = {
@@ -119,6 +140,8 @@ const postApi = {
   remove: (id) => req(`/posts/${id}`, { method: 'DELETE', auth: true }),
   // Owner-only: re-run the background translation after a 'failed'/stuck job.
   retryTranslate: (id) => req(`/posts/${id}/translate`, { method: 'POST', auth: true }),
+  // One-time /terms acceptance — unlocks the first publish (server-enforced).
+  acceptTerms: () => req('/users/me/accept-terms', { method: 'POST', auth: true }),
 
   // Engagement (real posts only — seed posts have no backend row).
   toggleLike: (id) => req(`/posts/${id}/like`, { method: 'POST', auth: true }), // → {liked, likes}
@@ -265,6 +288,7 @@ function hydrateReal(po) {
     _density: po.density || 'compact',
     slug: po.slug, category: po.categoryId, status: po.status,
     translationStatus: po.translationStatus || 'none',
+    _lang: po.lang === 'ja' ? 'ja' : 'en',   // original (authored) language
     // Untranslated side falls back to the authored side — a card/title must
     // never render blank while the background translation is pending/failed.
     title_en: po.titleEn || po.titleJa, title_jp: po.titleJa || po.titleEn,
@@ -287,6 +311,6 @@ function hydrateReal(po) {
 }
 
 if (typeof window !== 'undefined') {
-  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, uploadImage, translate, hydrateReal, relTime };
+  window.N101_CONTENT = { categoryApi, postApi, feedApi, followApi, notifApi, newsletterApi, uploadImage, uploadErrText, translate, hydrateReal, relTime };
   window.N101_CATS = catStore;
 }

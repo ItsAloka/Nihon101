@@ -35,7 +35,12 @@ const AUTH_ERRORS = {
   invalid_code: ['That code is wrong. Check your email and try again.', 'コードが違います。メールを確認してもう一度お試しください。'],
   otp_expired: ['That code expired. Sign in again to get a new one.', 'コードの有効期限が切れました。もう一度ログインしてください。'],
   too_many_attempts: ['Too many tries. Sign in again to get a new code.', '試行回数が上限に達しました。もう一度ログインしてください。'],
+  captcha_failed: ['Could not verify you’re human — reload and try again.', '認証に失敗しました。ページを再読み込みしてもう一度お試しください。'],
 };
+
+// Cloudflare Turnstile bot gate on signup. No site key configured (local dev)
+// ⇒ no widget, and the backend skips its check too.
+const TURNSTILE_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.PUBLIC_TURNSTILE_SITE_KEY) || '';
 const authError = (code, lang) => T(lang, ...(AUTH_ERRORS[code] || ['Something went wrong. Try again.', '問題が発生しました。もう一度お試しください。']));
 
 function LoginModal({ p, lang, onLogin, onClose }) {
@@ -52,7 +57,35 @@ function LoginModal({ p, lang, onLogin, onClose }) {
   const [remember, setRemember] = React.useState(false);
   const [forgotStep, setForgotStep] = React.useState(false); // "forgot password" email form
   const [forgotSent, setForgotSent] = React.useState(false); // reset email dispatched
+  const [captcha, setCaptcha] = React.useState(''); // Turnstile token (empty until solved)
+  const captchaRef = React.useRef(null);
   const isReg = mode === 'register';
+
+  // Load + render the Turnstile widget when the signup form is showing. The
+  // guard on childElementCount keeps re-renders (mode toggles) from stacking
+  // duplicate widgets in the same div.
+  React.useEffect(() => {
+    if (!TURNSTILE_KEY || !isReg) return;
+    let cancelled = false;
+    const render = () => {
+      const t = window.turnstile;
+      if (cancelled || !t || !captchaRef.current || captchaRef.current.childElementCount) return;
+      t.render(captchaRef.current, {
+        sitekey: TURNSTILE_KEY,
+        callback: (token) => setCaptcha(token),
+        'expired-callback': () => setCaptcha(''),
+      });
+    };
+    if (window.turnstile) render();
+    else {
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+      s.async = true;
+      s.onload = render;
+      document.head.appendChild(s);
+    }
+    return () => { cancelled = true; };
+  }, [isReg]);
 
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -76,7 +109,7 @@ function LoginModal({ p, lang, onLogin, onClose }) {
     try {
       const api = window.N101_API;
       if (isReg) {
-        const u = await api.register(email.trim(), password, name.trim());
+        const u = await api.register(email.trim(), password, name.trim(), captcha);
         onLogin(api.toAppUser(u, window.__currentUser));
         return;
       }
@@ -84,6 +117,12 @@ function LoginModal({ p, lang, onLogin, onClose }) {
       if (r.otpRequired) { setPending(r.pending); setOtpStep(true); setBusy(false); return; }
       onLogin(api.toAppUser(r.user, window.__currentUser));
     } catch (ex) {
+      // Turnstile tokens are single-use and ours was consumed by the failed
+      // attempt (e.g. email_taken) — reset so the retry gets a fresh token.
+      if (isReg && TURNSTILE_KEY && captchaRef.current) {
+        window.turnstile?.reset(captchaRef.current);
+        setCaptcha('');
+      }
       setErr(authError(ex.code, lang));
       setBusy(false);
     }
@@ -265,6 +304,8 @@ function LoginModal({ p, lang, onLogin, onClose }) {
               </p>
             )}
 
+            {isReg && TURNSTILE_KEY && <div ref={captchaRef} style={{marginTop:14}}/>}
+
             {err && <div style={{marginTop:12, fontFamily:'var(--fontBody)', fontSize:13, color:p.stamp}}>{err}</div>}
 
             <button type="submit" disabled={busy}
@@ -317,8 +358,8 @@ function htmlToText(html){ const d = document.createElement('div'); d.innerHTML 
 // exactly what the server will accept.
 const MAX_TITLE = 300;
 const MAX_EXCERPT = 600;
-const MAX_BODY = 200_000;
-const MAX_BODY_IMAGES = 100;
+const MAX_BODY = 100_000;
+const MAX_BODY_IMAGES = 50;
 // Counter appears at half the cap — invisible for normal posts, runway warning
 // for a listicle before it hits the publish wall.
 const countImages = (html) => (html.match(/<img\b/gi) || []).length;
@@ -358,6 +399,9 @@ function ComposerPage({ p, lang, currentUser, editId }) {
   const [savedStatus, setSavedStatus] = React.useState('draft');
   const [status, setStatus] = React.useState('');   // inline status line
   const [confirmDel, setConfirmDel] = React.useState(false);
+  // One-time content-guidelines gate: publish returns terms_not_accepted until
+  // the author agrees once (POST /users/me/accept-terms), so we modal + retry.
+  const [showTerms, setShowTerms] = React.useState(false);
   const coverFileRef = React.useRef(null);
   const edApi = React.useRef(null);
   const [edReady, setEdReady] = React.useState(false); // editor mounted → safe to load content
@@ -469,7 +513,7 @@ function ComposerPage({ p, lang, currentUser, editId }) {
     setCoverCrop(null);
     const f = new File([blob], 'cover.webp', { type: 'image/webp' });
     try { setCover(await window.N101_CONTENT.uploadImage(f, { maxEdge: 2400 })); }
-    catch { setStatus('Cover upload failed — try a smaller file'); }
+    catch (e) { setStatus('⚠ ' + window.N101_CONTENT.uploadErrText(e, lang==='jp')); }
   };
   const addTag = (e)=>{
     if (e.key==='Enter' && tagInput.trim()) {
@@ -526,13 +570,28 @@ function ComposerPage({ p, lang, currentUser, editId }) {
       }
       else setStatus('Draft saved');
     } catch (e) {
-      setStatus(e.code === 'too_many_images'
-        ? 'Too many images — a post can hold up to 100 (the cover doesn’t count)'
+      if (e.code === 'terms_not_accepted') { setShowTerms(true); setStatus(''); }
+      else setStatus(e.code === 'too_many_images'
+        ? 'Too many images — a post can hold up to 50 (the cover doesn’t count)'
         : e.code === 'rate_limited'
         ? 'Too many saves — wait a few seconds and try again (your text is still here)'
+        : e.code === 'email_unverified'
+        ? (lang==='jp' ? '⚠ 公開にはメール認証が必要です — 受信箱を確認してください' : '⚠ Verify your email before publishing — check your inbox')
+        : e.code === 'piracy_link'
+        ? (lang==='jp' ? `⚠ 公開できません — 利用規約で禁止されたサイトへのリンクがあります${e.link ? '：' + e.link : ''}` : `⚠ Can’t publish — it links to a site our terms don’t allow${e.link ? ': ' + e.link : ''}`)
         : 'Save failed — ' + (e.code || 'try again'));
     }
     finally { setBusy(false); }
+  };
+
+  // Agree → record the one-time acceptance, then retry the publish that hit the gate.
+  const agreeTerms = async ()=>{
+    if (busy) return;
+    setBusy(true);
+    try { await window.N101_CONTENT.postApi.acceptTerms(); setShowTerms(false); }
+    catch (e) { setStatus('Save failed — ' + (e.code || 'try again')); setBusy(false); return; }
+    setBusy(false);
+    save('published');
   };
 
   const doDelete = async ()=>{
@@ -712,6 +771,27 @@ function ComposerPage({ p, lang, currentUser, editId }) {
         <CropModal p={p} file={coverCrop} aspect={21/9} outW={1680}
           title={lang==='jp'?'表紙を切り抜く — 21:9':'Crop cover — 21:9'}
           onDone={onCoverCropped} onCancel={()=>setCoverCrop(null)}/>
+      )}
+
+      {showTerms && (
+        <div onClick={()=>!busy&&setShowTerms(false)} style={{position:'fixed', inset:0, background:'rgba(0,0,0,.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50}}>
+          <div onClick={(e)=>e.stopPropagation()} style={{background:p.surface, borderRadius:18, padding:28, maxWidth:480, border:`1px solid ${p.line}`}}>
+            <h3 style={{fontFamily:'var(--fontDisplay)', fontSize:20, fontWeight:700, color:p.ink}}>{lang==='jp'?'公開の前に、一度だけ':'One thing before your first publish'}</h3>
+            <p style={{color:p.inkSoft, fontSize:14.5, lineHeight:1.6, marginTop:10, fontFamily:'var(--fontBody)'}}>
+              {lang==='jp'
+                ? 'nihon101のハウスルール（海賊版リンク・成人向け・ヘイト・スパムの禁止など）への同意が必要です。最初の1回だけです。'
+                : 'Publishing needs a one-time agreement to the nihon101 house rules — no piracy links, no NSFW, no hate, no spam.'}
+              {' '}
+              <a href={`/${lang==='jp'?'ja':'en'}/terms`} target="_blank" rel="noopener" style={{color:p.stamp, fontWeight:600}}>
+                {lang==='jp'?'利用規約を読む':'Read the terms'} ↗
+              </a>
+            </p>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end', marginTop:22}}>
+              <button disabled={busy} onClick={()=>setShowTerms(false)} style={ghostBtn(p)}>{lang==='jp'?'キャンセル':'Cancel'}</button>
+              <button disabled={busy} onClick={agreeTerms} style={{...gradStyle(p), padding:'10px 20px', fontSize:14}}>{lang==='jp'?'同意して公開':'Agree & publish'}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmDel && (

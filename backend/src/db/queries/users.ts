@@ -41,6 +41,14 @@ export async function getUserById(db: DB, id: string) {
   return u;
 }
 
+/** One-time /terms acceptance (idempotent — the timestamp of the FIRST accept
+ *  is kept). Required before the first publish; enforced in routes/posts.ts. */
+export async function acceptTerms(db: DB, id: string): Promise<void> {
+  await db.update(users)
+    .set({ acceptedTermsAt: Date.now(), updatedAt: Date.now() })
+    .where(and(eq(users.id, id), sql`${users.acceptedTermsAt} IS NULL`));
+}
+
 export async function handleTaken(db: DB, handle: string, exceptUserId?: string): Promise<boolean> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle));
   return !!row && row.id !== exceptUserId;

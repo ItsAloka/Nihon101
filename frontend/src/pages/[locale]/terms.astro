@@ -1,0 +1,73 @@
+---
+// SSR Terms / content-guidelines page — plain bilingual policy, no JS. Mirrors
+// the Privacy layout. This is the document the one-time publish gate points at
+// (users.accepted_terms_at): the house rules every author accepts before their
+// first publish. AdSense-relevant bans (piracy, NSFW, hate) are stated plainly.
+import Shell from "../../layouts/Shell.astro";
+
+const { locale } = Astro.params as { locale: string };
+if (locale !== "ja" && locale !== "en") return new Response(null, { status: 404 });
+const jp = locale === "ja";
+
+const updated = "2026-07-26";
+const sections = [
+  { en: "What nihon101 is", ja: "nihon101について",
+    bodyEn: "nihon101 is a bilingual publishing platform about Japan — culture, food, travel, language, history, and more. Anyone with an account can write and publish. Authors own their words and are responsible for what they publish. By creating an account or publishing here, you agree to these terms.",
+    bodyJa: "nihon101は、日本の文化・食・旅・言葉・歴史などを扱うバイリンガルの投稿プラットフォームです。アカウントがあれば誰でも記事を書いて公開できます。記事の内容は著者自身のものであり、その責任も著者にあります。アカウントの作成または記事の公開をもって、本規約に同意したものとみなします。" },
+  { en: "Content rules", ja: "コンテンツのルール",
+    bodyEn: "Keep it legal and keep it safe-for-work. Never allowed: links to pirate streaming, scan, or download sites (or embedding their players); uploading copyrighted pages, episode rips, or full scans; posting unofficial translations of licensed works; sexually explicit content of any kind — with absolute zero tolerance for sexual content involving characters who appear underage; hate speech or harassment targeting people for who they are; malware, scams, phishing, or deceptive links; spam, link-farming, or auto-generated filler. Original writing, honest reviews, travel notes, recipes, and commentary are what this site is for — official promotional images, used sparingly to support your writing, are fine.",
+    bodyJa: "合法かつ全年齢向けの内容に保ってください。禁止事項：海賊版の配信・スキャン・ダウンロードサイトへのリンク（プレイヤーの埋め込みも含む）、著作権のあるページ・映像・スキャンのアップロード、ライセンス作品の非公式翻訳の投稿、あらゆる性的に露骨なコンテンツ（未成年に見えるキャラクターの性的表現は一切許容しません）、人格や属性を標的にしたヘイトスピーチ・嫌がらせ、マルウェア・詐欺・フィッシング・偽装リンク、スパム・リンク集め・自動生成の埋め草記事。オリジナルの文章、誠実なレビュー、旅の記録、レシピ、批評こそがこのサイトの目的です。文章を支えるための公式プロモーション画像を控えめに使うのは問題ありません。" },
+  { en: "Copyright & takedowns", ja: "著作権と削除申請",
+    bodyEn: "If you believe content on nihon101 infringes your copyright, use the contact form with a link to the post and proof of ownership — infringing content comes down fast. Repeat infringers lose their accounts.",
+    bodyJa: "nihon101上のコンテンツが著作権を侵害していると思われる場合は、お問い合わせフォームから該当記事のリンクと権利の証明をお送りください。侵害コンテンツは速やかに削除します。繰り返し侵害する利用者はアカウントを失います。" },
+  { en: "Reporting & enforcement", ja: "通報と対応",
+    bodyEn: "Every post, comment, and profile has a Report button — use it. We may hide or remove content and warn, suspend, or permanently ban accounts that break these rules, at our discretion. Content flagged by multiple readers may be hidden automatically pending review.",
+    bodyJa: "すべての記事・コメント・プロフィールに通報ボタンがあります。ルール違反を見つけたらご利用ください。違反したコンテンツの非表示・削除、アカウントへの警告・一時停止・永久BANを、運営の判断で行うことがあります。複数の読者から通報されたコンテンツは、確認までの間、自動的に非表示になることがあります。" },
+  { en: "Your account", ja: "アカウントについて",
+    bodyEn: "You are responsible for everything published from your account, so keep your login to yourself. You must be old enough to use this site lawfully where you live. You can delete your account any time from Settings.",
+    bodyJa: "アカウントから公開されるすべての内容に責任を持つのはあなたです。ログイン情報は他人と共有しないでください。お住まいの地域の法律上、このサイトを利用できる年齢である必要があります。アカウントは設定からいつでも削除できます。" },
+  { en: "Your content, your rights", ja: "あなたのコンテンツと権利",
+    bodyEn: "You keep full ownership of what you write. By publishing you give nihon101 permission to host, display, translate, and distribute your posts on the platform (that is what publishing is — and the site auto-translates each post into the other language). Delete a post and that permission ends.",
+    bodyJa: "書いた記事の所有権はあなたにあります。公開することで、nihon101がプラットフォーム上で記事をホスト・表示・翻訳・配信する許可を与えたことになります（公開とはそういうことです。当サイトは各記事をもう一方の言語に自動翻訳します）。記事を削除すれば、この許可も終了します。" },
+  { en: "No warranty", ja: "無保証",
+    bodyEn: "nihon101 is provided as-is. We work hard to keep it fast and available, but we cannot promise uninterrupted service, and we are not liable for what users publish or for losses arising from use of the site.",
+    bodyJa: "nihon101は現状のまま提供されます。快適で安定したサービスの提供に努めますが、中断のないサービスを保証することはできません。また、利用者が公開した内容や、サイトの利用から生じた損失について、当サイトは責任を負いません。" },
+  { en: "Changes to these terms", ja: "規約の変更",
+    bodyEn: "We may update these terms as the site grows. Meaningful changes get a note on this page with a new date at the top. Continuing to use the site after a change means you accept it. Questions? Use the contact form.",
+    bodyJa: "サイトの成長に合わせて本規約を更新することがあります。重要な変更はこのページに新しい日付とともに記載します。変更後もサイトを使い続けることで、変更に同意したものとみなします。ご質問はお問い合わせフォームからどうぞ。" },
+];
+
+const pageTitle = jp ? "利用規約 — nihon101" : "Terms — nihon101";
+const pageDesc = jp ? "nihon101のハウスルール。合法で、全年齢向けで、あなた自身の言葉を。" : "The house rules of nihon101. Keep it legal, safe-for-work, and yours.";
+---
+<Shell locale={locale} title={pageTitle} description={pageDesc} canonicalPath={`/${locale}/terms`} active="">
+  <div class="wrap pv-wrap">
+    <div class="ex-kicker">
+      <svg class="wave" viewBox="0 0 28 8"><path d="M1 4 Q 5 0, 9 4 T 17 4 T 27 4" stroke="var(--stamp)" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      {jp ? "利用規約" : "Terms & content guidelines"}
+    </div>
+    <h1 class="pv-title">{jp ? "ハウスルール。" : "The house rules."}</h1>
+    <p class="pv-lede">{jp ? "サイトの他の部分と同じく、短く正直に。好きなことを書いてください — 合法で、全年齢向けで、あなた自身の言葉であれば。" : "Short and honest, like the rest of the site. Write what you love — just keep it legal, safe-for-work, and yours."}</p>
+    <p class="pv-updated">{jp ? `最終更新：${updated}` : `Last updated: ${updated}`}</p>
+
+    {sections.map((s) => (
+      <div class="pv-item">
+        <h3 class="pv-h">{jp ? s.ja : s.en}</h3>
+        <p class="pv-b">{jp ? s.bodyJa : s.bodyEn}</p>
+      </div>
+    ))}
+
+    <a class="pv-cta" href={`/${locale}/contact`}>{jp ? "お問い合わせはこちら" : "Contact us"} →</a>
+  </div>
+
+  <style is:global>
+    .pv-wrap { max-width: 760px; padding-top: 56px; padding-bottom: 64px; }
+    .pv-title { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(36px, 5vw, 64px); letter-spacing: -0.025em; line-height: 1.05; color: var(--ink); margin: 12px 0 16px; }
+    .pv-lede { font-family: var(--fontDisplay); font-style: italic; font-size: clamp(17px, 2.2vw, 21px); color: var(--inkSoft); line-height: 1.45; margin-bottom: 8px; }
+    .pv-updated { font-family: var(--fontMono); font-size: 11px; color: var(--inkMeta); letter-spacing: 0.06em; margin-bottom: 40px; }
+    .pv-item { margin-bottom: 28px; padding-bottom: 28px; border-bottom: 1px solid var(--line); }
+    .pv-h { font-family: var(--fontDisplay); font-weight: 600; font-size: clamp(20px, 2.4vw, 26px); color: var(--ink); margin-bottom: 10px; }
+    .pv-b { font-family: var(--fontBody); font-size: 15.5px; line-height: 1.7; color: var(--inkSoft); }
+    .pv-cta { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, var(--accent), var(--accentDeep)); color: #fff; padding: 12px 22px; border-radius: 999px; font-family: var(--fontBody); font-size: 14px; font-weight: 600; margin-top: 12px; }
+  </style>
+</Shell>

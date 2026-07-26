@@ -19,7 +19,7 @@ app.get('/', limits.feed, async (c) => {
   const categoryId = c.req.query('cat') || undefined; // "hot in this category"; omitted = global
   const total = await countTrending(db, categoryId);
   const rows = await listTrending(db, limit, page * limit, categoryId);
-  return c.json({ posts: rows.map(publicPostCard), total });
+  return c.json({ posts: rows.map((r) => publicPostCard(r)), total });
 });
 
 export default app;

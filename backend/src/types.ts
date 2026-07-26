@@ -37,6 +37,9 @@ export type AppVars = {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;
+  // Turnstile bot gate on /auth/register. Optional: unset (local dev, tests, or
+  // until the owner creates the widget) → the check is skipped entirely.
+  TURNSTILE_SECRET?: string;
 };
 
 export type SessionUser = {

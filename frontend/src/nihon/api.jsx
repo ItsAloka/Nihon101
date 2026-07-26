@@ -62,8 +62,8 @@ async function req(path, opts = {}) {
 // Current page locale, so the backend mails verification in the right language.
 const pageLocale = () => (typeof location !== 'undefined' && location.pathname.startsWith('/en')) ? 'en' : 'ja';
 
-async function register(email, password, displayName) {
-  const d = await req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, displayName, locale: pageLocale() }) });
+async function register(email, password, displayName, turnstileToken) {
+  const d = await req('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, displayName, locale: pageLocale(), turnstileToken: turnstileToken || '' }) });
   accessToken = d.access; setSessionHint();
   return d.user;
 }
@@ -220,7 +220,10 @@ async function uploadImage(blob, name = 'image.webp') {
     body: form,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), { status: res.status, code: data.error });
+  if (!res.ok) throw Object.assign(new Error(data.error || 'upload_failed'), {
+    status: res.status, code: data.error,
+    retryAfterSec: Number(res.headers.get('Retry-After')) || undefined, // 429 = rate limit, not size
+  });
   return data.url;
 }
 const uploadAvatar = (blob) => uploadImage(blob, 'avatar.webp');

@@ -39,3 +39,16 @@ export function maskProfanity(text: string): string {
   if (!text) return text;
   return text.replace(EN_RE, dots).replace(JA_RE, dots);
 }
+
+/** HTML-safe masking for sanitized post bodies: only text BETWEEN tags is touched,
+ *  so tag names, attributes, hrefs and /media/ URLs can never be corrupted. Same
+ *  read-time contract as maskProfanity — the stored original is untouched. */
+export function maskProfanityHtml(html: string): string {
+  if (!html) return html;
+  // Fast bail: scan a tag-stripped copy first so clean posts (the overwhelming
+  // majority) pay one pass and zero allocations on the split path.
+  const textOnly = html.replace(/<[^>]*>/g, ' ');
+  EN_RE.lastIndex = 0; JA_RE.lastIndex = 0;
+  if (!EN_RE.test(textOnly) && !JA_RE.test(textOnly)) return html;
+  return html.split(/(<[^>]*>)/).map((part) => (part.startsWith('<') ? part : maskProfanity(part))).join('');
+}

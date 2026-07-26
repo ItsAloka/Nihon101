@@ -695,10 +695,15 @@ function Media({ loc, api }) {
   const selectAll = () => setSel(new Set(orphans.map((o) => o.key)));
   const del = async () => {
     if (!sel.size) return;
-    const ok = await confirmDialog({ loc, danger: true, confirmLabel: T("削除", "Delete")(loc), title: T("孤立画像を削除", "Delete orphans")(loc), message: T(`${sel.size}件を完全に削除します。`, `Permanently delete ${sel.size} image(s)?`)(loc) });
+    const ok = await confirmDialog({ loc, danger: true, confirmLabel: T("ゴミ箱へ移動", "Move to trash")(loc), title: T("孤立画像をゴミ箱へ", "Trash orphans")(loc), message: T(`${sel.size}件をゴミ箱へ移動します（30日間復元可能）。`, `Move ${sel.size} image(s) to trash? Recoverable for 30 days.`)(loc) });
     if (!ok) return;
     setBusy(true);
-    try { const r = await api("/admin/media/bulk-delete", { method: "POST", body: JSON.stringify({ keys: [...sel] }) }); emitToast(T(`${r.deleted}件削除。`, `Deleted ${r.deleted}.`)(loc), "success"); load(); }
+    try {
+      const r = await api("/admin/media/bulk-delete", { method: "POST", body: JSON.stringify({ keys: [...sel] }) });
+      const extra = r.skippedRecent ? T(`（${r.skippedRecent}件は30日未満のためスキップ）`, ` (${r.skippedRecent} skipped — uploaded <30 days ago)`)(loc) : "";
+      emitToast(T(`${r.deleted}件をゴミ箱へ移動。`, `Moved ${r.deleted} to trash.`)(loc) + extra, "success");
+      load();
+    }
     catch (e) { emitToast(e.code || "Failed", "error"); }
     finally { setBusy(false); }
   };
@@ -719,7 +724,7 @@ function Media({ loc, api }) {
         <div className="adm-muted">{sel.size} {T("選択中", "selected")(loc)}</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="adm-btn" onClick={selectAll} disabled={!orphans.length}>{T("孤立を全選択", "Select all orphans")(loc)}</button>
-          <button className="adm-btn danger" onClick={del} disabled={!sel.size || busy}><Ic name="trash" size={14} />{T("選択を削除", "Delete selected")(loc)}</button>
+          <button className="adm-btn danger" onClick={del} disabled={!sel.size || busy}><Ic name="trash" size={14} />{T("ゴミ箱へ移動（30日間復元可）", "Move to trash · recoverable 30 days")(loc)}</button>
         </div>
       </div>
       {orphans.length === 0 ? <div className="adm-empty">{T("孤立画像はありません。R2はクリーンです。", "No orphans — R2 is clean.")(loc)}</div>
@@ -734,6 +739,58 @@ function Media({ loc, api }) {
               </div>
             </div>
             <span className="adm-pill red">{T("未参照", "orphan")(loc)}</span>
+          </label>
+        ))}
+      <Trash loc={loc} api={api} onRestored={load} />
+    </div>
+  );
+}
+
+/* Trash drawer under the orphan finder — the "recoverable for 30 days" promise as
+ * a button instead of a CLI. Restore puts files back at their original key (never
+ * clobbers a re-upload; the API skips those). */
+function Trash({ loc, api, onRestored }) {
+  const [items, setItems] = React.useState(null);
+  const [sel, setSel] = React.useState(() => new Set());
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => { setSel(new Set()); api("/admin/media/trash").then((d) => setItems(d.items)).catch(() => setItems([])); }, [api]);
+  React.useEffect(load, [load]);
+
+  if (!items) return null;
+  const toggle = (k) => setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const restore = async () => {
+    if (!sel.size || busy) return;
+    setBusy(true);
+    try {
+      const r = await api("/admin/media/restore", { method: "POST", body: JSON.stringify({ keys: [...sel] }) });
+      const extra = r.skippedExists ? T(`（${r.skippedExists}件は再アップロード済みのためスキップ）`, ` (${r.skippedExists} skipped — already re-uploaded)`)(loc) : "";
+      emitToast(T(`${r.restored}件を復元。`, `Restored ${r.restored}.`)(loc) + extra, "success");
+      load(); onRestored();
+    }
+    catch (e) { emitToast(e.code || "Failed", "error"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 26 }}>
+      <div className="adm-row" style={{ margin: "8px 0 10px" }}>
+        <div className="adm-muted"><Ic name="trash" size={14} /> {T(`ゴミ箱 — ${items.length}件（削除から30日後に自動消去）`, `Trash — ${items.length} item(s), auto-purged 30 days after deletion`)(loc)}</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="adm-btn" onClick={() => setSel(new Set(items.map((t) => t.key)))} disabled={!items.length}>{T("全選択", "Select all")(loc)}</button>
+          <button className="adm-btn" onClick={restore} disabled={!sel.size || busy}>{T("選択を復元", "Restore selected")(loc)}</button>
+        </div>
+      </div>
+      {items.length === 0 ? <div className="adm-empty">{T("ゴミ箱は空です。", "Trash is empty.")(loc)}</div>
+        : items.map((t) => (
+          <label className="adm-card adm-row" key={t.key} style={{ cursor: "pointer" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+              <input type="checkbox" checked={sel.has(t.key)} onChange={() => toggle(t.key)} />
+              <div style={{ minWidth: 0 }}>
+                <div className="adm-mono" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.originalKey}</div>
+                <div className="adm-muted">{fmtBytes(t.size)} · {T("削除", "deleted")(loc)} {fmtDate(t.deletedAt)} · {T("消去予定", "purges")(loc)} {fmtDate(t.purgesAt)}</div>
+              </div>
+            </div>
+            <span className="adm-pill">{T("ゴミ箱", "trash")(loc)}</span>
           </label>
         ))}
     </div>

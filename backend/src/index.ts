@@ -29,6 +29,7 @@ import { pruneUnconfirmedSubscribers } from './db/queries/newsletter';
 import { recomputeWeatherCache } from './lib/weather';
 import { sendSundayLetter } from './lib/sunday-letter';
 import { runTranslationSweep } from './lib/translation-sweep';
+import { purgeTrash } from './lib/media';
 import weather from './routes/weather';
 
 // Durable Object class must be exported from the Worker entry to be bound.
@@ -56,6 +57,9 @@ app.use('*', async (c, next) => {
     credentials: true,
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    // Without this, a cross-origin fetch can't read Retry-After on a 429 and the
+    // upload toast can't say how long to wait (bit Not Bagel 07-25).
+    exposeHeaders: ['Retry-After'],
   });
   return corsMw(c, next);
 });
@@ -167,6 +171,9 @@ export default {
       if (event.cron === '0 0 * * SUN') {
         const r = await sendSundayLetter(db, env);
         console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
+        // Weekly: erase media trash past its 30-day recovery window (admin soft-delete).
+        const purged = await purgeTrash(env.MEDIA, Date.now() - 30 * 24 * 60 * 60 * 1000).catch(() => 0);
+        if (purged) console.log(`[media-trash] purged=${purged}`);
         return;
       }
       // Every minute: fold the buffered like/save/comment deltas into the posts

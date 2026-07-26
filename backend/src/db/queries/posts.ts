@@ -3,6 +3,7 @@ import type { DB } from '../client';
 import { posts, users, postCountEvents } from '../schema';
 import { id as newId } from '../../lib/ids';
 import { slugify } from './categories';
+import { maskProfanity, maskProfanityHtml } from '../../lib/profanity';
 
 export type PostRow = typeof posts.$inferSelect;
 export type PostStatus = 'draft' | 'published';
@@ -296,22 +297,26 @@ export function deletePost(db: DB, id: string): Promise<unknown> {
 }
 
 /** Client-facing card shape for list surfaces: publicPost minus the bodies,
- * plus readMins derived from the body character count (~1100 chars/min). */
-export function publicPostCard(p: PostCardRow) {
+ * plus readMins derived from the body character count (~1100 chars/min).
+ * Profanity is masked at read time (same contract as publicComment) — the DB
+ * keeps the original. Pass raw=true ONLY for owner/editor surfaces; a masked
+ * title round-tripped through the editor would overwrite the original with ●●●. */
+export function publicPostCard(p: PostCardRow, raw = false) {
+  const m = raw ? (t: string) => t : maskProfanity;
   return {
     id: p.id,
     authorId: p.authorId,
-    authorName: p.authorName ?? null,
-    authorNameJa: p.authorNameJa ?? null,
+    authorName: p.authorName ? m(p.authorName) : null,
+    authorNameJa: p.authorNameJa ? m(p.authorNameJa) : null,
     authorHandle: p.authorHandle ?? null,
     authorAvatarUrl: p.authorAvatarUrl ?? null,
     categoryId: p.categoryId,
     lang: p.lang,
     slug: p.slug,
-    titleEn: p.titleEn,
-    titleJa: p.titleJa,
-    excerptEn: p.excerptEn,
-    excerptJa: p.excerptJa,
+    titleEn: m(p.titleEn),
+    titleJa: m(p.titleJa),
+    excerptEn: m(p.excerptEn),
+    excerptJa: m(p.excerptJa),
     cover: p.cover,
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,
@@ -332,26 +337,31 @@ export function publicPostCard(p: PostCardRow) {
 }
 
 /** Client-facing shape. Parses tags JSON; includes the embedded author summary
- * when called with a joined row. Timestamps are raw ms (portable). */
-export function publicPost(p: PostRow | PostWithAuthor) {
+ * when called with a joined row. Timestamps are raw ms (portable).
+ * Read-time profanity masking, same rules as publicPostCard: raw=true is for
+ * the OWNER/ADMIN view only (the editor round-trips this shape back into the
+ * DB, so a masked body here would permanently destroy the original text). */
+export function publicPost(p: PostRow | PostWithAuthor, raw = false) {
   const a = p as PostWithAuthor;
   const tags: string[] = p.tags ?? [];
+  const m = raw ? (t: string) => t : maskProfanity;
+  const mh = raw ? (t: string) => t : maskProfanityHtml;
   return {
     id: p.id,
     authorId: p.authorId,
-    authorName: a.authorName ?? null,
-    authorNameJa: a.authorNameJa ?? null,
+    authorName: a.authorName ? m(a.authorName) : null,
+    authorNameJa: a.authorNameJa ? m(a.authorNameJa) : null,
     authorHandle: a.authorHandle ?? null,
     authorAvatarUrl: a.authorAvatarUrl ?? null,
     categoryId: p.categoryId,
     lang: p.lang,
     slug: p.slug,
-    titleEn: p.titleEn,
-    titleJa: p.titleJa,
-    excerptEn: p.excerptEn,
-    excerptJa: p.excerptJa,
-    bodyEn: p.bodyEn,
-    bodyJa: p.bodyJa,
+    titleEn: m(p.titleEn),
+    titleJa: m(p.titleJa),
+    excerptEn: m(p.excerptEn),
+    excerptJa: m(p.excerptJa),
+    bodyEn: mh(p.bodyEn),
+    bodyJa: mh(p.bodyJa),
     cover: p.cover,
     coverLabel: p.coverLabel,
     coverCredit: p.coverCredit,

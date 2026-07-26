@@ -34,7 +34,7 @@ export function sniffExt(b: Uint8Array): string | null {
 }
 
 // Upload one image. Returns a public URL pointing back at GET /media/:key.
-app.post('/', requireAuth, limits.upload, async (c) => {
+app.post('/', requireAuth, limits.upload, limits.uploadDaily, async (c) => {
   const form = await c.req.formData().catch(() => null);
   // Workers/DOM File typings clash here, so treat the entry structurally.
   const file = form?.get('file') as unknown as

@@ -228,7 +228,7 @@ function NihonEditor({ p, onChange, onReady, placeholder, density, densityLabel,
     try {
       const url = await window.N101_CONTENT.uploadImage(f);
       editor?.chain().focus().setImage({ src: url }).run();
-    } catch (e) { window.__nihon_toast?.("Image upload failed — try a smaller file"); }
+    } catch (e) { window.__nihon_toast?.(window.N101_CONTENT?.uploadErrText ? window.N101_CONTENT.uploadErrText(e, document.documentElement.lang === "ja") : "Image upload failed"); }
   };
 
   // Read a picked image's natural aspect — used to pre-select the closest shape

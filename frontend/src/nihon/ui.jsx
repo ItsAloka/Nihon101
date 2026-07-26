@@ -1261,6 +1261,7 @@ function Footer({p, lang}) {
             {label:'About', route:{name:'about'}},
             {label:'Contact', route:{name:'contact'}},
             {label:'Privacy', route:{name:'privacy'}},
+            {label:lang==='jp'?'利用規約':'Terms', href:`/${lang==='jp'?'ja':'en'}/terms`},
             {label:'Submit', route:{name:'compose'}},
           ]} lang={lang} />
         <div>
@@ -1296,10 +1297,12 @@ function FooterCol({p, title, items, lang}) {
       <ul style={{listStyle:'none', display:'flex', flexDirection:'column', gap:8}}>
         {items.map((it,i)=>(
           <li key={i}>
-            <a href="#" onClick={(e)=>{e.preventDefault(); window.__nihon_go(it.route);}}
-              style={{textDecoration:'none', color:p.ink, fontFamily:'var(--fontBody)', fontSize:14}}>
-              {it.label}
-            </a>
+            {it.href
+              ? <a href={it.href} style={{textDecoration:'none', color:p.ink, fontFamily:'var(--fontBody)', fontSize:14}}>{it.label}</a>
+              : <a href="#" onClick={(e)=>{e.preventDefault(); window.__nihon_go(it.route);}}
+                  style={{textDecoration:'none', color:p.ink, fontFamily:'var(--fontBody)', fontSize:14}}>
+                  {it.label}
+                </a>}
           </li>
         ))}
       </ul>

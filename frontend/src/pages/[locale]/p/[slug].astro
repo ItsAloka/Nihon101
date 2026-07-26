@@ -34,6 +34,13 @@ const bodyHtml = (jp ? post.bodyJa : post.bodyEn) || (jp ? post.bodyEn : post.bo
 // This locale's body doesn't exist yet (translation pending/failed) → we're
 // showing the other language. Tell the reader instead of pretending.
 const langFallback = jp ? (!post.bodyJa && !!post.bodyEn) : (!post.bodyEn && !!post.bodyJa);
+// Viewing the TRANSLATED side (content exists, but this locale isn't the post's
+// original language) → disclose it + link the original. translationStatus 'done'
+// means the pipeline generated it (say "auto"); anything else with content was
+// hand-written/edited by the author (softer wording, no "auto").
+const isTranslatedSide = !langFallback && (post.lang === "ja" || post.lang === "en") && post.lang !== locale;
+const translationNoteAuto = post.translationStatus === "done";
+const originalHref = `/${post.lang}/p/${post.slug}`;
 const authorName = h.authorName(post);
 const ms = post.publishedAt ?? post.createdAt;
 const dateStr = h.dateFmt(ms);
@@ -184,6 +191,14 @@ const jsonLd = {
             : "This story hasn’t been translated into English yet — showing the Japanese original."}
         </div>
       )}
+      {isTranslatedSide && (
+        <div class="rd-langnote">
+          {jp
+            ? (translationNoteAuto ? "この記事は英語から自動翻訳されました。表現に不自然な箇所がある場合があります。" : "この記事は英語から翻訳されました。")
+            : (translationNoteAuto ? "This story was automatically translated from Japanese. Some phrasing may be imperfect. " : "This story was translated from Japanese. ")}
+          <a class="rd-langnote-link" href={originalHref}>{jp ? "原文（英語）を読む ↗" : "Read the original in Japanese ↗"}</a>
+        </div>
+      )}
       <div class={`rd-body${jp ? "" : " rd-dropcap"}`} set:html={bodyHtml}></div>
 
       {post.tags && post.tags.length > 0 && (
@@ -244,6 +259,8 @@ const jsonLd = {
     .rd-langnote { max-width: 680px; margin: 0 auto 22px; padding: 12px 16px; border: 1px solid var(--line);
       border-left: 3px solid var(--stamp); border-radius: 10px; background: var(--surface);
       font-family: var(--fontBody); font-size: 13.5px; color: var(--inkSoft); }
+    .rd-langnote-link { color: var(--stamp); font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .rd-langnote-link:hover { text-decoration: underline; }
     .rd-body { max-width: 680px; margin: 0 auto; font-family: var(--fontDisplay); font-size: 20px; line-height: var(--lh); color: var(--ink); }
     .rd-body :global(p) { margin: 0; }
     /* Density gap between ALL blocks (headings keep their own rhythm) — same

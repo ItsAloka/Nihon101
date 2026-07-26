@@ -10,7 +10,7 @@ export const prerender = false;
 
 const API_URL = import.meta.env.DEV ? 'http://localhost:8787' : 'https://api.nihon101.com';
 const LOCALES = ['ja', 'en'] as const;
-const STATIC_PATHS = ['', 'trending', 'search', 'about', 'contact', 'privacy'];
+const STATIC_PATHS = ['', 'trending', 'search', 'about', 'contact', 'privacy', 'terms'];
 
 const xmlEscape = (s: string): string =>
   s.replace(/[<>&'"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[ch]!));

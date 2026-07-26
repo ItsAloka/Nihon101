@@ -15,6 +15,7 @@ import { limits } from '../middleware/rateLimit';
 import { startSession, revokeFamily } from '../lib/session';
 import { deleteUserMedia } from '../lib/media';
 import { uniqueHandle, handleTaken, HANDLE_RE } from '../db/queries/users';
+import { verifyTurnstile } from '../lib/turnstile';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const auth = new Hono<AppEnv>();
@@ -53,6 +54,7 @@ const registerSchema = z.object({
   password: z.string().refine(validPassword),
   displayName: z.string().trim().optional().default(''),
   locale: z.string().optional().catch(undefined),
+  turnstileToken: z.string().optional().default(''),
 });
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().catch(''),
@@ -90,7 +92,7 @@ const now = () => Date.now();
 type PublicUser = {
   id: string; email: string; displayName: string; displayNameJa: string; role: string;
   handle: string; bio: string; bioJa: string; location: string; avatarUrl: string | null;
-  bannerUrl: string | null; emailVerified: boolean;
+  bannerUrl: string | null; emailVerified: boolean; acceptedTermsAt: number | null;
 };
 const publicUser = (u: any): PublicUser => ({
   id: u.id,
@@ -105,6 +107,7 @@ const publicUser = (u: any): PublicUser => ({
   avatarUrl: u.avatarUrl,
   bannerUrl: u.bannerUrl,
   emailVerified: !!u.emailVerified,
+  acceptedTermsAt: u.acceptedTermsAt != null ? Number(u.acceptedTermsAt) : null,
 });
 
 /** Accept only our OWN /media URLs (or null to clear) for user-supplied image
@@ -179,6 +182,11 @@ auth.post('/register', limits.register, async (c) => {
   if (!parsed.success) return c.json({ error: firstErr(parsed.error) }, 400);
   const { email: mail, password, displayName: name } = parsed.data;
   const loc: 'ja' | 'en' = parsed.data.locale === 'en' ? 'en' : 'ja';
+
+  // Bot gate — enforced only when TURNSTILE_SECRET is configured (prod).
+  if (c.env.TURNSTILE_SECRET
+      && !(await verifyTurnstile(c.env.TURNSTILE_SECRET, parsed.data.turnstileToken, c.req.header('cf-connecting-ip'))))
+    return c.json({ error: 'captcha_failed' }, 403);
 
   const [existing] = await db(c).select().from(users).where(eq(users.email, mail));
   if (existing) return c.json({ error: 'email_taken' }, 409);

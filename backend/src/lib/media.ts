@@ -58,6 +58,41 @@ export async function deleteMediaKeys(env: { MEDIA: R2Bucket }, keys: string[]):
   return unique.length;
 }
 
+/** Soft-delete: move an object to `_trash/<deletedAt>/<key>` instead of erasing it,
+ *  so an accidental orphan sweep is recoverable for a retention window (the weekly
+ *  Sunday cron purges trash older than 30 days — see purgeTrash). Copies bytes +
+ *  content type, then removes the original. Returns false if the source is gone. */
+export async function trashObject(
+  bucket: R2Bucket, key: string, meta: { deletedBy: string },
+): Promise<boolean> {
+  const obj = await bucket.get(key);
+  if (!obj) return false;
+  const deletedAt = Date.now();
+  await bucket.put(`_trash/${deletedAt}/${key}`, obj.body, {
+    httpMetadata: obj.httpMetadata,
+    customMetadata: { originalKey: key, deletedAt: String(deletedAt), deletedBy: meta.deletedBy },
+  });
+  await bucket.delete(key);
+  return true;
+}
+
+/** Permanently erase trashed objects deleted before `olderThanMs`. The deletion time
+ *  is the second path segment (`_trash/<ms>/…`), so a plain list decides eligibility —
+ *  no per-object head. Batched delete (R2's 1000/call cap). Returns the count purged. */
+export async function purgeTrash(bucket: R2Bucket, olderThanMs: number): Promise<number> {
+  let cursor: string | undefined;
+  let deleted = 0;
+  do {
+    const page = await bucket.list({ prefix: '_trash/', cursor, limit: 1000 });
+    const stale = page.objects
+      .filter((o) => { const ts = Number(o.key.split('/')[1]); return Number.isFinite(ts) && ts < olderThanMs; })
+      .map((o) => o.key);
+    if (stale.length) { await bucket.delete(stale); deleted += stale.length; }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return deleted;
+}
+
 /** Delete EVERY object a user owns (prefix `<userId>/`). Because all of a user's
  *  uploads — avatar, post covers, in-body images — live under that one prefix,
  *  this is the complete blob cleanup for account deletion (GDPR erasure), with no

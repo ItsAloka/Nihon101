@@ -26,6 +26,9 @@ export const users = pgTable('users', {
   isBanned: boolean('is_banned').notNull().default(false),
   bannedUntil: ms('banned_until'),
   emailVerified: boolean('email_verified').notNull().default(false),
+  // One-time acceptance of /terms (content guidelines), required before the
+  // first publish. null = not yet accepted; server-enforced in routes/posts.ts.
+  acceptedTermsAt: ms('accepted_terms_at'),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
 }, (t) => [

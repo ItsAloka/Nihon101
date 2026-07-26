@@ -77,9 +77,9 @@ app.get('/', limits.feed, async (c) => {
   if (weather.length === 0) c.executionCtx.waitUntil(recomputeWeatherCache(c.env.TRENDING_KV));
 
   const { hero, feature, picks, recent } = assembleHomeSections(
-    postRows.map(publicPostCard),
-    heroTop.map(publicPostCard),
-    featured.feature.map(publicPostCard),
+    postRows.map((r) => publicPostCard(r)),
+    heroTop.map((r) => publicPostCard(r)),
+    featured.feature.map((r) => publicPostCard(r)),
   );
 
   return c.json({

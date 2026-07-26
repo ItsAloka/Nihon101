@@ -4,6 +4,7 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { sanitizeHtml } from '../lib/sanitizeHtml';
+import { findBlockedLink, findBlockedLinkHtml } from '../lib/linkGuard';
 import { postMediaKeys, deleteMediaKeys } from '../lib/media';
 import { embedText, postEmbedText, toVectorLiteral } from '../lib/embeddings';
 import { posts } from '../db/schema';
@@ -63,15 +64,18 @@ const MAX_COMMENT = 4_000;
 // pastes that would bloat rows. Body is sanitized HTML, so it runs larger.
 const MAX_TITLE = 300;
 const MAX_EXCERPT = 600;
-const MAX_BODY = 200_000;
+// 100K chars ≈ 5× the longest real post on either site (18.5K, measured on Not
+// Bagel 07-25) — plenty for a monster essay, blocks row-bloat abuse (NB parity).
+const MAX_BODY = 100_000;
 // Length-cap THEN allowlist-sanitize, so the stored body is always safe HTML
 // regardless of what was POSTed (the editor's output is trusted; the API is not).
 const clampBody = (v: unknown) => sanitizeHtml(String(v ?? '').slice(0, MAX_BODY));
 
-// In-body images per post. The cover is a separate field and is NOT counted, so a
-// post may carry 100 body images + 1 cover. Keeps a "Top 100" listicle workable
-// while blocking a body stuffed with thousands of <img> (page-weight abuse).
-const MAX_BODY_IMAGES = 100;
+// In-body images per post. The cover is a separate field and is NOT counted.
+// 50 matches Not Bagel's data-driven cap (07-25: longest real post used 18 —
+// 50 keeps a big listicle workable while blocking page-weight abuse; reverses
+// the 07-11 raise to 100, owner's call for NB parity).
+const MAX_BODY_IMAGES = 50;
 const imageCount = (html: string) => (html.match(/<img\b/gi) || []).length;
 const tooManyImages = (...bodies: string[]) => bodies.some((b) => imageCount(b) > MAX_BODY_IMAGES);
 
@@ -190,7 +194,7 @@ app.get('/', limits.publicRead, async (c) => {
     // Card shape: the drafts list never ships bodies — the editor fetches the
     // single post by id when opening one (GET /posts/:id).
     const rows = await listPosts(db(c), { categoryId, authorId: uid, status: 'draft', includeHidden: true });
-    return c.json({ posts: rows.map(publicPostCard) });
+    return c.json({ posts: rows.map((r) => publicPostCard(r)) });
   }
 
   // 'mine' → all of the requester's posts (drafts + published + hidden), owner-only.
@@ -198,7 +202,7 @@ app.get('/', limits.publicRead, async (c) => {
     const uid = await currentUserId(c);
     if (!uid) return c.json({ error: 'unauthorized' }, 401);
     const rows = await listPosts(db(c), { categoryId, authorId: uid, includeHidden: true });
-    return c.json({ posts: rows.map(publicPostCard) });
+    return c.json({ posts: rows.map((r) => publicPostCard(r, true)) }); // owner list — raw (unmasked)
   }
 
   // Default and 'published' → public. CARD shape (no bodies) + paginated, so a
@@ -214,7 +218,7 @@ app.get('/', limits.publicRead, async (c) => {
     limit,
     page * limit,
   );
-  return c.json({ posts: cards.map(publicPostCard), page, hasMore });
+  return c.json({ posts: cards.map((r) => publicPostCard(r)), page, hasMore });
 });
 
 // Single post by slug (reading view). Drafts visible only to their author.
@@ -238,7 +242,7 @@ app.get('/slug/:slug', limits.publicRead, async (c) => {
     getPostCounts(db(c), post.id),
   ]);
   if (!counts) return c.json({ error: 'not_found' }, 404); // deleted; only the cache survived
-  return c.json({ post: { ...publicPost({ ...post, ...counts }), liked } });
+  return c.json({ post: { ...publicPost({ ...post, ...counts }, privileged), liked } });
 });
 
 // The requester's saved posts, card shape, newest-saved-first. Registered before
@@ -247,7 +251,7 @@ app.get('/saved', requireAuth, async (c) => {
   const d = db(c);
   const ids = await savedPostIds(d, c.var.user!.id);
   const cards = await listCardsByIds(d, ids);
-  return c.json({ posts: cards.map(publicPostCard) });
+  return c.json({ posts: cards.map((r) => publicPostCard(r)) });
 });
 
 // Batched viewer like-state for a list of cards (SSR pages hydrate their hearts
@@ -277,7 +281,7 @@ app.get('/:id', limits.publicRead, async (c) => {
     getPostCounts(db(c), post.id),
   ]);
   if (!counts) return c.json({ error: 'not_found' }, 404);
-  return c.json({ post: { ...publicPost({ ...post, ...counts }), liked } });
+  return c.json({ post: { ...publicPost({ ...post, ...counts }, privileged), liked } });
 });
 
 // Create a draft or published post.
@@ -301,6 +305,24 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   const lang = parseLang(body?.lang, 'en');
   const excerptEn = String(body?.excerptEn ?? '').trim().slice(0, MAX_EXCERPT);
   const excerptJa = String(body?.excerptJa ?? '').trim().slice(0, MAX_EXCERPT);
+
+  // PUBLISH-ONLY gates — never applied to drafts, so autosave can't be wedged
+  // into a silent retry loop (autosave law).
+  if (status === 'published') {
+    // No links to pirate sites in public content (AdSense account-level ban risk,
+    // and against /terms).
+    const blockedLink = findBlockedLinkHtml(bodyEn) ?? findBlockedLinkHtml(bodyJa)
+      ?? findBlockedLink(excerptEn) ?? findBlockedLink(excerptJa);
+    if (blockedLink) {
+      console.warn(JSON.stringify({ evt: 'piracy_link_blocked', kind: 'post', userId: c.var.user!.id, link: blockedLink }));
+      return c.json({ error: 'piracy_link', link: blockedLink }, 400);
+    }
+    // Publishing needs a verified email (cuts throwaway-account spam) and a
+    // one-time acceptance of the content guidelines (/terms).
+    const author = await getUserById(d, c.var.user!.id);
+    if (!author?.emailVerified) return c.json({ error: 'email_unverified' }, 403);
+    if (!author.acceptedTermsAt) return c.json({ error: 'terms_not_accepted' }, 403);
+  }
   // Explicit manual save (draft or publish) → fill the other language in the
   // background. Never set by autosave, so editing doesn't re-burn the API.
   // 'pending' rides the insert itself, so the owner UI knows from moment one.
@@ -334,7 +356,7 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   }
   // Embed published posts for the semantic layer (no-op without an embed key).
   if (status === 'published') scheduleEmbedding(c, post.id);
-  return c.json({ post: publicPost(post) }, 201);
+  return c.json({ post: publicPost(post, true) }, 201);
 });
 
 // Update (owner only). Handles draft<->published count + category moves.
@@ -370,6 +392,28 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   if (body?.density !== undefined) patch.density = parseDensity(body.density, existing.density as PostDensity);
   if (body?.score !== undefined) patch.score = parseScore(body.score);
   if (body?.tags !== undefined) patch.tags = parseTags(body.tags);
+
+  // PUBLISH-ONLY gates, checked against the post as it will exist AFTER this
+  // edit (patched field, or the stored one when untouched) so publishing an old
+  // draft is guarded even when the edit only flips status. Draft saves are
+  // never blocked (autosave law).
+  if (nextStatus === 'published') {
+    const blockedLink = findBlockedLinkHtml(String(patch.bodyEn ?? existing.bodyEn ?? ''))
+      ?? findBlockedLinkHtml(String(patch.bodyJa ?? existing.bodyJa ?? ''))
+      ?? findBlockedLink(String(patch.excerptEn ?? existing.excerptEn ?? ''))
+      ?? findBlockedLink(String(patch.excerptJa ?? existing.excerptJa ?? ''));
+    if (blockedLink) {
+      console.warn(JSON.stringify({ evt: 'piracy_link_blocked', kind: 'post', userId: c.var.user!.id, postId: existing.id, link: blockedLink }));
+      return c.json({ error: 'piracy_link', link: blockedLink }, 400);
+    }
+    // Same gate as create: a draft only goes public once the email is verified
+    // and the content guidelines are accepted.
+    if (existing.status !== 'published') {
+      const author = await getUserById(d, c.var.user!.id);
+      if (!author?.emailVerified) return c.json({ error: 'email_unverified' }, 403);
+      if (!author.acceptedTermsAt) return c.json({ error: 'terms_not_accepted' }, 403);
+    }
+  }
 
   // Explicit manual save (draft or publish), not autosave → queue the other
   // language for the cron sweep. Decide against the post as it will exist AFTER
@@ -411,7 +455,7 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
     scheduleEmbedding(c, post.id);
   }
 
-  return c.json({ post: publicPost(post!) });
+  return c.json({ post: publicPost(post!, true) });
 });
 
 // Re-queue the background translation (owner only) — the recovery path for a
@@ -520,6 +564,12 @@ app.post('/:id/comments', requireAuth, limits.comment, async (c) => {
   const body = await c.req.json().catch(() => null);
   const text = String(body?.body ?? '').trim().slice(0, MAX_COMMENT);
   if (!text) return c.json({ error: 'empty_comment' }, 400);
+  // Comments are public content too — same piracy-link bar as post bodies.
+  const blockedLink = findBlockedLink(text);
+  if (blockedLink) {
+    console.warn(JSON.stringify({ evt: 'piracy_link_blocked', kind: 'comment', userId: c.var.user!.id, link: blockedLink }));
+    return c.json({ error: 'piracy_link', link: blockedLink }, 400);
+  }
 
   // Resolve an optional reply target. Only one level is allowed, so a reply to a
   // reply is flattened onto the original top-level comment.

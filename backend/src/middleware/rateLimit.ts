@@ -157,7 +157,10 @@ export const limits = {
   notif:        rateLimit({ bucket: 'notif',     limit: 120,windowSec: 60,   by: 'user' }),  // bell read/clear
   report:       rateLimit({ bucket: 'report',    limit: 20, windowSec: 3600, by: 'user' }),
   profile:      rateLimit({ bucket: 'profile',   limit: 20, windowSec: 3600, by: 'user' }),
-  upload:       rateLimit({ bucket: 'upload',    limit: 30, windowSec: 3600, by: 'user' }),
+  // 70/hr = one max-size post (50 imgs) + headroom for crop re-uploads/mistakes;
+  // the daily cap stops a bot from cycling the hourly window all day (NB parity).
+  upload:       rateLimit({ bucket: 'upload',    limit: 70,  windowSec: 3600,  by: 'user' }),
+  uploadDaily:  rateLimit({ bucket: 'uploadDay', limit: 150, windowSec: 86400, by: 'user' }),
   translate:    rateLimit({ bucket: 'translate', limit: 30, windowSec: 3600, by: 'user' }),  // external DeepL+OpenAI cost
   category:     rateLimit({ bucket: 'category',  limit: 20, windowSec: 3600, by: 'user' }),
   // ---- PUBLIC writes — KV, per IP (no auth required; spam/abuse guard + email-cost) ----

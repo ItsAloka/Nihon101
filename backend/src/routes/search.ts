@@ -54,14 +54,14 @@ app.get('/', limits.search, async (c) => {
       if (vec) {
         const sem = await semanticSearchPosts(db, vec, { categoryId, limit });
         if (sem.length) {
-          return c.json({ posts: sem.map(publicPostCard), total: sem.length, nextPage: null, semantic: true });
+          return c.json({ posts: sem.map((r) => publicPostCard(r)), total: sem.length, nextPage: null, semantic: true });
         }
       }
     } catch { /* fall through to the empty keyword result */ }
   }
 
   return c.json({
-    posts: results.items.map(publicPostCard),
+    posts: results.items.map((r) => publicPostCard(r)),
     total: results.total,
     nextPage: results.nextPage,
   });

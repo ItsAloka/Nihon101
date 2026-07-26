@@ -7,7 +7,8 @@ import { getDb, getDbCached } from '../db/client';
 import { verifyAccess } from '../lib/tokens';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
-import { getUserByHandle, getUserById, publishedStats } from '../db/queries/users';
+import { getUserByHandle, getUserById, publishedStats, acceptTerms } from '../db/queries/users';
+import { maskProfanity } from '../lib/profanity';
 import { follow, unfollow, isFollowing, followCounts, listFollowing, listFollowers, listFollowingUsers } from '../db/queries/follows';
 import { createNotification } from '../db/queries/notifications';
 
@@ -36,6 +37,14 @@ app.get('/me/following', requireAuth, async (c) => {
   const db = getDb(c);
   const following = await listFollowing(db, c.var.user!.id);
   return c.json({ following });
+});
+
+// One-time acceptance of the content guidelines (/terms) — required before the
+// first publish (routes/posts.ts returns terms_not_accepted until this is set).
+// Idempotent; keeps the first acceptance timestamp.
+app.post('/me/accept-terms', requireAuth, limits.follow, async (c) => {
+  await acceptTerms(getDb(c), c.var.user!.id);
+  return c.json({ ok: true });
 });
 
 // Readers (followers) + Writers (following) lists for the profile modal —
@@ -90,14 +99,19 @@ app.get('/:handle', limits.publicRead, async (c) => {
     isFollowing(getDb(c), viewerId, u.id),
   ]);
 
+  // Read-time profanity masking (same contract as posts/comments). NEVER for the
+  // owner: Settings round-trips these fields, so a masked bio would overwrite the
+  // original with ●●● on the next save.
+  const isSelf = viewerId === u.id;
+  const m = isSelf ? (t: string) => t : maskProfanity;
   return c.json({
     user: {
       id: u.id,
       handle: u.handle,
-      displayName: u.displayName,
-      displayNameJa: u.displayNameJa,
-      bio: u.bio,
-      bioJa: u.bioJa,
+      displayName: m(u.displayName),
+      displayNameJa: m(u.displayNameJa),
+      bio: m(u.bio),
+      bioJa: m(u.bioJa),
       location: u.location,
       avatarUrl: u.avatarUrl,
       bannerUrl: u.bannerUrl,

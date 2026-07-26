@@ -5,7 +5,7 @@ import { isNotNull, or, like } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import type { AppEnv } from '../types';
 import { requireAdmin } from '../middleware/requireAdmin';
-import { keyFromUrl, postMediaKeys, deleteMediaKeys } from '../lib/media';
+import { keyFromUrl, postMediaKeys, deleteMediaKeys, trashObject } from '../lib/media';
 import { users, posts } from '../db/schema';
 import { getUserById, getUserByHandle } from '../db/queries/users';
 import { getPostById, deletePost, publicPostCard } from '../db/queries/posts';
@@ -308,25 +308,31 @@ app.post('/users/:id/role', async (c) => {
 
 // Every R2 key a live DB row points at → who points at it.
 type MediaRef = { type: 'post' | 'user'; id: string; title: string };
-async function collectReferencedKeys(db: ReturnType<typeof getDb>): Promise<Map<string, MediaRef>> {
+export async function collectReferencedKeys(db: ReturnType<typeof getDb>): Promise<Map<string, MediaRef>> {
   const map = new Map<string, MediaRef>();
   const add = (key: string | null, ref: MediaRef) => { if (key && !map.has(key)) map.set(key, ref); };
   // Only rows that actually carry media — most users have no avatar, and we only
   // pull a post's (big) body when it embeds a /media/ URL — so the scan never loads
   // the whole posts/users tables. CRUCIAL: a post references its cover AND every
-  // in-body <img> key. Miss the body images and the scanner reports them as orphans;
-  // a bulk-delete would then wipe images out of live published posts.
+  // in-body <img> key, and a user references avatar AND banner. Miss any of these
+  // and the scanner reports live images as orphans; a bulk-delete then wipes them
+  // out of published posts / profiles (the Not Bagel 07-25 incident).
   const [ps, us] = await Promise.all([
     db.select({ id: posts.id, title: posts.titleEn, titleJa: posts.titleJa, cover: posts.cover, bodyEn: posts.bodyEn, bodyJa: posts.bodyJa })
       .from(posts)
       .where(or(isNotNull(posts.cover), like(posts.bodyEn, '%/media/%'), like(posts.bodyJa, '%/media/%'))),
-    db.select({ id: users.id, handle: users.handle, avatarUrl: users.avatarUrl }).from(users).where(isNotNull(users.avatarUrl)),
+    db.select({ id: users.id, handle: users.handle, avatarUrl: users.avatarUrl, bannerUrl: users.bannerUrl })
+      .from(users).where(or(isNotNull(users.avatarUrl), isNotNull(users.bannerUrl))),
   ]);
   for (const p of ps) {
     const ref: MediaRef = { type: 'post', id: p.id, title: p.title || p.titleJa };
     for (const key of postMediaKeys(p)) add(key, ref);
   }
-  for (const u of us) add(keyFromUrl(u.avatarUrl), { type: 'user', id: u.id, title: u.handle });
+  for (const u of us) {
+    const ref: MediaRef = { type: 'user', id: u.id, title: u.handle };
+    add(keyFromUrl(u.avatarUrl), ref);
+    add(keyFromUrl(u.bannerUrl), ref);
+  }
   return map;
 }
 
@@ -341,6 +347,7 @@ app.get('/media', async (c) => {
   do {
     const page = await c.env.MEDIA.list({ cursor, limit: 1000 });
     for (const o of page.objects) {
+      if (o.key.startsWith('_trash/')) continue; // soft-deleted; not an orphan, not a live object
       present.add(o.key);
       if (objects.length < MEDIA_SCAN_CAP) {
         objects.push({
@@ -359,20 +366,89 @@ app.get('/media', async (c) => {
   return c.json({ objects, dangling, truncated, orphanBytes });
 });
 
-// Bulk-delete. Still-referenced keys are SKIPPED (never force here) so a click
-// can't orphan a live cover/avatar.
+// Media younger than this is never swept — a just-uploaded image may be embedded in
+// a draft the editor hasn't autosaved yet, so it isn't referenced anywhere the scan
+// can see. The grace window closes that read-after-write gap.
+const RECENT_UPLOAD_GRACE = 30 * DAY;
+const TRASH_RETENTION = 30 * DAY;
+
+// Bulk "delete" — actually a SOFT delete: referenced keys are skipped, freshly-
+// uploaded keys are skipped, and the rest are moved to `_trash/` (recoverable for
+// 30 days) rather than erased. Fail-closed: if the referenced set can't be built
+// we refuse, because we then can't prove anything is an orphan.
 app.post('/media/bulk-delete', async (c) => {
   const db = getDb(c);
   const actor = c.var.user!;
   const body = (await c.req.json().catch(() => null)) as { keys?: unknown } | null;
   const keys = Array.isArray(body?.keys) ? body!.keys.filter((k): k is string => typeof k === 'string') : null;
   if (!keys || keys.length === 0) return c.json({ error: 'keys_required' }, 400);
-  const refs = await collectReferencedKeys(db);
-  const toDelete = Array.from(new Set(keys)).filter((k) => !refs.has(k));
-  const skipped = keys.length - toDelete.length;
-  for (let i = 0; i < toDelete.length; i += 1000) await c.env.MEDIA.delete(toDelete.slice(i, i + 1000));
-  await logAdminAction(db, { actorId: actor.id, action: 'delete_media', targetType: 'media', targetId: `bulk:${toDelete.length}`, detail: { deleted: toDelete.length, skipped } });
-  return c.json({ ok: true, deleted: toDelete.length, skipped });
+  let refs: Map<string, MediaRef>;
+  try { refs = await collectReferencedKeys(db); }
+  catch { return c.json({ error: 'ref_scan_failed' }, 503); }
+  const cutoff = Date.now() - RECENT_UPLOAD_GRACE;
+  const trashed: string[] = [];
+  let skippedReferenced = 0, skippedRecent = 0, missing = 0;
+  for (const key of Array.from(new Set(keys))) {
+    if (key.startsWith('_trash/')) continue;           // never re-trash trash
+    if (refs.has(key)) { skippedReferenced++; continue; }
+    const head = await c.env.MEDIA.head(key).catch(() => null);
+    if (!head) { missing++; continue; }
+    const uploaded = head.uploaded instanceof Date ? head.uploaded.getTime() : Number(head.uploaded) || 0;
+    if (uploaded > cutoff) { skippedRecent++; continue; } // too fresh — protect
+    if (await trashObject(c.env.MEDIA, key, { deletedBy: actor.id })) trashed.push(key);
+    else missing++;
+  }
+  await logAdminAction(db, {
+    actorId: actor.id, action: 'delete_media', targetType: 'media', targetId: `bulk:${trashed.length}`,
+    detail: { trashed, skippedReferenced, skippedRecent, missing },
+  });
+  return c.json({ ok: true, deleted: trashed.length, skippedReferenced, skippedRecent, missing });
+});
+
+// Trash contents — what the 30-day recovery window currently holds. Key layout is
+// `_trash/<deletedAtMs>/<originalKey>`, so the listing needs no per-object reads.
+app.get('/media/trash', async (c) => {
+  const items: { key: string; originalKey: string; size: number; deletedAt: number; purgesAt: number }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await c.env.MEDIA.list({ prefix: '_trash/', cursor, limit: 1000 });
+    for (const o of page.objects) {
+      const [, ts, ...rest] = o.key.split('/');
+      const deletedAt = Number(ts) || 0;
+      items.push({ key: o.key, originalKey: rest.join('/'), size: o.size, deletedAt, purgesAt: deletedAt + TRASH_RETENTION });
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor && items.length < MEDIA_SCAN_CAP);
+  items.sort((a, b) => b.deletedAt - a.deletedAt);
+  return c.json({ items });
+});
+
+// Restore trashed objects to their original keys — the "recoverable" half of the
+// soft-delete promise, without needing the wrangler CLI. Never clobbers: if a live
+// object already exists at the original key (re-uploaded meanwhile), the trash copy
+// is left alone and reported as skipped.
+app.post('/media/restore', async (c) => {
+  const actor = c.var.user!;
+  const body = (await c.req.json().catch(() => null)) as { keys?: unknown } | null;
+  const keys = Array.isArray(body?.keys) ? body!.keys.filter((k): k is string => typeof k === 'string' && k.startsWith('_trash/')) : null;
+  if (!keys || keys.length === 0) return c.json({ error: 'keys_required' }, 400);
+  const restored: string[] = [];
+  let skippedExists = 0, missing = 0;
+  for (const trashKey of Array.from(new Set(keys))) {
+    const originalKey = trashKey.split('/').slice(2).join('/');
+    if (!originalKey) { missing++; continue; }
+    if (await c.env.MEDIA.head(originalKey).catch(() => null)) { skippedExists++; continue; }
+    const obj = await c.env.MEDIA.get(trashKey);
+    if (!obj) { missing++; continue; }
+    await c.env.MEDIA.put(originalKey, obj.body, { httpMetadata: obj.httpMetadata });
+    await c.env.MEDIA.delete(trashKey);
+    restored.push(originalKey);
+  }
+  await logAdminAction(getDb(c), {
+    actorId: actor.id, action: 'restore_media', targetType: 'media', targetId: `bulk:${restored.length}`,
+    detail: { restored, skippedExists, missing },
+  });
+  return c.json({ ok: true, restored: restored.length, skippedExists, missing });
 });
 
 /* ───────────── featured (home curation) ───────────── */
@@ -380,9 +456,9 @@ app.post('/media/bulk-delete', async (c) => {
 app.get('/featured', async (c) => {
   const grouped = await listFeatured(getDb(c));
   return c.json({
-    hero: grouped.hero.map(publicPostCard),
-    feature: grouped.feature.map(publicPostCard),
-    picks: grouped.picks.map(publicPostCard),
+    hero: grouped.hero.map((r) => publicPostCard(r, true)),
+    feature: grouped.feature.map((r) => publicPostCard(r, true)),
+    picks: grouped.picks.map((r) => publicPostCard(r, true)),
   });
 });
 
@@ -412,13 +488,13 @@ app.put('/featured', async (c) => {
   await setFeatured(db, clean);
   await logAdminAction(db, { actorId: actor.id, action: 'set_featured', targetType: 'featured', targetId: '', detail: { count: clean.length } });
   const grouped = await listFeatured(db);
-  return c.json({ hero: grouped.hero.map(publicPostCard), feature: grouped.feature.map(publicPostCard), picks: grouped.picks.map(publicPostCard) });
+  return c.json({ hero: grouped.hero.map((r) => publicPostCard(r, true)), feature: grouped.feature.map((r) => publicPostCard(r, true)), picks: grouped.picks.map((r) => publicPostCard(r, true)) });
 });
 
 // Admin post search (incl. hidden) — powers the Featured picker + post moderation.
 app.get('/posts', async (c) => {
   const rows = await searchPostsAdmin(getDb(c), c.req.query('q'), Math.min(50, Math.max(1, Number(c.req.query('limit')) || 30)));
-  return c.json({ posts: rows.map(publicPostCard) });
+  return c.json({ posts: rows.map((r) => publicPostCard(r, true)) });
 });
 
 /* ───────────── content: categories + tags ───────────── */
