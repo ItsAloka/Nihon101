@@ -56,16 +56,22 @@ tag = "v1"
 new_sqlite_classes = ["RateLimiterDO"]
 
 [triggers]
-# Every minute (Cloudflare's minimum): rescore momentum for the ACTIVE set (recent +
-# freshly-engaged posts, not the whole corpus) + bake the top-20 to KV. Trending means
-# "hot right now" — on a 5-minute cadence a post spiking now takes 5 minutes to
-# surface and the list visibly lags the engagement driving it. The UPDATE is bounded
-# to the active set, so per-minute costs little more than per-5-min. Minute-0 also
-# ages out stale reports. Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday
-# Letter (kill-switchable). Day-of-week MUST be the name form: Cloudflare rejects
-# `0 0 * * 0` with "invalid cron string" (code 10100) — its parser has no 0 for
-# Sunday. index.ts branches on these exact strings; keep the two in sync.
-crons = ["* * * * *", "0 0 * * SUN"]
+# Every 30 min: rescore momentum for the ACTIVE set (recent + freshly-engaged posts,
+# not the whole corpus) + bake the top-20 to KV, and drain the auto-translate queue.
+# The buckets are hourly, so 30-min resolution is imperceptible; the interval still
+# fires at :00 (the hourly prune branch requires minute 0). The scheduled() handler
+# SKIPS Postgres entirely on ticks where nothing changed — no new engagement
+# (KV `trending:dirty`) and no queued translation (KV `translate:dirty`) — so Neon
+# idle-scales to zero on a quiet site instead of being pinned awake 24/7. Was
+# `* * * * *`, which reset Neon's 5-min idle timer every minute and never let it
+# sleep. Sunday 00:00 UTC = Sunday 09:00 JST: send the weekly Sunday Letter
+# (kill-switchable). Day-of-week MUST be the name form: Cloudflare rejects `0 0 * * 0`
+# with "invalid cron string" (code 10100) — its parser has no 0 for Sunday. index.ts
+# branches on these exact strings; keep the two in sync.
+# In local dev crons do NOT auto-fire; trigger them with:
+#   curl "http://localhost:8787/__scheduled?cron=*/30+*+*+*+*"
+#   curl "http://localhost:8787/__scheduled?cron=0+0+*+*+SUN"
+crons = ["*/30 * * * *", "0 0 * * SUN"]
 
 # PROD database path: TWO Hyperdrive configs in front of the SAME Neon DB
 # (`bunx wrangler hyperdrive create`), ids pasted at deploy time.

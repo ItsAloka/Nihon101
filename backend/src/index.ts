@@ -162,45 +162,83 @@ app.route('/newsletter', newsletter);
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: AppEnv['Bindings']) {
-    const { db, pool } = standaloneDb(env);
-    try {
-      // Sunday 00:00 UTC (09:00 JST): the weekly Sunday Letter. Its own trigger so
-      // it never piggybacks the per-5-min trending pass. The day-of-week is the NAME
-      // form because Cloudflare rejects `0 0 * * 0`; must match wrangler.toml exactly
-      // or this branch never fires and the letter silently never sends.
-      if (event.cron === '0 0 * * SUN') {
+    // Sunday 00:00 UTC (09:00 JST): the weekly Sunday Letter. Its own trigger so it
+    // never piggybacks the frequent trending pass, and its own short-lived pool so a
+    // skipped trending tick opens no connection. The day-of-week is the NAME form
+    // because Cloudflare rejects `0 0 * * 0`; must match wrangler.toml exactly or this
+    // branch never fires and the letter silently never sends.
+    if (event.cron === '0 0 * * SUN') {
+      const { db, pool } = standaloneDb(env);
+      try {
         const r = await sendSundayLetter(db, env);
         console.log(`[sunday-letter] sent=${r.sent} skipped=${r.skipped ?? 'none'}`);
         // Weekly: erase media trash past its 30-day recovery window (admin soft-delete).
         const purged = await purgeTrash(env.MEDIA, Date.now() - 30 * 24 * 60 * 60 * 1000).catch(() => 0);
         if (purged) console.log(`[media-trash] purged=${purged}`);
-        return;
+      } finally {
+        await pool.end();
       }
-      // Every minute: fold the buffered like/save/comment deltas into the posts
-      // counters (queries/engagement.ts) FIRST, so the counts are current before
-      // trending's floor term reads them and the top-20 cards are baked. This is
-      // where the hot-row counter writes get their one batched UPDATE per post.
-      const flushed = await flushPostCountEvents(db).catch((e) => {
-        console.error(JSON.stringify({ level: 'error', msg: 'count_flush_crashed', err: e instanceof Error ? e.message : String(e) }));
-        return 0;
-      });
-      if (flushed) console.log(`[counts] postsFlushed=${flushed}`);
-      // Then roll the last couple of hours of raw engagement into hourly buckets
-      // (older buckets are already final — see queries/trending.ts), rescore the
-      // active set's momentum from the buckets and bake the top-20 cards to KV for
-      // the zero-Postgres hot path. Weather is a throttled external fetch baked to
-      // the same KV; its failures are swallowed.
-      await refreshEventBuckets(db, Date.now() - 2 * 60 * 60 * 1000);
-      await Promise.all([
-        recomputeTrendingCache(db, env.TRENDING_KV),
-        recomputeWeatherCache(env.TRENDING_KV),
+      return;
+    }
+
+    // Weather is a throttled external fetch baked to KV — no Postgres. Run it every
+    // tick, BEFORE the DB gate below, so the homepage weather keeps refreshing without
+    // ever waking Neon (recomputeWeatherCache has its own refresh throttle + swallows
+    // failures).
+    await recomputeWeatherCache(env.TRENDING_KV);
+
+    // Per-30-min pass. To let Neon idle-scale to zero on quiet stretches, do NOT open a
+    // Postgres connection unless there is real work. Two independent sources gate it:
+    //   • trending:dirty — engagement landed since the last run (read/like/save/comment,
+    //     set on the request path by markTrendingDirty) → flush counters + recompute.
+    //   • translate:dirty — a post was queued for auto-translation → drain the queue.
+    // Both flags clear ⇒ a tick that touches only KV, so the compute stays asleep. The
+    // top of the hour always runs both (age-decay reorder, prune sweep, guaranteed
+    // queue drain) regardless of the flags. With no KV binding (a bare env) we never
+    // skip — correctness over cost.
+    const topOfHour = new Date().getUTCMinutes() === 0;
+    let trendingDirty = true;
+    let translateDirty = true;
+    if (env.TRENDING_KV && !topOfHour) {
+      [trendingDirty, translateDirty] = await Promise.all([
+        env.TRENDING_KV.get('trending:dirty').then(Boolean),
+        env.TRENDING_KV.get('translate:dirty').then(Boolean),
       ]);
+      if (!trendingDirty && !translateDirty) return; // nothing changed → no DB this tick
+    }
+    // Consume the flags BEFORE the work: engagement/publishes arriving mid-run re-set
+    // them, so the next tick runs again rather than silently missing that update.
+    await Promise.all([
+      env.TRENDING_KV?.delete('trending:dirty').catch(() => { /* best effort */ }),
+      env.TRENDING_KV?.delete('translate:dirty').catch(() => { /* best effort */ }),
+    ]);
+
+    const { db, pool } = standaloneDb(env);
+    try {
+      if (trendingDirty) {
+        // Fold the buffered like/save/comment deltas into the posts counters
+        // (queries/engagement.ts) FIRST, so the counts are current before trending's
+        // floor term reads them and the top-20 cards are baked. This is where the
+        // hot-row counter writes get their one batched UPDATE per post.
+        const flushed = await flushPostCountEvents(db).catch((e) => {
+          console.error(JSON.stringify({ level: 'error', msg: 'count_flush_crashed', err: e instanceof Error ? e.message : String(e) }));
+          return 0;
+        });
+        if (flushed) console.log(`[counts] postsFlushed=${flushed}`);
+        // Then roll the last couple of hours of raw engagement into hourly buckets
+        // (older buckets are already final — see queries/trending.ts), rescore the
+        // active set's momentum from the buckets and bake the top-20 cards to KV for
+        // the zero-Postgres hot path.
+        await refreshEventBuckets(db, Date.now() - 2 * 60 * 60 * 1000);
+        await recomputeTrendingCache(db, env.TRENDING_KV);
+      }
+
       // Once an hour (top of the hour), sweep rows that can no longer affect anything:
       // read notifications older than 30 days, taste signals past the For You window,
       // and open low-signal report cases (below the surface threshold, no new report
       // in 7 days) that would otherwise pile up in "watching" forever. All bounded
       // indexed work; each failure is swallowed so one can't skip the others.
-      if (new Date().getUTCMinutes() === 0) {
+      if (topOfHour) {
         // Wide bucket re-roll first: repairs any bucket whose source rows moved
         // since the narrow pass (post_reads dedup rewrites created_at on a
         // repeat read, moving the event into a newer bucket).
@@ -220,15 +258,25 @@ export default {
         ]);
         if (n || s || r || rt || au || pr || ns || eb) console.log(`[prune] notifs=${n} signals=${s} staleReports=${r} refresh=${rt} auth=${au} reads=${pr} newsletter=${ns} buckets=${eb}`);
       }
-      // LAST, because it can hold the tick for minutes on long posts (scheduled()
-      // has a 15-min wall budget where waitUntil had ~30s, which is the whole
-      // point) and the cheap KV bakes/prunes above must never wait behind it:
-      // drain the auto-translate queue (rows publish/edit/retry marked 'pending').
-      const t = await runTranslationSweep(db, env).catch((e) => {
-        console.error(JSON.stringify({ level: 'error', msg: 'translation_sweep_crashed', err: e instanceof Error ? e.message : String(e) }));
-        return null;
-      });
-      if (t && (t.claimed || t.failed)) console.log(`[translate] claimed=${t.claimed} done=${t.done} failed=${t.failed}`);
+
+      // LAST, because it can hold the tick for minutes on long posts (scheduled() has a
+      // 15-min wall budget where waitUntil had ~30s, which is the whole point) and the
+      // cheap KV bakes/prunes above must never wait behind it: drain the auto-translate
+      // queue (rows publish/edit/retry marked 'pending'). Re-arm translate:dirty while
+      // work remains — a claimed-but-unfinished batch, or an in-flight batch that
+      // blocked this tick — so the next tick keeps draining a burst instead of waiting
+      // for the hourly safety net; a fully drained queue leaves the flag clear so the
+      // compute can sleep again.
+      if (translateDirty) {
+        const t = await runTranslationSweep(db, env).catch((e) => {
+          console.error(JSON.stringify({ level: 'error', msg: 'translation_sweep_crashed', err: e instanceof Error ? e.message : String(e) }));
+          return null;
+        });
+        if (t && (t.claimed || t.failed)) console.log(`[translate] claimed=${t.claimed} done=${t.done} failed=${t.failed}`);
+        if (t && (t.claimed > 0 || t.skipped)) {
+          await env.TRENDING_KV?.put('translate:dirty', '1').catch(() => { /* best effort */ });
+        }
+      }
     } finally {
       await pool.end();
     }

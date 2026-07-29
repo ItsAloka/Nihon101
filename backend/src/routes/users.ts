@@ -87,15 +87,19 @@ app.get('/:handle', limits.publicRead, async (c) => {
   // endpoint never loads post rows (the old listPosts path selected up to 200 full
   // bodies per profile view AND per article read, purely to count them).
   //
-  // These read LIVE, never getDbCached. Hyperdrive's 60s query cache is never
-  // invalidated by a write, so a cached count means: follow someone, reload their
+  // A SIGNED-IN viewer reads the counts LIVE: Hyperdrive's 60s query cache is never
+  // invalidated by a write, so a cached count means follow someone, reload their
   // profile, and the follower number is still the old one for up to a minute while
-  // the button already says "Following". Same for publishing — your own profile
-  // would claim one fewer post. The counts are what a viewer can change *this
-  // second*; only the profile row itself (name/bio/avatar) is 60s-stale-safe.
+  // the button already says "Following" (same for publishing — your own profile would
+  // claim one fewer post). The counts are what a viewer can change *this second*.
+  // An ANONYMOUS viewer (the bulk of profile traffic) can change nothing, so their
+  // counts come from the cached handle — a ≤60s-stale follower/post number is
+  // invisible and the page loads without waking the Neon compute. isFollowing
+  // short-circuits to false for a null viewer (no query).
+  const statsDb = viewerId ? getDb(c) : getDbCached(c);
   const [pub, counts, viewerFollows] = await Promise.all([
-    publishedStats(getDb(c), u.id),
-    followCounts(getDb(c), u.id),
+    publishedStats(statsDb, u.id),
+    followCounts(statsDb, u.id),
     isFollowing(getDb(c), viewerId, u.id),
   ]);
 

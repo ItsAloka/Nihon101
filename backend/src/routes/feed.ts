@@ -6,6 +6,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { forYouFeed, recordRead, recordSearchClick } from '../db/queries/for-you';
 import { likedPostIds } from '../db/queries/engagement';
+import { markTrendingDirty } from '../lib/dirty';
 
 const app = new Hono<AppEnv>();
 
@@ -48,6 +49,7 @@ app.get('/', limits.feed, async (c) => {
 // from the reader; never blocks the page.
 app.post('/read/:postId', requireAuth, limits.read, async (c) => {
   await recordRead(getDb(c), c.req.param('postId'), c.var.user!.id);
+  markTrendingDirty(c); // a read feeds the trending buckets → wake the next tick
   return c.json({ ok: true });
 });
 

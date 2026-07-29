@@ -4,6 +4,7 @@ import type { AppEnv } from '../types';
 import { requireAuth } from '../middleware/requireAuth';
 import { limits } from '../middleware/rateLimit';
 import { sanitizeHtml } from '../lib/sanitizeHtml';
+import { markTrendingDirty, markTranslateDirty } from '../lib/dirty';
 import { findBlockedLink, findBlockedLinkHtml } from '../lib/linkGuard';
 import { postMediaKeys, deleteMediaKeys } from '../lib/media';
 import { embedText, postEmbedText, toVectorLiteral } from '../lib/embeddings';
@@ -223,8 +224,12 @@ app.get('/', limits.publicRead, async (c) => {
 
 // Single post by slug (reading view). Drafts visible only to their author.
 // Cached shell + live overlay: the heavy body/author row may be up to 60s stale
-// (fine for prose), while everything a reader can change this minute — liked,
-// the counters — is re-read live and merged over it.
+// (fine for prose). For a SIGNED-IN viewer the counters are re-read live and merged
+// over it (read-your-own-writes — the like they just tapped is exact). An ANONYMOUS
+// viewer (the bulk of traffic) can't change anything, so their counters come from the
+// cached handle too: a ≤60s-stale like count is invisible, and it means a plain
+// article read never wakes the Neon compute (it idle-scales to zero while logged-out
+// browsing).
 app.get('/slug/:slug', limits.publicRead, async (c) => {
   let post = await getPostWithAuthorBySlug(dbc(c), c.req.param('slug'));
   if (!post) return c.json({ error: 'not_found' }, 404);
@@ -239,7 +244,7 @@ app.get('/slug/:slug', limits.publicRead, async (c) => {
   if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
   const [liked, counts] = await Promise.all([
     hasLikedPost(db(c), post.id, viewer?.id ?? null),
-    getPostCounts(db(c), post.id),
+    getPostCounts(viewer ? db(c) : dbc(c), post.id),
   ]);
   if (!counts) return c.json({ error: 'not_found' }, 404); // deleted; only the cache survived
   return c.json({ post: { ...publicPost({ ...post, ...counts }, privileged), liked } });
@@ -278,7 +283,7 @@ app.get('/:id', limits.publicRead, async (c) => {
   if (post.isHidden && !privileged) return c.json({ error: 'hidden', hiddenReason: post.hiddenReason || null }, 451);
   const [liked, counts] = await Promise.all([
     hasLikedPost(db(c), post.id, viewer?.id ?? null),
-    getPostCounts(db(c), post.id),
+    getPostCounts(viewer ? db(c) : dbc(c), post.id),
   ]);
   if (!counts) return c.json({ error: 'not_found' }, 404);
   return c.json({ post: { ...publicPost({ ...post, ...counts }, privileged), liked } });
@@ -356,6 +361,8 @@ app.post('/', requireAuth, limits.postCreate, async (c) => {
   }
   // Embed published posts for the semantic layer (no-op without an embed key).
   if (status === 'published') scheduleEmbedding(c, post.id);
+  // Wake the next cron tick to drain the auto-translate queue (it sleeps otherwise).
+  if (translating) markTranslateDirty(c);
   return c.json({ post: publicPost(post, true) }, 201);
 });
 
@@ -454,6 +461,8 @@ app.put('/:id', requireAuth, limits.postEdit, async (c) => {
   if (post && post.status === 'published' && (body?.bodyEn !== undefined || body?.bodyJa !== undefined || body?.titleEn !== undefined || body?.titleJa !== undefined)) {
     scheduleEmbedding(c, post.id);
   }
+  // Wake the next cron tick to drain the auto-translate queue (it sleeps otherwise).
+  if (translating) markTranslateDirty(c);
 
   return c.json({ post: publicPost(post!, true) });
 });
@@ -473,6 +482,7 @@ app.post('/:id/translate', requireAuth, limits.translate, async (c) => {
   if (await overAiQuota(c, c.var.user!.id)) return c.json({ error: 'ai_quota_exceeded' }, 429);
 
   await updatePost(d, existing.id, enqueueTranslation);
+  markTranslateDirty(c); // wake the next cron tick to drain the queue
   return c.json({ translationStatus: 'pending' });
 });
 
@@ -510,6 +520,7 @@ app.post('/:id/like', requireAuth, limits.likePost, async (c) => {
       userId: post.authorId, type: 'like', actorId: c.var.user!.id, postId: post.id,
     });
   }
+  markTrendingDirty(c);
   return c.json(res);
 });
 
@@ -520,6 +531,7 @@ app.post('/slug/:slug/save', requireAuth, limits.save, async (c) => {
   const post = await getPostBySlug(d, c.req.param('slug'));
   if (!post || post.status !== 'published') return c.json({ error: 'not_found' }, 404);
   const res = await togglePostSave(d, post.id, c.var.user!.id);
+  markTrendingDirty(c);
   return c.json(res);
 });
 
@@ -580,6 +592,7 @@ app.post('/:id/comments', requireAuth, limits.comment, async (c) => {
     parentId = parent.parentId ?? parent.id;
   }
   const row = await createComment(d, post.id, c.var.user!.id, text, parentId);
+  markTrendingDirty(c);
   const me = c.var.user!.id;
   const author = await getUserById(d, me); // token has no handle/avatar — fetch for the response
   // Notify the post author of a new comment; if this is a reply, also notify the

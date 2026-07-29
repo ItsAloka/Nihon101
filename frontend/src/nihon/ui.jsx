@@ -277,18 +277,28 @@ function Nav({ p, route, lang, onLang, onSearch, savedCount, mode, onToggleMode,
   React.useEffect(()=>{ setNotifOpen(false); setMenuOpen(false); setDrawerOpen(false); setSearchOpen(false); }, [route.name, route.slug]);
   React.useEffect(()=>{ document.body.style.overflow = drawerOpen ? 'hidden' : ''; return ()=>{ document.body.style.overflow=''; }; }, [drawerOpen]);
 
-  // The badge is the ONLY thing polled: one indexed COUNT(*), not the list join.
-  // The list is fetched by NotifPanel when the bell is opened. Signed out → 0, and
-  // the effect's cleanup stops the timer.
+  // The badge is the ONLY thing polled: one indexed COUNT(*), not the list join
+  // (the list is fetched by NotifPanel when the bell is opened). Signed out → 0.
+  // The poll is per-user data (never cached — caching law), so every tick wakes the
+  // Neon compute. At a 1-min cadence a single left-open tab pinned it awake 24/7; so
+  // the interval is 10 min (longer than Neon's 5-min idle window, so the compute can
+  // sleep between polls) AND it pauses entirely while the tab is hidden — a
+  // backgrounded/forgotten tab must not hold the DB awake. Coming back to the tab
+  // refreshes immediately, so the badge is current the moment the user returns.
   const [unread, setUnread] = React.useState(0);
   React.useEffect(()=>{
     if (!currentUser) { setUnread(0); return; }
     let live = true;
-    const tick = () => window.N101_CONTENT.notifApi.unreadCount()
-      .then((n)=>{ if (live) setUnread(n); }).catch(()=>{});
+    const tick = () => {
+      if (document.hidden) return;
+      window.N101_CONTENT.notifApi.unreadCount()
+        .then((n)=>{ if (live) setUnread(n); }).catch(()=>{});
+    };
     tick();
-    const t = setInterval(tick, 60_000);
-    return () => { live = false; clearInterval(t); };
+    const t = setInterval(tick, 600_000);
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { live = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
   }, [currentUser]);
 
   const drawerRow = { appearance:'none', border:'1px solid var(--line)', background:'var(--surface)', textAlign:'left', padding:'11px 14px', borderRadius:12, cursor:'pointer', fontFamily:'var(--fontBody)', fontSize:14, fontWeight:600, color:'var(--ink)', display:'flex', alignItems:'center', gap:10 };
