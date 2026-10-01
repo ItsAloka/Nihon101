@@ -17,16 +17,16 @@
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.26",
-    "nanoid": "^5.0.7",
+    "nanoid": "^6.0.0",
     "pg": "^8.13.1",
     "xss": "^1.0.15",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250101.0",
+    "@cloudflare/workers-types": "^5.20260730.1",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.31.10",
-    "typescript": "^5.6.0",
+    "typescript": "^7.0.2",
     "wrangler": "^4.106.0"
   }
 }
